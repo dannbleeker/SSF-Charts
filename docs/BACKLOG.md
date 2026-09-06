@@ -8,7 +8,9 @@ Vocabulary taxonomies and competitor add-ins (Zebra BI, Vizzlo, UpSlide).
 **This is the only backlog document.** Items graduate from here into PRs and are
 deleted when they ship — what has shipped is recorded by the README feature
 table and by git, not here. Rejected ideas stay in §2 so they aren't
-re-proposed, and §3 keeps what ~290 rounds against the live host established,
+re-proposed, and §3 keeps what the round archive against the live host has
+established — `ls rounds/` is the count, and writing it here only ever made it
+stale —
 because a finding outlives the fix that answered it. **§1 opens with the whole
 open list; if a thing is not on that list it is not open.**
 
@@ -20,10 +22,11 @@ patterns.
 
 ## 0a. A chart is still editable tomorrow — MEASURED 2026-09-06, first time ever
 
-The most basic property a chart tool has, and **no scenario tests it**. All 412
-archived rounds run inside a single session on a deck the driver sweeps
-immediately afterwards, so nothing had ever asked whether a chart survives the
-document being closed and reopened.
+The most basic property a chart tool has, and **no scenario tests it**. Every
+archived round runs inside a single session on a deck the driver sweeps
+immediately afterwards — that is a property of the loop, not a count that goes
+stale — so nothing had ever asked whether a chart survives the document being
+closed and reopened.
 
 `Presentation72.pptx` answered it by accident of being a throwaway nobody swept.
 Its charts were drawn around 18:00 on 2026-09-05; this was measured the next
@@ -63,11 +66,18 @@ two-master fix (`6dfaa4b`, 2026-09-04):
     PRE-fix  16:9       250         194                96.9%
     PRE-fix  4:3         48          28                94.3%
     post-fix 16:9         9           8                99.4%
-    post-fix 4:3         26          22                96.8%
+    post-fix 4:3         28          24                97.1%
 
     crash records:  94 on PRE-fix builds,  3 on post-fix,  97 total
 
-**All-green rounds at 4:3 went from 28 of 48 to 22 of 26** — 58% to 85% — and
+Re-derived 2026-09-06 evening: the 4:3 row read `26 / 22 / 96.8%` and rounds
+412 and 413 had landed since. The other three rows reproduced to the digit,
+which is what makes the fifth one a stale count rather than a different method.
+That is the FIFTH stale number in three days — `test/backlog-open-count.test.ts`
+now guards the one of them that recurred twice, and this row is the argument for
+widening it.
+
+**All-green rounds at 4:3 went from 28 of 48 to 24 of 28** — 58% to 86% — and
 the crash archive is the blunter number: ninety-four records on pre-fix builds
 against two on post-fix. The rate ratchet has come down with it and nobody
 edited it: `a big chart on a slide of its own` reads 224.5 deaths per 1000
@@ -135,12 +145,15 @@ it waits on the owner's GitHub identity:**
 
 
     5  filing this project's host measurements to the office-js tracker
-       — docs/OFFICE-JS-DRAFTS.md, nothing filed. Draft A was rewritten on
-       2026-09-06 after failing to reproduce, and now DOES: reproduced 3 of 3
-       on a fresh deck with three controls. The defect is the SLIDE, not a
-       collection re-read and not a stale handle — a slide added by
-       slides.add() is unusable from any later PowerPoint.run. Draft B is
-       still unverified. Submission is the owner's identity and his alone
+       — docs/OFFICE-JS-DRAFTS.md, nothing filed, and BOTH drafts went ON HOLD
+       the evening of 2026-09-06, each for its own reason and neither for
+       failing to reproduce. Draft A reproduces 3 of 3 with four controls; what
+       is unverified is its SCOPE, and the product contradicts the scope as
+       written — this add-in tags shapes on slides it added, thousands of
+       times, and it works. Draft B may be OUR bug: its failing arm is the
+       pre-77f9ca4 pattern this repo already diagnosed as a stale add-time id.
+       One experiment decides each, both written up in that file. Submission
+       is the owner's identity and his alone
 
 
 **The 4:3 arm is no longer on this list, and was never on it as a numbered
@@ -148,6 +161,15 @@ item.** It closed 2026-09-05 on fifteen post-fix rounds against four pre-fix
 ones, p = 0.0010; twenty-six post-fix rounds now stand against the same four,
 one failure among them, **p = 0.00018**. See the two-master entry at the end of
 this file.
+
+> NOT RE-DERIVED, and flagged rather than quietly corrected on 2026-09-06. The
+> round count has moved on (post-fix 4:3 is 28 as of round 413), but "one
+> failure among them" does not match the all-green split in §0 — 24 of 28 — so
+> the two sentences are counting different things and this one does not say
+> which. Recomputing it would mean guessing at the test that produced it, and a
+> guessed p-value is worse than a stale one. **Whoever recomputes this should
+> write down the arms and the statistic beside the number**, which is the whole
+> reason it cannot be checked now.
 
 **3 — DECIDED, AND TWO THIRDS SHIPPED, 2026-09-04.** The question was "picture
 or native shapes for a crowded slide". The answer is "ask, and keep the picture
@@ -2456,6 +2478,53 @@ All cleared 2026-08-16. See git.
 What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
+
+### The archive draws on a slide it did not itself add TWICE — 2026-09-06
+
+The denominator that decides what 385 rounds are evidence *of*, and it went
+unmeasured until the 5010 question needed it.
+
+`batch issued` names the slide a draw went to. Split against each round's own
+`deck.newSlides`, **as of round 413** — every number here grows with the
+archive, so it is anchored to a round rather than left to decay:
+
+    on a slide the add-in added that round      8,221 batches
+    on a slide the document already had             1 batch
+    the `(visible)` sentinel                      883 batches
+      of which recoverable from the next batch    866  (863 added, 1 own, 2 ?)
+
+Re-derive with `node scripts/slide-provenance.mjs`, which prints the failures
+and this denominator in one output on purpose: the first table is meaningless
+without the second, and separating them is how the wrong conclusion was nearly
+drawn.
+
+So the sentinel hides nothing: **there is no second arm.** Every scenario adds
+a slide and draws on it, because the sweep afterwards has to leave the deck as
+it found it. That is a reasonable design and it has a consequence nobody had
+written down: the round loop validates *"add a slide, draw on it"* and says
+almost nothing about *"draw on the slide I already had"* — which is what a user
+does.
+
+**WHAT IT COSTS IMMEDIATELY.** 1,369 archived events carried code 5010 at round
+413, and 1,361 of them sat on an added slide, none on the document's own. That
+looks like confirmation of the 2026-09-06 controlled experiment and is not: with a
+denominator of one, every 5010 lands on an added slide because there is nothing
+else to land on. The archive cannot separate a slide's PROVENANCE from the
+created-proxy rewrite `powerpoint.ts` blames elsewhere — here the two are never
+apart. The controlled experiment stays the only evidence that does.
+
+The slide id was on file the whole time, inside `debugInfo.fullStatements`
+(`slides.getItem("262#1236456497")`), so this needed no new rounds. The `slides`
+field added to `parts list outcome` the same day was recorded with "one field
+closes that" beside it. It does not, for this reason, and that docstring has
+been corrected rather than left to be quoted later.
+
+**Item 0a is the only measurement on the other side of this line**, and it is
+one document.
+
+NOT WRITTEN UP AS A TASK, because "add a scenario that draws on a pre-existing
+slide" changes what the archive means, and the sweep such a scenario would have
+to skip is the reason the archive is clean. That is the owner's call.
 
 ### The probe has been blind on GROUPS for the whole archive — found 2026-08-16
 
