@@ -76,6 +76,67 @@ Script Lab and watch it fail, without any part of this add-in.
 
 ## DRAFT A — a shape drawn on an add-in-introduced slide cannot be tagged
 
+> ## HOLD — DO NOT FILE THIS YET. The product contradicts its own title.
+>
+> Found 2026-09-06 while measuring the archive, after the draft was written.
+>
+> **This add-in tags shapes on slides it added itself, constantly, and it
+> works.** `addSlideForChart` adds the slide in its own `PowerPoint.run` and
+> returns an id; `insertSceneIntoSlide` then opens a NEW run, draws onto that
+> id and calls `target.tags.add(CHART_TAG, …)`. That is Draft A's failing
+> configuration exactly: a shape drawn on a slide the add-in introduced in an
+> EARLIER run, then tagged.
+>
+> Be exact about what the archive does and does not say here. It says 8,221 of
+> ~9,600 draw batches went to a slide added that round — that is where the
+> DRAWING happens, not a count of successful tag writes, and quoting it as one
+> would be the same overreach this note exists to catch. What carries the claim
+> is that those scenarios PASS: `a big chart on a slide of its own` runs this
+> exact sequence and reads 34 ok / 1 failed on post-fix builds. A defect as
+> worded below predicts none of them can.
+>
+> (The first version of this note cited `insert on top of an earlier run —
+> 4 of 4 charts re-editable`, and that citation was wrong: `insertTwice` goes
+> through `insertSlidesFromPptx`, so its tags arrive pre-baked in the file and
+> are only READ back. It proves nothing about writing one. The claim survives
+> the correction; the evidence for it changed.)
+>
+> So one of two things is true, and filing before knowing which is how a report
+> gets closed as not reproducible:
+>
+> **1. The repro's slide is UNSETTLED, not merely earlier.** This repo already
+> established the rule, over 269 rounds: *a new slide's id is not durable until
+> the slide settles, and is durable afterwards.* The probe answered `threw` 227
+> times and `yes` 41, and every `threw` predates our own `77f9ca4` — which
+> stopped holding the id `slides.add()` hands back and re-read it positionally
+> after the add had settled. `addSlides` does not return until a FRESH context
+> has confirmed the deck grew. **Run 1 of the repro below never does that.** It
+> reads `slides.items.length - 1` from the same context that added the slide.
+>
+> **2. The variable is the SESSION, not the run.** Against (1): Presentation72
+> slide 5 was inserted from a file in a previous session, was settled by an
+> entire browser restart, and still threw. Against the title: within one
+> session the product does this thousands of times without a failure.
+>
+> Both are explained by a narrower defect than the one written below — *a slide
+> the add-in introduced in an EARLIER SESSION cannot take a new tag* — and the
+> round archive is structurally blind to it, because every round is one session
+> on a deck swept immediately afterwards.
+>
+> **THE EXPERIMENT THAT DECIDES IT**, on a deck reopened from a previous day
+> (Presentation72 has both kinds of slide). Draw a shape and tag it on:
+>
+>     a  the document's own slide
+>     b  a slide the add-in added in THIS session
+>     c  a slide the add-in added in a PREVIOUS session
+>
+> If b passes and c fails, the title below is wrong and the real finding is
+> both narrower and more interesting — and it is a daily-use bug, because it is
+> exactly "open yesterday's deck and add a second chart".
+>
+> Until that is run, everything below is measured but its SCOPE is unverified,
+> and the scope is what a tracker issue is judged on.
+
 **REWRITTEN 2026-09-06 after the first version failed to reproduce.** The
 original blamed a collection re-read for poisoning the context. Run against a
 live host it did not reproduce at all on an ordinary slide, and a control
@@ -203,6 +264,48 @@ that slide arrived
 > bug was understood.
 
 ## DRAFT B — a held slide proxy throws only on a freshly added slide
+
+> ## HOLD — DO NOT FILE. This repo may already own this bug.
+>
+> Found 2026-09-06 by reading `powerpoint.ts` against the draft, not by running
+> anything. Draft B is unverified either way; what follows is why verifying it
+> matters more than filing it.
+>
+> **The archive says this behaviour has our fingerprints on it.** The probe
+> `shape-add-fresh-getitem-slide` asks almost exactly Draft B's question. Over
+> 269 rounds it answered `threw` **227** times and `yes` **41** — and every
+> `threw` is round 253 or earlier. The boundary is `77f9ca4`, **our** commit,
+> which stopped the probe holding the id `slides.add()` hands back and made it
+> re-read the id positionally once the add had settled. The two are different
+> id spaces rather than near-misses: `4123571114#123571113` at add time,
+> `256#2587447327` a moment later for the same slide.
+>
+> The rule that came out of it is in `powerpoint.ts` in these words: *a new
+> slide's id is not durable until the slide settles, and is durable
+> afterwards.* `addSlides` does not return until a FRESH context has confirmed
+> the deck grew.
+>
+> **ARM 2 BELOW NEVER SETTLES THE SLIDE.** It adds, syncs, loads and takes
+> `slides.items[len - 1]` inside the same context. That is the pre-`77f9ca4`
+> pattern exactly — and `errorLocation` on the throw is
+> `SlideCollection.getItem`, which is what a stale id looks like, not what
+> holding a proxy looks like.
+>
+> Draft B's own controls point the same way: it works via `getItemAt(index)`
+> and works inside a single sync. Both of those avoid the add-time id. The one
+> arm that fails is the one that uses it.
+>
+> **THE CONTROL THAT DECIDES IT.** Repeat arm 2, but obtain the slide the way
+> `addSlides` does — a fresh `PowerPoint.run` confirming the deck grew, then
+> read the id positionally — and hold THAT proxy across a sync before adding.
+>
+>     works  ->  the draft names proxy age; the variable is the stale id, and
+>                the bug was ours. Do not file.
+>     throws ->  proxy age survives a settled slide, and the draft stands.
+>
+> This is the third time a draft in this file has named the wrong variable
+> (finding 2 was struck, findings 1 and 3 were renamed). The pattern is not
+> carelessness; it is that every arm here changes two things at once.
 
 **Title:** Adding a shape through a slide proxy resolved one sync earlier works
 on an existing slide and throws `GeneralException` on a slide added in the same
