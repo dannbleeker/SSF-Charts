@@ -31,7 +31,7 @@ two-master fix (`6dfaa4b`, 2026-09-04):
 
     crash records:  94 on PRE-fix builds,  3 on post-fix,  97 total
 
-**All-green rounds at 4:3 went from 28 of 48 to 20 of 24** — 58% to 83% — and
+**All-green rounds at 4:3 went from 28 of 48 to 22 of 26** — 58% to 85% — and
 the crash archive is the blunter number: ninety-four records on pre-fix builds
 against two on post-fix. The rate ratchet has come down with it and nobody
 edited it: `a big chart on a slide of its own` reads 224.5 deaths per 1000
