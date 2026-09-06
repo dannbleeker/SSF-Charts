@@ -135,11 +135,12 @@ it waits on the owner's GitHub identity:**
 
 
     5  filing this project's host measurements to the office-js tracker
-       — drafts written 2026-09-05 (docs/OFFICE-JS-DRAFTS.md), nothing filed.
-       DRAFT A DID NOT REPRODUCE when run against a live host on 2026-09-06:
-       on an ordinary slide the re-read is complete and the tag succeeds. Do
-       not file it as written. Draft C (a comment on #6237) is unaffected.
-       Submission is the owner's identity and his alone
+       — docs/OFFICE-JS-DRAFTS.md, nothing filed. Draft A was rewritten on
+       2026-09-06 after failing to reproduce, and now DOES: reproduced 3 of 3
+       on a fresh deck with three controls. The defect is the SLIDE, not a
+       collection re-read and not a stale handle — a slide added by
+       slides.add() is unusable from any later PowerPoint.run. Draft B is
+       still unverified. Submission is the owner's identity and his alone
 
 
 **The 4:3 arm is no longer on this list, and was never on it as a numbered

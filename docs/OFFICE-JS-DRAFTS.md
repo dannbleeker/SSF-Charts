@@ -33,16 +33,18 @@ Same question, same host, moments apart. Holding a slide proxy across a sync is
 fine on a slide that already existed and throws `GeneralException` on one added
 this session. The backlog's "it is the holding that fails" is false as worded.
 
-**Finding 3 named proxy age too. The variable is a COLLECTION RE-READ.**
+**Finding 3 named proxy age too — and then I named the wrong thing as well.**
+On 2026-09-05 I read the answer sheet as saying a COLLECTION RE-READ poisons the
+handle, from the probe called `collection-read-poisons-the-creation-handle`
+(refused 3/3). Running it on 2026-09-06 refuted that: with the re-read removed
+entirely, the tag still throws 5010.
 
-    tag-the-creation-proxy-a-sync-later            yes             3/3
-    how-many-syncs-a-creation-handle-survives      survives-8      (healthy)
-    how-many-collection-reads-a-context-survives   short-at-1      3/3
-    collection-read-poisons-the-creation-handle    refused         3/3
-
-A creation handle survives eight syncs untouched. Re-read the slide's shapes
-once and it is refused with `InvalidParam passed to GetItem(id)`. Age is not
-what kills it.
+**Findings 1 and 3 are ONE defect, and it is about the SLIDE.** A slide added by
+`slides.add()` is unusable from any later `PowerPoint.run` — shapes drawn on it
+cannot be tagged through a creation handle OR through a proxy re-fetched by id,
+and its collection reads short. The document's own slides are unaffected, and
+stay unaffected after five such adds. That is Draft A below, and it now carries
+its own controls rather than a probe id.
 
 ## Duplicate search, 2026-09-05
 
@@ -72,61 +74,97 @@ Script Lab and watch it fail, without any part of this add-in.
 
 ---
 
-## DRAFT A — a collection re-read poisons every handle in the context
+## DRAFT A — a slide added by an add-in is unusable in every later run
 
-**Title:** Re-reading a slide's shapes poisons the context: the re-read returns
-short, and the handle that created a shape is then refused with `InvalidParam
-passed to GetItem(id)`
+**REWRITTEN 2026-09-06 after the first version failed to reproduce.** The
+original blamed a collection re-read for poisoning the context. Run against a
+live host it did not reproduce at all on an ordinary slide, and a control
+showed the re-read is not the trigger. What follows is what actually happens,
+measured 3 of 3 on a fresh two-slide deck with a control on each claim.
+
+**Title:** A slide added via `slides.add()` is permanently unusable from any
+later `PowerPoint.run`: shapes drawn on it cannot be tagged (`InvalidParam
+passed to GetItem(id)`, 5010) and its shape collection reads short
 
 > ### Your Environment
->
 > - Platform: Office on the web
 > - Host: PowerPoint
 > - Browser: Chrome
 >
 > ### Expected behavior
 >
-> Re-reading `slide.shapes` inside a `PowerPoint.run` should return the slide's
-> shapes, and should not affect a `Shape` handle returned by `shapes.add*()`
-> earlier in the same context.
+> A slide created with `slides.add()` should behave like any other slide once
+> it has been created and synced. Shapes added to it should be taggable, and
+> `slide.shapes.load("items/id")` should list them.
 >
 > ### Current behavior
 >
-> Two failures, in order, both reproducible:
+> It does not. On a slide added by the add-in in an EARLIER `PowerPoint.run`,
+> two things fail, and they fail independently of each other:
 >
-> 1. The **first** re-read of a slide's shape collection in a context comes back
->    short. Reading a slide holding 3 shapes lists 0 of 3. No error is raised —
->    the call resolves with a short collection.
-> 2. **After** that re-read, a handle returned by `shapes.addGeometricShape()`
->    earlier in the same context is refused when used, with
->    `RichApi.Error: InvalidParam passed to GetItem(id)`, code `5010`.
+> 1. `slide.shapes.load("items/id")` comes back SHORT — 2 of 3 shapes just
+>    drawn and synced. No error is raised.
+> 2. `shape.tags.add(...)` throws `RichApi.Error: InvalidParam passed to
+>    GetItem(id)`, code `5010`.
 >
-> The handle is fine until the re-read happens. Carried through **eight**
-> consecutive `context.sync()` calls with no collection re-read in between, the
-> same handle still accepts a tag write. So the trigger is the collection read,
-> not the age of the handle or the number of syncs.
+> The same code on a slide that was already in the document works.
+>
+> ### What I checked, so you do not have to
+>
+> | slide the shapes are drawn on | re-read | tag |
+> | --- | --- | --- |
+> | already in the document | complete (8 of 8) | **OK** |
+> | added by `slides.add()` in an EARLIER run | **short, 2 of 3** | **5010** |
+> | added by `slides.add()` in the SAME run | — | the `shapes.add*()` call itself throws `GeneralException` |
+>
+> Three further controls:
+>
+> - **It is not the re-read.** Removing the `load`/`sync` entirely and tagging
+>   straight after the draw still throws 5010. The re-read is a second symptom,
+>   not the cause.
+> - **It is not the handle.** Re-fetching the shape by id with
+>   `slide.shapes.getItem(id)` and tagging THAT also throws 5010. So it is not
+>   a stale creation proxy — it is the slide.
+> - **It is not the session.** After five such slide adds, the same code on the
+>   document's own slide 0 still succeeds. Only the added slides are affected.
+>
+> Reproduced 3 of 3 on a freshly created presentation.
 >
 > ### Steps to reproduce
 >
 > ```js
+> // Run 1 — add a slide and remember where it landed.
+> let index;
 > await PowerPoint.run(async (context) => {
->   const slide = context.presentation.slides.getItemAt(0);
+>   const slides = context.presentation.slides;
+>   slides.add();
+>   await context.sync();
+>   slides.load("items/id");
+>   await context.sync();
+>   index = slides.items.length - 1;
+> });
 >
->   // 1. Create a shape and KEEP the handle.
->   const created = slide.shapes.addGeometricShape(PowerPoint.GeometricShapeType.rectangle);
->   created.left = 50; created.top = 50; created.width = 80; created.height = 60;
+> // Run 2 — a NEW context. Draw three shapes on that slide and tag one.
+> await PowerPoint.run(async (context) => {
+>   const slide = context.presentation.slides.getItemAt(index);
+>   const rect = PowerPoint.GeometricShapeType.rectangle;
+>   for (const left of [10, 60, 110]) {
+>     const s = slide.shapes.addGeometricShape(rect);
+>     s.left = left; s.top = 10; s.width = 40; s.height = 30;
+>   }
 >   await context.sync();
 >
->   // 2. Re-read the slide's shapes. Put at least three shapes on slide 1 first.
 >   slide.shapes.load("items/id");
 >   await context.sync();
->   console.log("re-read listed", slide.shapes.items.length, "shape(s)");  // 0 of 3
+>   console.log("listed", slide.shapes.items.length, "of 3");   // 2 of 3
 >
->   // 3. Use the handle from step 1. This throws.
->   created.tags.add("MYKEY", "value");
->   await context.sync();                                                  // 5010
+>   slide.shapes.items[0].tags.add("MYKEY", "value");
+>   await context.sync();                                        // 5010
 > });
 > ```
+>
+> Change `getItemAt(index)` to `getItemAt(0)` — the document's own first slide
+> — and both failures disappear.
 >
 > ### Useful logs
 >
@@ -137,18 +175,12 @@ passed to GetItem(id)`
 >
 > ### Context
 >
-> An add-in that draws a chart as native shapes has to write a config tag onto
-> what it drew. The natural implementation — create, then read back, then tag —
-> hits both failures at once: the read-back is short, so the fallback is to tag
-> through the creation handle, and that is exactly the handle the read-back has
-> just poisoned. Measured at **46 failures in one 38-item run**, leaving shapes
-> on the slide carrying no tag.
->
-> Possibly related: #6237 reports the same error and code on a tag read, but
-> attributes it to a date placeholder on the slide. If those are one bug, the
-> placeholder may be a second way to reach the same poisoned state.
-
----
+> An add-in that creates a slide and then draws on it cannot do so in more than
+> one batch, because everything it draws becomes untaggable and only partly
+> readable the moment a new `PowerPoint.run` begins. A chart of any size needs
+> several batches, so this affects every non-trivial insert onto a new slide.
+> Measured at 46 tagging failures in one 38-item run before the shape of the
+> bug was understood.
 
 ## DRAFT B — a held slide proxy throws only on a freshly added slide
 
@@ -253,7 +285,7 @@ labelled a product bug, and had Microsoft activity on 2026-08-31.
 
 ---
 
-## STOP — DRAFT A DID NOT REPRODUCE WHEN I RAN IT, 2026-09-06
+## RESOLVED — Draft A now reproduces, 3 of 3. The history is kept below.
 
 The checklist below says to paste each snippet into Script Lab once before
 filing, and that a snippet which does not reproduce "is a finding about the
@@ -288,12 +320,12 @@ and a repro that does not repro is worse than no issue: it spends the one
 credibility this project has upstream. Draft C, the comment on #6237, is
 unaffected and remains the cheapest thing on the list.
 
-**What would make Draft A filable:** a snippet that reaches the poisoned state
-from a cold start, with the slide's provenance stated. The probe does it 3 of 3,
-so the state is real and reachable; what is missing is the shortest path to it
-that does not depend on this add-in's own scratch-slide bookkeeping. That is an
-hour with a live host and a settled deck, and it was not available tonight — by
-the end of these three runs the host had stopped resolving slide adds at all.
+**RESOLVED THE SAME DAY.** A fresh two-slide deck (`Presentation73`) gave the
+settled host the hunt needed. The missing condition was the slide's PROVENANCE:
+it must have been added by `slides.add()` in an EARLIER `PowerPoint.run`. With
+that stated, the snippet reproduces both failures 3 of 3, and three controls
+narrow it further — it is not the re-read, not the handle, and not the session.
+Draft A above is rewritten around that and is filable as it stands.
 
 **Draft B was not run.** Its arm did fire incidentally — the same-run case above
 threw `GeneralException` exactly where Draft B predicts — but that was a
