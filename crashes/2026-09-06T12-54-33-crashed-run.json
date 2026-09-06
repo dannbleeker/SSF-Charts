@@ -1,0 +1,16 @@
+{
+  "kind": "ssf-charts-crash-log",
+  "build": "434b0e5 · 2026-09-06 10:51Z",
+  "host": "PowerPoint · OfficeOnline · 0.0.0.0",
+  "label": "demo deck",
+  "seq": 10,
+  "startedAt": "2026-09-06T12:30:32.629Z",
+  "dropped": 0,
+  "steps": [
+    "  5250s  host  gave up waiting  what=counting the deck's slides afterMs=90000 afterAnswering=counting the deck's style parts afterAnsweringMs=162 idleMs=5149796 shape=the host had already been quiet for 5149796ms before this call went out",
+    "  5250s  error  counting the deck's slides  error=PowerPoint did not respond while counting the deck's slides (90s) | at=counting the deck's slides",
+    "  5250s  pane  action failed  action=demo-insert ms=90041 error=PowerPoint did not respond while counting the deck's slides (90s) | at=counting the deck's slides stack=Error: PowerPoint did not respond while counting the deck's slides (90s) |     at https://ssf-chart.struktureretsundfornuft.dk/assets/taskpane-CgEdeghQ.js:28:21171"
+  ],
+  "frontedWhenRescued": "Presentation70.pptx",
+  "deckAskedNextRound": "Presentation70"
+}

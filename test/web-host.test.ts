@@ -496,6 +496,21 @@ describe("the everyday paths on a host that refuses stale proxies", () => {
       // the archive today.
       expect(["the ids were already loaded", "read the ids back"]).toContain(String(outcome!.data?.where));
       expect(Number(outcome!.data?.gotPartsList), "no parts list was produced").toBeGreaterThan(0);
+      /**
+       * AND IT MUST NAME THE SLIDE, added 2026-09-06.
+       *
+       * 640 of these events in the archive carry `the id read-back threw`, and
+       * 639 of those are code 5010 — the same `InvalidParam passed to
+       * GetItem(id)` a controlled experiment that day pinned to a slide's
+       * PROVENANCE: a shape drawn onto any slide the add-in introduced cannot
+       * be tagged from a later run, while the document's own slides are fine
+       * (same deck, seconds apart — slide 0 tags, slide 5 throws 5010).
+       *
+       * Whether those 639 ARE that defect is the question the archive could not
+       * answer, because this line never recorded which slide it happened on.
+       * One field closes it, and this pins the field so it cannot quietly go.
+       */
+      expect(String(outcome!.data?.slides), "the parts-list event does not say which slide").toContain(slideId!);
       // And it must be a WHOLE list — a tag naming fewer shapes than the chart
       // drew strands the unnamed ones on the next edit, which is worse than none.
       const fresh = deck.find((s) => s.id === slideId);

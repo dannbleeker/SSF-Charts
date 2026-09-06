@@ -11566,6 +11566,26 @@ function tracePartsOutcome(
   trace("draw", "parts list outcome", {
     where,
     charts: items.length,
+    /**
+     * WHICH SLIDE, because without it the archive cannot answer the question
+     * this event most needs answered.
+     *
+     * 640 of these carry `the id read-back threw`, and 639 of those are code
+     * 5010 — the same `InvalidParam passed to GetItem(id)` that a controlled
+     * experiment on 2026-09-06 pinned to a slide's PROVENANCE: a shape drawn
+     * onto any slide the add-in introduced cannot be tagged from a later run,
+     * however that slide arrived, while the document's own slides are fine
+     * (same deck, seconds apart: slide 0 tags, slide 5 throws).
+     *
+     * Whether these 639 ARE that defect is the obvious next question and the
+     * archive cannot answer it, because this line never recorded a slide. One
+     * field closes that. `slideKeyFor` is the same accessor `batch issued`
+     * uses, so the two are comparable — and it falls back to the `(visible)`
+     * sentinel rather than throwing, which is also the caveat: a first batch
+     * that has not yet been told its slide reports the sentinel, exactly as it
+     * does there.
+     */
+    slides: [...new Set(items.map((it) => slideKeyFor(it.opts, it.getSlide)))].join(","),
     // The three states a chart can be in, counted rather than inferred.
     groupedSoNotLoose: items.filter((_, i) => grouped.has(i)).length,
     noTagTarget: items.filter((_, i) => !grouped.has(i) && !tagTargets[i]).length,
