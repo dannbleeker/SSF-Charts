@@ -42,20 +42,27 @@ above 320 in early September.
 this table was first written; rounds 404-407 on Presentation64 are all 19 of 19,
 taking it to seven rounds and a 99.2% scenario pass rate.
 
-**And the two crashes that preceded them are the more interesting half.** Both
-landed on 16:9 within thirteen minutes (23:34 and 23:47 on 2026-09-05), which is
-two in about six attempts against that arm's 4.4% historical rate. They are not
-a regression — the gate calls none, and both died mid-draw on an in-place
-update, a shape the archive holds many of — but the ORDER is the thing: they
-came at the end of a browser session that had been open for five hours driving a
-39-slide deck and a seventeen-minute self-test, and the four clean rounds
-followed a `--fresh` restart. That is the aged-pane effect this archive already
-measures (the rounds gate prints "fresh pane 217/229 round(s) refused no group ·
-aged pane 12/19"), showing up as crashes rather than as refusals.
+**And the two crashes that preceded them are worth recording without a
+mechanism attached.** Both landed on 16:9 within thirteen minutes (23:34 and
+23:47 on 2026-09-05), two in about six attempts against that arm's 4.4%
+historical rate, both mid-draw on an in-place update. The gate calls no
+regression. They came at the end of a browser session open for five hours
+driving a 39-slide deck and a seventeen-minute self-test, and four clean rounds
+followed a `--fresh` restart.
 
-Read as health: the product is fine and the HARNESS wants a fresh browser more
-often than it asks for one. Read as a caveat: any run of clean rounds that
-follows a restart is measuring a fresh session as much as a fixed build.
+**The obvious story is that this is pane age, and this file already refutes it
+twice — which is why no mechanism is claimed here.** `sessionDepthWarning`'s own
+docstring rules the machine out with "`--fresh` rebuilds the browser every round
+and 8.6 GB of 15.7 GB was free at the bottom of the run", i.e. a run that used
+`--fresh` on EVERY round degraded anyway. And the rounds gate prints, next to
+the aged-pane split it does measure, "--fresh disagreed with the pane in 119 of
+them — the flag is not the variable". So a restart is not a freshening, and the
+degradation this driver rests for is not something a new browser cures.
+
+What stands is the ordering and nothing more: crashes late in a long session,
+clean rounds after a restart, n=6. The honest caveat is the same either way —
+any run of clean rounds that follows a restart is measuring the state of a
+session as much as the state of a build.
 
 The pooled "4:3 crashes 36.1% of attempts" the rounds gate prints is a
 whole-history figure and should not be quoted as current: it is dominated by the
