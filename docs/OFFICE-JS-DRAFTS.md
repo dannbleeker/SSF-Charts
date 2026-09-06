@@ -74,7 +74,7 @@ Script Lab and watch it fail, without any part of this add-in.
 
 ---
 
-## DRAFT A — a slide added by an add-in is unusable in every later run
+## DRAFT A — a shape drawn on an add-in-introduced slide cannot be tagged
 
 **REWRITTEN 2026-09-06 after the first version failed to reproduce.** The
 original blamed a collection re-read for poisoning the context. Run against a
@@ -82,9 +82,9 @@ live host it did not reproduce at all on an ordinary slide, and a control
 showed the re-read is not the trigger. What follows is what actually happens,
 measured 3 of 3 on a fresh two-slide deck with a control on each claim.
 
-**Title:** A slide added via `slides.add()` is permanently unusable from any
-later `PowerPoint.run`: shapes drawn on it cannot be tagged (`InvalidParam
-passed to GetItem(id)`, 5010) and its shape collection reads short
+**Title:** A shape drawn onto an add-in-introduced slide cannot be tagged from
+a later `PowerPoint.run` — `InvalidParam passed to GetItem(id)`, 5010 — however
+that slide arrived
 
 > ### Your Environment
 > - Platform: Office on the web
@@ -111,11 +111,23 @@ passed to GetItem(id)`, 5010) and its shape collection reads short
 >
 > ### What I checked, so you do not have to
 >
-> | slide the shapes are drawn on | re-read | tag |
-> | --- | --- | --- |
-> | already in the document | complete (8 of 8) | **OK** |
-> | added by `slides.add()` in an EARLIER run | **short, 2 of 3** | **5010** |
-> | added by `slides.add()` in the SAME run | — | the `shapes.add*()` call itself throws `GeneralException` |
+> | slide the shapes are drawn on | tag |
+> | --- | --- | 
+> | already in the document when the add-in started | **OK** |
+> | added by `slides.add()` in an EARLIER run | **5010** |
+> | inserted by `insertSlidesFromBase64()` | **5010** |
+> | added by `slides.add()` in the SAME run | the `shapes.add*()` call itself throws `GeneralException` |
+>
+> The last two rows are the point: it does not matter HOW the slide arrived.
+> A slide inserted from a generated .pptx fails exactly like one from
+> `slides.add()`. Only slides the document already had are unaffected.
+>
+> The clearest single reading is two runs on ONE deck, seconds apart, same code:
+>
+> ```
+> slide 0  (the document's own first slide)  ->  tag OK
+> slide 5  (inserted from a generated file)  ->  tag 5010
+> ```
 >
 > Three further controls:
 >
@@ -125,10 +137,18 @@ passed to GetItem(id)`, 5010) and its shape collection reads short
 > - **It is not the handle.** Re-fetching the shape by id with
 >   `slide.shapes.getItem(id)` and tagging THAT also throws 5010. So it is not
 >   a stale creation proxy — it is the slide.
-> - **It is not the session.** After five such slide adds, the same code on the
->   document's own slide 0 still succeeds. Only the added slides are affected.
+> - **It is not the session, and it is not the document.** On the very same deck
+>   and in the same minute, slide 0 tags fine while slide 5 throws. After five
+>   slide adds, slide 0 still succeeds.
+> - **The tag failure is the reliable symptom.** The short collection read
+>   accompanies it sometimes (2 of 3 on one run, complete on another), so treat
+>   the 5010 as the bug and the short read as a second, intermittent one.
+> - **Existing tags stay readable.** A deck reopened the next day still returned
+>   33 tagged shapes across 32 slides with their values intact. This is about
+>   WRITING a tag to a newly drawn shape, not about the slide being unreadable.
 >
-> Reproduced 3 of 3 on a freshly created presentation.
+> Reproduced 3 of 3 on a freshly created presentation, and again on a second,
+> heavily-used one.
 >
 > ### Steps to reproduce
 >
