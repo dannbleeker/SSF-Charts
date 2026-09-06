@@ -231,16 +231,74 @@ The driver now names it `addin-missing` and **stops on the first attempt**,
 because retrying is what the previous behaviour did seven times for nothing. It
 is deliberately outside `RECOVERABLE_STOPS`.
 
-Putting it back is a person's job: **Add-ins ▸ Upload My Add-in ▸ Browse** and
-the repo's manifest. Nothing in this driver will do it, and nothing should try
-unattended — the flow ends in a modal that a failed attempt would leave sitting
-over the document for the rest of the night.
+**"Putting it back is a person's job" stood here and is no longer true.** It
+said nothing in this driver would do it and nothing should try unattended,
+because the flow ends in a modal a failed attempt would leave over the document
+all night. `sideloadAddIn` now walks **Add-ins ▸ Upload My Add-in ▸ Browse**
+with the repo's manifest, and its `giveUp` path always dismisses the dialog —
+`Cancel` then `Close`, on every exit, precisely so a half-walked flow cannot be
+left sitting there. It fired unattended on 2026-09-06 and round 414 followed it.
+
+Three guards keep it from being expensive: one attempt per process, a readable
+slide list before it may fire at all, and a ribbon wide enough to judge by. Doing
+it by hand is still the fallback when those refuse.
 
 **The check requires a readable slide list before it fires.** A tab that is
 merely mid-reload answers nothing to every read, so its ribbon looks exactly as
 bare as a document with no add-in — and since this refusal is not retried,
 firing it on a loading tab would end a night on a state that clears itself in
 twenty seconds.
+
+### And the browser that dies may not actually be gone
+
+**Twice on 2026-09-06 a cycle went nowhere while a perfectly good Chrome sat on
+the profile.** What was OBSERVED, and what is inferred, kept apart because the
+inference has already been wrong once here:
+
+    observed   `list` answered (no browsers) while Chrome processes were
+               running on C:/devtools/pw-profile, and `open` refused with
+               "Browser is already in use". Ending those processes made
+               `open` succeed immediately. Three times.
+    inferred   the CLI daemon that owned them had gone, so the browser
+               answered to nobody. Plausible and not proven — a later count
+               of daemon processes was unreliable, and no OS log names one.
+
+Either way it is a third state the driver had no name for:
+
+    a browser this session can drive   `list` names it
+    no browser at all                  `list` says (no browsers)
+    an orphan                          `list` says (no browsers) — and the
+                                       profile directory is still locked
+
+In the third state every read fails, so readiness reports `browser-gone` — "the
+process died, taking the tab with it" — which is false. `recover`'s existing
+guard closes a browser the daemon knows about; it skips, because the daemon
+knows of none. `open` then refuses:
+
+    Browser is already in use for C:/devtools/pw-profile, use --isolated
+
+`--isolated` is no remedy: a fresh profile has no sign-in, and the sign-in is
+the one thing this loop cannot recreate. That refusal used to go nowhere at all
+— a non-zero CLI call returns an empty string and its stderr was discarded — so
+recovery walked on and blamed the file list, every attempt, until `--retry` ran
+out. Thirteen Chrome processes, no daemon, a cycle of wasted attempts, twice.
+
+**The driver now ends the orphan and opens again.** It matches on
+`--user-data-dir`, never on the process name — the operator's own Chrome is also
+`chrome.exe` — and it can only be reached from a refusal that names this exact
+condition. Ending a browser it launched, on its own profile, is the same
+authority `--fresh` already uses every leg.
+
+**If you are watching by hand and it says `browser-gone` repeatedly**, check for
+Chrome on the profile before believing it:
+
+    Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" |
+      Where-Object { $_.CommandLine -like '*pw-profile*' }
+
+**Nothing here explains WHY it happens.** Both losses on 2026-09-06 came
+mid-round — one at 746s — and left no entry in the Windows Application log. The
+driver handles the consequence; the cause is open, and the mechanism above is
+labelled as inference for that reason.
 
 ## Do not push while a cycle is running
 

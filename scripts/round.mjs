@@ -1095,11 +1095,15 @@ export function cli(run, dir, entry = cliEntry(), ensure = ensureSessionDir) {
      *     Browser is already in use for C:/devtools/pw-profile
      *
      * and the driver reported `browser-gone` — "the process died" — then
-     * "the file list shows no `Presentation64` to open". Both false. A
-     * playwright daemon had died leaving its Chrome alive on the profile, so
-     * `list` saw no browser while the profile was very much held. Every
-     * attempt reopened nothing and blamed the file list, and the cycle only
-     * moved once the orphaned Chrome was ended by hand.
+     * "the file list shows no `Presentation64` to open". Both false: `list`
+     * saw no browser while the profile was very much held, so every attempt
+     * reopened nothing and blamed the file list, and the cycle only moved once
+     * the Chrome holding the profile was ended by hand.
+     *
+     * WHY the browser stops answering while still running is NOT established —
+     * a dead CLI daemon is the obvious guess and it is only a guess. This
+     * field is about the sentence the tool printed, which is a fact whatever
+     * the mechanism turns out to be.
      *
      * Kept only for the failing call, and only as text for a human to read.
      * Nothing branches on stdout being empty because of it.
@@ -1641,13 +1645,18 @@ export function noBrowser(listOutput) {
 }
 
 /**
- * Did `open` refuse because something outside the daemon holds the profile?
+ * Did `open` refuse because something this session cannot reach holds the
+ * profile?
  *
  * The third state between "a browser this session can drive" and "no browser
- * at all": Chrome still running after the playwright daemon that launched it
- * died. `list` reports `(no browsers)` — truthfully, the daemon knows of none
- * — while the profile directory is locked by a process nothing here can
- * address. `noBrowser` cannot see it and `close-all` cannot end it.
+ * at all": Chrome still running, `list` reporting `(no browsers)`, and the
+ * profile directory locked by a process nothing here can address. `noBrowser`
+ * cannot see it and `close-all` cannot end it.
+ *
+ * NAMED FOR THE SYMPTOM, not the cause. "The daemon died" is the obvious
+ * explanation and stays an inference — it has not been caught happening, and a
+ * function named after an unproven mechanism is a claim every caller then
+ * repeats.
  *
  * Matched on the profile phrase rather than the `--isolated` advice beside it,
  * because isolated is not a remedy here and a message that changes its
@@ -1671,6 +1680,14 @@ export function profileHeldByOrphan(stderr) {
  * separates this driver's browser from the operator's own Chrome. Both are
  * `chrome.exe`; matching the NAME would close the window someone is reading
  * this in.
+ *
+ * AND THE SPAWN ITSELF WAS CHECKED, not assumed. This file already carries a
+ * long note about AppLocker closing every route through a shell — the
+ * `playwright-cli` shim is blocked with "This program is blocked by group
+ * policy" — so a new helper that shells out is exactly the kind of thing that
+ * would be written, merged, and then quietly return false forever. Run against
+ * a profile path matching nothing on the owner's machine on 2026-09-06 it
+ * spawned and returned in 648ms, killing nothing.
  */
 export function endOrphanCommand(profile, platform = process.platform) {
   if (platform === "win32")
@@ -3171,8 +3188,16 @@ export async function recover(sh, sleep, profile = PROFILE_DIR) {
     // — `--fresh` does it every leg — so ending one it launched, on its own
     // profile, only after `open` has refused for exactly this reason, is the
     // same authority rather than a new one.
+    //
+    // AND IT COSTS NOTHING THAT WAS NOT ALREADY LOST. The obvious objection is
+    // that a browser death takes the sideload with it, so killing one throws
+    // away a working add-in. It does not: this branch is only reached when
+    // `list` reports no browser AND `open` refuses the profile, which together
+    // mean nothing here can issue a single call against that Chrome. The
+    // sideload inside it is unreachable whether or not the process keeps
+    // running. What is thrown away is a process, not a capability.
     if (profileHeldByOrphan(sh.state?.lastStderr)) {
-      console.log(`  a browser holds ${profile} and answers to no daemon — ending it, then opening again`);
+      console.log(`  a browser holds ${profile} but answers nothing — ending it, then opening again`);
       if (endOrphanedBrowser(profile)) {
         await sleep(3000);
         sh(
