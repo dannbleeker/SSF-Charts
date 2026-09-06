@@ -60,7 +60,8 @@ a task.
 ## 0. Product health, measured 2026-09-06
 
 The one summary worth reading first, split on whether a build contains the
-two-master fix (`6dfaa4b`, 2026-09-04):
+two-master fix (`6dfaa4b`, 2026-09-04). **As of round 413** — the post-fix rows
+grow with every round, so they are anchored rather than left to rot:
 
     era / arm        rounds   all-green   scenario pass rate
     PRE-fix  16:9       250         194                96.9%
@@ -69,6 +70,22 @@ two-master fix (`6dfaa4b`, 2026-09-04):
     post-fix 4:3         28          24                97.1%
 
     crash records:  94 on PRE-fix builds,  3 on post-fix,  97 total
+                    ^ NOT RE-DERIVABLE — see below
+
+The crash line resisted three attempts to reproduce it on 2026-09-06 and none
+of them landed on 97: counting `.md` reports by filename date gives 108 / 0,
+counting every file in `crashes/` gives 202 / 4, and pairing them gives 103.
+The reason is that the directory holds TWO capture mechanisms — a written
+report and a downloaded run — which arrive at different moments and did not
+both exist for the whole period, so "a crash record" is not one thing. Left
+exactly as it was rather than replaced with whichever number looked best.
+Whoever fixes it should say what a record IS beside the count.
+
+(An earlier draft of this paragraph added "`crashes/` is gitignored, so this can
+only be checked on the machine that runs rounds", which is wrong and worth
+correcting rather than deleting: only `crashes/*.md` is ignored. The 98
+`-crashed-run.json` files are committed, and are the half a stranger can check.
+See that directory's README.)
 
 Re-derived 2026-09-06 evening: the 4:3 row read `26 / 22 / 96.8%` and rounds
 412 and 413 had landed since. The other three rows reproduced to the digit,
@@ -77,12 +94,61 @@ That is the FIFTH stale number in three days — `test/backlog-open-count.test.t
 now guards the one of them that recurred twice, and this row is the argument for
 widening it.
 
-**All-green rounds at 4:3 went from 28 of 48 to 24 of 28** — 58% to 86% — and
+**AND THE PRE-FIX ARM IS MEASURED ON A POOL ITS OWN FAILURES WERE REMOVED
+FROM.** A round whose host crashed before it could be filed is not in `rounds/`
+at all. `rounds-salvaged/` holds 69 of them — every one PRE-fix, because
+post-fix barely crashes — and putting them back moves one arm a long way:
+
+    PRE 4:3    archived   28 / 48   58.3%      + salvaged   57 / 81   70.4%
+    PRE 16:9   archived  194 / 250  77.6%      + salvaged  199 / 257  77.4%
+
+So the 4:3 improvement below is **70% to 86%, not 58% to 86%**, on the more
+generous reading. NEITHER POOL IS CLEAN and the honest answer is the range: a
+salvage exists only when the host died in `collectDeckEvidence`, i.e. after
+every verdict was already in, so salvages are selected for having COMPLETED and
+score 85.5% all-green — better than either archived PRE arm. Rounds that
+crashed mid-scenario are in neither pool and are presumably the worst of all.
+The true PRE 4:3 rate is somewhere between 58% and 70%, and nothing here can
+narrow it further.
+
+The post-fix arm needs no such adjustment: there are zero post-fix salvages,
+which is itself a consequence of the fix rather than a choice about pooling.
+
+**All-green rounds at 4:3 went from 28 of 48 to 24 of 28** — 58% to 86% on the
+archive alone, 70% to 86% with the salvages folded in — and
 the crash archive is the blunter number: ninety-four records on pre-fix builds
-against two on post-fix. The rate ratchet has come down with it and nobody
+against two on post-fix — which says "two" where the table above says "three",
+and neither could be re-derived; see the flag on the crash line. The direction
+is not in doubt and the count is. The rate ratchet has come down with it and nobody
 edited it: `a big chart on a slide of its own` reads 224.5 deaths per 1000
 against a ceiling of 460, `stop a run mid-draw` 140.4 against 330. Both were
 above 320 in early September.
+
+**A CHART-LEVEL NUMBER, pooled for the first time on 2026-09-06, and NARROWER
+THAN IT LOOKS.** `insert on top of an earlier run` reports "N of 4 charts
+re-editable" every round, and nobody had added them up. Across 386 rounds:
+
+    era     rounds   charts re-editable        lost
+    PRE        347    1,379 of 1,388  99.35%      9
+    post        39      156 of   156 100.00%      0
+
+**Nine losses in 1,535, every one pre-fix.** It is not "did the round pass" but
+"of the charts placed, how many were still charts the add-in could edit".
+
+WHAT IT IS NOT, checked rather than assumed. The first draft of this paragraph
+said "every scenario that draws charts", which is false: exactly ONE scenario
+prints that phrase, and 1,388 / 4 = 347 rounds confirms it arithmetically. That
+scenario goes through `insertSlidesFromPptx`, so these charts arrived as
+generated slides with their tags PRE-BAKED and were only read back. **This says
+nothing about the tag-WRITE path** — the one Draft A is about. It is a real
+reliability number for one real route, not a headline for the product.
+
+READ THE 100% WITH ITS SAMPLE. Zero failures in 156 is consistent with a true
+rate as bad as ~1.9%: "no loss observed since the fix", not "loss cannot
+happen". Re-editable also means the tag read back IN THE SAME SESSION, which
+§0a is the only measurement on the other side of. A scan that could not see the
+deck is skipped rather than counted as a loss, so a blind host cannot inflate
+it.
 
 **THE THIN ARM WAS FILLED THE SAME NIGHT.** Post-fix 16:9 was three rounds when
 this table was first written. Rounds 404-407 on Presentation64 are all 19 of 19,
@@ -2500,7 +2566,12 @@ drawn.
 
 So the sentinel hides nothing: **there is no second arm.** Every scenario adds
 a slide and draws on it, because the sweep afterwards has to leave the deck as
-it found it. That is a reasonable design and it has a consequence nobody had
+it found it. The code says the same thing as the data, which is what makes this
+a fact about the harness rather than a quirk of one archive: the two scenarios
+that draw without naming a slide — `insert onto a slide that already has
+content` and `edit a chart on the visible slide` — both reach their slide by
+`probeCharts` first, and the probe chart is on a slide the add-in added earlier
+in the same round. "Already has content" means content THIS ROUND put there. That is a reasonable design and it has a consequence nobody had
 written down: the round loop validates *"add a slide, draw on it"* and says
 almost nothing about *"draw on the slide I already had"* — which is what a user
 does.
@@ -2522,9 +2593,107 @@ been corrected rather than left to be quoted later.
 **Item 0a is the only measurement on the other side of this line**, and it is
 one document.
 
-NOT WRITTEN UP AS A TASK, because "add a scenario that draws on a pre-existing
-slide" changes what the archive means, and the sweep such a scenario would have
-to skip is the reason the archive is clean. That is the owner's call.
+**THE FIRST VERSION OF THIS PARAGRAPH GAVE A BLOCKER THAT DOES NOT EXIST.** It
+said such a scenario would have to skip the sweep, and the sweep is why the
+archive is clean. That is wrong: the sweep removes ADDED SLIDES, and a scenario
+drawing on the document's own slide would clean up after itself with
+`deleteShapesById` — the primitive the wreckage sweep already uses on exactly
+this path. The deck would end as it started.
+
+So it is feasible, and cheap:
+
+    read slide 0's shape ids, draw a chart on it, assert it drew and is
+    re-editable, then `deleteShapesById` on the ids that appeared.
+
+`slideShapeList` gives the before-and-after lists, so the ids to remove are a
+set difference rather than something the draw has to be trusted to report.
+
+**AND THE CLEAN-UP IS NOT OPTIONAL.** `sweepDeck` deletes SLIDES down to one; it
+never touches the shapes on the survivor. A scenario that drew on slide 0 and
+left them there would hand every later round a deck that starts dirty, and
+`deck-dirty` is a refusal — so the scenario would poison the arm it was added
+to measure.
+
+WHAT IS ACTUALLY THE OWNER'S CALL is narrower: a twentieth scenario changes the
+verdict set, so every cross-build comparison gains a column and the all-green
+rate is no longer measuring the same thing either side of it. This file has
+gone 14 -> 16 -> 18 -> 19 before, so it is a normal decision rather than a
+forbidden one.
+
+**AND THE OBVIOUS ALTERNATIVE IS CLOSED**, so nobody spends an hour on it. A
+probe looks like the cheaper home — probes run every round and do not touch the
+verdict set — but `host-probe.ts` opens with "Nothing here touches the user's
+deck. Every probe works on one scratch slide... A probe that would damage a real
+slide does not belong here." Drawing on slide 0 is exactly what that rule
+forbids. Experiments are out for the same reason. It is the scenario route or
+nothing.
+
+**Recommendation: do it.** Inserting a chart onto a slide the user already had
+is the single most common thing this add-in exists to do, it is exercised once
+in ~9,600 draws, and it is the arm that would let the archive speak to the 5010
+question at all.
+
+### The two-master fix improved OUTCOMES without reducing friction — 2026-09-06
+
+§0 shows all-green 4:3 rounds going from 58% to 86% and crashes collapsing. The
+natural next sentence is "so the host is refusing less". It is not.
+
+`friction` is recorded per scenario in every round since 205. Per scenario:
+
+    era    rounds  scenarios   errors  idRefusals  generalExceptions  repaired
+    PRE       172       2479     0.24        0.07               0.08      0.36
+    post       38        697     0.25        0.08               0.05      0.56
+
+Flat, or up. **The product absorbs the same amount of host misbehaviour and now
+survives it** — which is a better thing to have learnt than "the host improved",
+and it says where the remaining risk lives: not in fewer refusals, but in the
+repair path carrying more (0.36 to 0.56 repairs per scenario).
+
+**IGNORE THE `generalExceptions` COLUMN.** It is the one that fell, and it falls
+for a reason that is not the product: `selftest.ts` already records that
+`explode a degraded picture` throws EXACTLY ONE general exception in every round
+— "a constant, not a signal". One constant over a scenario list that grew from
+14 to 19 is 1/16 = 0.063 then and 1/19 = 0.053 now, which is the whole of the
+0.08 -> 0.05 move. A third denominator trap in the same three-line table.
+
+THE FIRST TWO READINGS OF THIS WERE BOTH WRONG, and the way they were wrong is
+the reusable part. Per round over the whole archive, `idRefusals` appeared to
+fall 3.6 to 1.5 — a 58% improvement, and an artifact: the field did not exist
+before round 205, so 180 rounds counted as zero and deflated the PRE average.
+Restricted to rounds that carried it, the same number appeared to RISE, 1.1 to
+1.5 — also an artifact, because scenarios were added over time and a round is
+not a fixed amount of work. Only per SCENARIO is a like-for-like unit. Two
+opposite conclusions from one dataset before the denominator was right.
+
+### 231 of 263 rounds needed a repair before they could start — 2026-09-06
+
+`driverRun.recovered` has been recorded since round ~150 and had never been
+totalled. Of the 263 rounds carrying the field, **231 needed at least one
+recovery** before the driver would call the setup ready:
+
+    not-ready:pane-closed                            109
+    crashed                                           71
+    not-ready:pane-stale                              51
+    not-ready:deck-dirty+pane-closed                  35
+    not-ready:host-silent+pane-stale                  27
+    not-ready:deck-missing+host-silent+pane-stale     12
+    not-ready:browser-gone                         8 + 8
+
+Attempts per round say the same thing more sharply — **32 of 263 rounds started
+on the first try**:
+
+    attempts   1    2    3   4   5   6   7
+    rounds    32  163   49   9   5   1   4
+
+READ IT AS THE LOOP WORKING, not as the host being sick. The pane closes
+between rounds as a matter of course, and repairing that is what `recover` is
+for. What the number changes is how a clean round should be read: **88% of the
+archive is a measurement of a session the driver had just repaired**, which is
+the same caveat §0 already states for restarts, now with a denominator.
+
+It also says tonight's browser trouble is not new — `browser-gone` is in the
+archive sixteen times. What was new on 2026-09-06 is that the profile stayed
+locked afterwards, which the driver could not see and now can.
 
 ### The probe has been blind on GROUPS for the whole archive — found 2026-08-16
 
