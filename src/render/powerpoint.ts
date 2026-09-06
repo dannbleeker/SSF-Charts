@@ -11439,13 +11439,43 @@ function tracePartsOutcome(
      * however that slide arrived, while the document's own slides are fine
      * (same deck, seconds apart: slide 0 tags, slide 5 throws).
      *
-     * Whether these 639 ARE that defect is the obvious next question and the
-     * archive cannot answer it, because this line never recorded a slide. One
-     * field closes that. `slideKeyFor` is the same accessor `batch issued`
-     * uses, so the two are comparable — and it falls back to the `(visible)`
-     * sentinel rather than throwing, which is also the caveat: a first batch
-     * that has not yet been told its slide reports the sentinel, exactly as it
-     * does there.
+     * "ONE FIELD CLOSES THAT" STOOD HERE AND IS FALSE, measured the same day
+     * it was written. The field is still right to record; what it cannot do is
+     * settle the question, and the reason is the harness rather than the field.
+     *
+     * The archive already carried the slide id all along, inside
+     * `debugInfo.fullStatements` (`slides.getItem("262#1236456497")`). Joined
+     * against each round's own `deck.newSlides`, **1,361 of 1,369 5010-bearing
+     * events sit on a slide the add-in had added that round, and none on a
+     * slide the document already had**. That reads as confirmation and is not,
+     * because of the denominator beside it: of ~9,600 `batch issued` events in
+     * 385 rounds, **the add-in drew on a slide it had not itself added TWICE**
+     * — 8,221 named an added slide, 883 reported the sentinel, and 863 of
+     * those 883 are recoverable from the next batch of the same draw, also
+     * added. The sentinel hides no second arm; there is no second arm.
+     *
+     * So every 5010 here is on an added slide because there is almost nothing
+     * else in this pool to draw on. The controlled experiment stays the only
+     * evidence that separates a slide's PROVENANCE from the created-proxy
+     * rewrite this file blames a few hundred lines up: in the archive those
+     * two are never apart. Scoring the claim on this pool would be the same
+     * error as a number checked against its own fitting data.
+     *
+     * WHAT WOULD ACTUALLY ANSWER IT is a scenario that draws onto a slide the
+     * document already had. There is not one — which is a coverage fact worth
+     * more than this field is. Re-derive any of it with
+     * `node scripts/slide-provenance.mjs`.
+     *
+     * `slideKeyFor` is the same accessor `batch issued` uses, so the two are
+     * comparable — and it falls back to the `(visible)` sentinel rather than
+     * throwing, which is also the caveat: a first batch that has not yet been
+     * told its slide reports the sentinel, exactly as it does there.
+     *
+     * AND IT IS EMPTY WHEN `items` IS, which round 414 — the first round to
+     * carry the field — put at 12 of 32 events. An empty join is not a slide
+     * nobody could name; it is an outcome traced for no charts at all. Read
+     * `""` as "not applicable" and `(visible)` as "not answered yet", because
+     * conflating those two is how a denominator goes wrong.
      */
     slides: [...new Set(items.map((it) => slideKeyFor(it.opts, it.getSlide)))].join(","),
     // The three states a chart can be in, counted rather than inferred.
