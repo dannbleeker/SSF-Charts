@@ -4564,6 +4564,31 @@ export async function insertAgendaSlides(scenes: Scene[]): Promise<void> {
  * spread between four geometries at 1.27x per shape, not orders of magnitude.
  * That is the one part of this raise resting on inference rather than a round.
  *
+ * WHAT IT ACTUALLY CHANGES FOR A USER, tabulated rather than asserted — shapes
+ * per kind at three frames, with the newly-admitted ones marked:
+ *
+ *     kind        320x220   480x300   640x400
+ *     waffle          103*      103*      103*     (a 10x10 grid: flat)
+ *     sunburst         96*      101*      111
+ *     violin           67        79        94*
+ *     tilemap         111       122       122      still gated
+ *     area             84       111       150      still gated above 320pt
+ *
+ * At the DEFAULT 480x300 the raise turns waffle and sunburst from a picture
+ * into native, re-editable shapes; violin joins them at 640x400. Tile map and
+ * area stay gated, which is the point.
+ *
+ * AND EVERY KIND THE RAISE ADMITS IS AT OR BELOW THE 103 THAT WAS MEASURED —
+ * 94, 96, 101, 103. The window is (90, 105] but nothing this renderer produces
+ * lands in 104-105, so the raise never admits a chart denser than the one with
+ * 35 completed draws behind it. That is the strongest thing that can be said
+ * for it, and it is why 105 rather than a rounder number.
+ *
+ * IT CHANGES NOTHING ON THE DEMO PATH. Checked rather than assumed: no item in
+ * `demoItems()` exceeds 90 shapes at its own frame, so the demo deck was never
+ * gated and is not un-gated now. The gate fires on the USER's insert, which is
+ * what the table above is about.
+ *
  * AND THE UNIT IS RIGHT EVEN THOUGH THE NUMBER WAS NOT. Microsoft's resource
  * limits "apply to add-ins running in Office clients on Windows and Mac, but
  * not on mobile apps or in a browser", and `untrack()` — its named remedy for
