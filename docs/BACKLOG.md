@@ -26,8 +26,8 @@ two-master fix (`6dfaa4b`, 2026-09-04):
     era / arm        rounds   all-green   scenario pass rate
     PRE-fix  16:9       250         194                96.9%
     PRE-fix  4:3         48          28                94.3%
-    post-fix 16:9         7           6                99.2%
-    post-fix 4:3         24          20                96.6%
+    post-fix 16:9         9           8                99.4%
+    post-fix 4:3         26          22                96.8%
 
     crash records:  94 on PRE-fix builds,  3 on post-fix,  97 total
 
@@ -39,8 +39,16 @@ against a ceiling of 460, `stop a run mid-draw` 140.4 against 330. Both were
 above 320 in early September.
 
 **THE THIN ARM WAS FILLED THE SAME NIGHT.** Post-fix 16:9 was three rounds when
-this table was first written; rounds 404-407 on Presentation64 are all 19 of 19,
-taking it to seven rounds and a 99.2% scenario pass rate.
+this table was first written. Rounds 404-407 on Presentation64 are all 19 of 19,
+and 408-411 then alternated the two decks — 4:3, 16:9, 4:3, 16:9 — and are also
+all 19 of 19. Eight consecutive clean rounds across both arms, taking 16:9 to
+nine rounds at 99.4%.
+
+That alternation interleaves the arms in TIME; it does not cross the confound
+the rounds gate names. Presentation70 is the 4:3 deck and Presentation64 the
+16:9 one, so deck and aspect ratio still move together, exactly as
+"cyclePlan has never crossed them" says. Only round 373 has ever crossed it, by
+holding Presentation70 at 960pt on purpose.
 
 **And the two crashes that preceded them are worth recording without a
 mechanism attached.** Both landed on 16:9 within thirteen minutes (23:34 and
