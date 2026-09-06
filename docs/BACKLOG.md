@@ -97,9 +97,11 @@ about the shape budget:**
 > the list is what to trust.
 
     3  whether a crowded slide should get a picture instead of native shapes
-       — decided and shipped; the remainder (re-express the 90-shape budget as
-       a time estimate) is ON HOLD as of 2026-09-05, blocked on a measurement
-       rather than a decision. See "the cost model is in the wrong unit too"
+       — decided and shipped. The remainder (re-express the 90-shape budget as
+       a time estimate) is ANSWERED NO as of 2026-09-06: the 90 is a CRASH
+       gate and time is not what crashes it. What is left is a smaller owner
+       decision — whether to raise 90 to ~105, which would make waffle charts
+       native. See "RESEARCHED 2026-09-06"
     5  filing this project's host measurements to the office-js tracker
        — drafts written 2026-09-05 (docs/OFFICE-JS-DRAFTS.md), nothing filed;
        submission is the owner's identity and his alone
@@ -135,7 +137,55 @@ prices a cost that varies 4-5x with whose slide it is — round 374 measured
 already disagrees with the shape threshold. Re-express the gate as a TIME
 estimate. Do not raise the number on current evidence.
 
-**MEASURED 2026-09-05, AND THE RE-EXPRESSION IS ON HOLD: the replacement model
+**RESEARCHED 2026-09-06, AND THE ANSWER IS NO: DO NOT BUILD THE TIME GATE.**
+The remaining task asked to re-express the 90-shape budget as a time estimate.
+Four things kill it, and the first is the one that matters.
+
+**1. The 90 is a CRASH gate, and time is not what crashes it.** Its own
+docstring (`powerpoint.ts:4530`) gives two purposes: a chart above it "will not
+finish inside the batch timeout" — time — and it "loads the host toward the 'we
+ran into a problem' crash". `wantsAutoPicture` is blunter: on the web "nothing
+throttles an add-in that asks too much: the tab dies." A time threshold
+addresses the first purpose and is silent on the second. Re-expressing a crash
+gate in seconds is a category error, not a unit fix.
+
+**2. The crash rationale is FALSIFIED up to 103 shapes.** The archive has drawn
+charts above the budget 104 times. Split on the two-master fix:
+
+    era     rounds   103-shape draws   a big chart on a slide of its own
+    PRE        352                35                  2 ok / 10 failed
+    post        35                69                 34 ok /  1 failed
+
+Same chart, same shape count, opposite outcome. What changed was the SLIDE ADD
+(`6dfaa4b`), not the density. Of the post-fix draws, 35 queued every shape they
+meant to; the 34 that stopped short are `stop a run mid-draw` doing exactly what
+its name says. Density was never the killer here — a documented API misuse was.
+
+**3. The replacement model is worse than the thing it replaces**, which is the
+measurement immediately below: never validated out of sample, and scored on the
+103 rounds it was not fitted to it reads +99 / +24 / +23 / -61%, non-monotonic.
+
+**4. There is no external number to converge on.** Microsoft's resource-limits
+page says the CPU and memory thresholds "apply to add-ins running in Office
+clients on Windows and Mac, but not on mobile apps or in a browser" — so this
+repo's claim is verified, and the web host gives no warning before it dies. No
+maximum shapes per slide is published anywhere. And there is no prior art to
+copy: think-cell is a desktop COM add-in and never meets this constraint.
+
+WHAT THIS LEAVES is a smaller and better question than the item asked: **the 90
+is now known to be CONSERVATIVE.** A user inserting a 103-shape chart gets a
+picture today, and the archive says that chart draws. Raising the number to ~105
+would make waffle charts native and re-editable. That changes what a user
+RECEIVES, so it is the owner's call; the evidence for it is 35 completed draws
+of one chart on two decks — narrow but real.
+
+WHAT WOULD CHANGE THE PICTURE: drawing a 176-shape area chart or a 253-shape
+violin on a host. Neither has ever been attempted. The gate exists for those and
+they are entirely unmeasured, which is the honest reason not to raise it far.
+
+**The measurement that got here, kept below.**
+
+**MEASURED 2026-09-05: the replacement model
 is in the wrong unit too.** 4,137 timed batches across 360 rounds, every one on
 a build containing the `onSlide` retag (`ee1741e`), so all readings share a
 definition.
