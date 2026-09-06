@@ -183,6 +183,54 @@ WHAT WOULD CHANGE THE PICTURE: drawing a 176-shape area chart or a 253-shape
 violin on a host. Neither has ever been attempted. The gate exists for those and
 they are entirely unmeasured, which is the honest reason not to raise it far.
 
+**DEEPER WEB RESEARCH, 2026-09-06 — it strengthens the answer rather than
+complicating it.** Four things, and the third is new to this file.
+
+**a. The platform statement is verbatim.** Microsoft's resource-limits page:
+"The following runtime resource limits apply to add-ins running in Office
+clients on Windows and Mac, but not on mobile apps or in a browser." The desktop
+limits it lists are specific — 90% CPU sampled three times in five seconds, a
+dynamic memory threshold, a **crash tolerance of four crashes per document
+session**, and a five-second unresponsiveness threshold that restarts the
+add-in. On the web an add-in gets none of it: no warning, no restart, no budget.
+The tab is the only thing that fails.
+
+**b. Microsoft DOES publish a web payload ceiling — for Excel, not PowerPoint.**
+"Excel on the web has a payload size limit for requests and responses of 5MB.
+RichAPI.Error will be thrown if that limit is exceeded", plus 5,000,000 cells per
+read. Where a ceiling exists, the platform's pattern is one that THROWS at a
+payload size. Nothing equivalent is published for PowerPoint. Worth noting this
+repo's own MAX_PICTURE_BASE64 is 4 MB, just under Excel's number.
+
+**c. untrack() DOES NOT EXIST IN THE POWERPOINT API, and that matters here.**
+Microsoft's performance guidance names it as the remedy for exactly this
+workload: "Large batch operations may generate a lot of proxy objects that are
+only needed once by the add-in and can be released from memory before the batch
+executes... Calling untrack() after your add-in is done with the object should
+yield a noticeable performance benefit when using large numbers of proxy
+objects." Counted in @types/office-js: **Word 174 declarations, OneNote 35,
+Excel 3, PowerPoint 0.** This project had already measured it empirically and
+files it as untrack-available-on-shape = no, stable, **383 rounds**, asked of a
+real created shape proxy rather than a null object.
+
+So the one documented lever for "too many proxies" is unavailable to a
+PowerPoint add-in. renderShapesChunked holds one proxy per shape for a whole
+draw and can never release them.
+
+**d. Nobody has reported a shape-count crash upstream.** Searches of
+OfficeDev/office-js return zero issues for "too many shapes", "PowerPoint
+shapes.add slow" or "PowerPoint web timeout sync shapes". #6363 is PowerPoint on
+the web, 41 comments, Status: under investigation, regression — but it is about
+properties not being available after a sync, not about density. Weak evidence
+either way, since this repo may be close to alone in drawing hundreds of native
+shapes from an add-in on that host.
+
+**WHAT (c) DOES TO THE RECOMMENDATION.** It sharpens the case for keeping a
+SHAPE COUNT rather than a time estimate. On this host an add-in has no resource
+budget, no untrack and no published ceiling, so the only quantity it can
+actually control is how many shapes it sends. Time is an OUTPUT of the host's
+mood; shape count is an INPUT this code chooses. A gate belongs on the input.
+
 **The measurement that got here, kept below.**
 
 **MEASURED 2026-09-05: the replacement model
