@@ -87,21 +87,17 @@ closed on 2026-09-01, 16 the same evening. 19 closed on 2026-09-03, by a round
 rather than by work. 20 was added and closed on 2026-09-05, the same day — it
 was also a third instance of this file's own trap, written up as a section and
 left off this list until someone asked what was open. 17 closed the same
-evening, on a deck created for it rather than a harness one. TWO are open now,
-and BOTH are the owner's — one waits on his GitHub identity, one on a decision
-about the shape budget:**
+evening, on a deck created for it rather than a harness one. 3 closed on
+2026-09-06: its remainder was answered NO, and the budget it argued about was
+raised 90 -> 105 on the first evidence that ever bore on it. ONE is open, and
+it waits on the owner's GitHub identity:**
 
 > The count here read "six" against a list of four, and then "five" against a
 > list of three. Stale both times, and this file states its own tie-breaker:
 > "if a thing is not on that list it is not open". Counted from the list, and
 > the list is what to trust.
 
-    3  whether a crowded slide should get a picture instead of native shapes
-       — decided and shipped. The remainder (re-express the 90-shape budget as
-       a time estimate) is ANSWERED NO as of 2026-09-06: the 90 is a CRASH
-       gate and time is not what crashes it. What is left is a smaller owner
-       decision — whether to raise 90 to ~105, which would make waffle charts
-       native. See "RESEARCHED 2026-09-06"
+
     5  filing this project's host measurements to the office-js tracker
        — drafts written 2026-09-05 (docs/OFFICE-JS-DRAFTS.md), nothing filed;
        submission is the owner's identity and his alone

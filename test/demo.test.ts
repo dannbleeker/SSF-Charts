@@ -78,7 +78,13 @@ describe("demo deck", () => {
     // node, is untouched. The line below states it without a magnitude at all.
     expect(estimateOfficeShapes(scene("Violin"))).toBeGreaterThan(60);
     expect(estimateOfficeShapes(scene("Violin"))).toBeGreaterThan(scene("Violin").nodes.length * 5);
-    expect(estimateOfficeShapes(scene("Sunburst"))).toBeGreaterThan(90); // now over budget → skipped
+    // Sunburst is ~101. That was over the old 90 budget and therefore skipped;
+    // since the budget rose to 105 on 2026-09-06 it is UNDER, and draws as
+    // shapes. What this line is about — a wedge fan expanding one node into
+    // many shapes — is unchanged. Only the consequence moved, so the comment
+    // did too, and the second assertion pins the side of the line it is on.
+    expect(estimateOfficeShapes(scene("Sunburst"))).toBeGreaterThan(90);
+    expect(estimateOfficeShapes(scene("Sunburst")), "sunburst crossed 105 and is gated again").toBeLessThan(105);
     expect(estimateOfficeShapes(scene("Pie"))).toBeGreaterThan(scene("Pie").nodes.length); // wedge fan expands
     // A plain bar chart is one shape per node — no expansion, no over-count.
     expect(estimateOfficeShapes(scene("Stacked"))).toBe(scene("Stacked").nodes.length);

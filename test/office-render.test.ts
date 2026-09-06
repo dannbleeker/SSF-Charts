@@ -3787,11 +3787,16 @@ describe("charts too dense for the web to draw", () => {
   const web = { web: true, canPicture: true, alreadyPicture: false };
 
   it("rasterises a chart past the budget on the web", () => {
-    // Violin is 253 native shapes; area 176; tile map 122; waffle 103. On the
-    // host with no resource limits at all, those are the charts that take the
-    // tab down rather than merely drawing slowly.
+    // Violin is 253 native shapes; area 176; tile map 122. On the host with no
+    // resource limits at all, those are the charts the budget is still for.
+    //
+    // The lower bound moved on 2026-09-06: the budget went 90 -> 105 because a
+    // WAFFLE at 103 drew 35 times post-fix without taking the tab down. So 91
+    // is deliberately no longer over the line, and 106 is what tests the rule.
     expect(wantsAutoPicture(253, web)).toBe(true);
-    expect(wantsAutoPicture(91, web)).toBe(true);
+    expect(wantsAutoPicture(122, web)).toBe(true);
+    expect(wantsAutoPicture(106, web)).toBe(true);
+    expect(wantsAutoPicture(103, web), "a waffle is measured to draw and must not be pictured").toBe(false);
   });
 
   it("leaves an ordinary chart alone", () => {
@@ -4544,12 +4549,16 @@ describe("reading a demo deck back and repairing it", () => {
     // charts picture mode exists for, and they were the six it refused.
     const deck: FakeSlide[] = [makeSlide("s1")];
     installHost(deck);
-    const dense = buildChart({ ...sampleConfig("waffle"), title: "Waffle" });
+    // TILE MAP, NOT WAFFLE. This fixture used a waffle until 2026-09-06, when the
+    // budget rose to 105 and a 103-shape waffle stopped being too dense — which
+    // is the raise working, not the test breaking. Tile map is 122 at its sample
+    // size and is one of the kinds the gate is still for.
+    const dense = buildChart({ ...sampleConfig("tilemap"), title: "Tile map" });
     expect(estimateOfficeShapes(dense)).toBeGreaterThan(DEMO_SHAPE_BUDGET);
     const report = await insertDemoDeck(
       [
         { scene: buildChart(tinyChart()), title: "One", tagData: `{"i":0}` },
-        { scene: dense, title: "Waffle", tagData: `{"i":1}` },
+        { scene: dense, title: "Tile map", tagData: `{"i":1}` },
       ],
       undefined,
       // Budget 0 degrades the run after the first item, so the dense chart is
@@ -4570,8 +4579,12 @@ describe("reading a demo deck back and repairing it", () => {
     // otherwise the flood it exists to prevent goes straight through.
     const deck: FakeSlide[] = [makeSlide("s1")];
     installHost(deck);
-    const dense = buildChart({ ...sampleConfig("waffle"), title: "Waffle" });
-    const report = await insertDemoDeck([{ scene: dense, title: "Waffle", tagData: `{"i":0}` }], undefined, {});
+    // TILE MAP, NOT WAFFLE. This fixture used a waffle until 2026-09-06, when the
+    // budget rose to 105 and a 103-shape waffle stopped being too dense — which
+    // is the raise working, not the test breaking. Tile map is 122 at its sample
+    // size and is one of the kinds the gate is still for.
+    const dense = buildChart({ ...sampleConfig("tilemap"), title: "Tile map" });
+    const report = await insertDemoDeck([{ scene: dense, title: "Tile map", tagData: `{"i":0}` }], undefined, {});
     expect(report.results[0].status).toBe("skipped");
   }, 20_000);
 

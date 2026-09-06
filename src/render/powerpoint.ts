@@ -4527,14 +4527,55 @@ export async function insertAgendaSlides(scenes: Scene[]): Promise<void> {
 }
 
 /**
- * A chart above this many native shapes is not attempted on the demo deck: on
- * PowerPoint web it will not finish inside the batch timeout, and trying it both
- * wastes ~45s and loads the host toward the "we ran into a problem" crash. The
- * densest charts (a filled area is one line per edge) run 100-200 shapes; the
- * rest are well under. Tunable — the point is to skip the few that can't land,
- * not to trim the deck.
+ * A chart above this many native shapes goes in as a picture instead: on
+ * PowerPoint web it may not finish inside the batch timeout, and trying it both
+ * wastes ~45s and — the original claim — "loads the host toward the 'we ran
+ * into a problem' crash". The densest charts (a filled area is one line per
+ * edge) run 100-200 shapes; the rest are well under.
+ *
+ * WAS 90, RAISED TO 105 ON 2026-09-06, ON THE FIRST EVIDENCE THAT EVER BORE ON
+ * IT. The number had never been derived from anything — BACKLOG item 3 said
+ * "do not raise the number on current evidence", and there was none either way.
+ * There is now, and it is specific rather than general.
+ *
+ * `a big chart on a slide of its own` draws a WAFFLE at 320x220, which is ~103
+ * shapes — above the old budget, reached through `bypassBudget`. Split on the
+ * two-master fix (`6dfaa4b`):
+ *
+ *     era     rounds   103-shape draws   that scenario's verdict
+ *     PRE        352                35          2 ok / 10 failed
+ *     post        35                69         34 ok /  1 failed
+ *
+ * Same chart, same shape count, opposite outcome. What changed was the SLIDE
+ * ADD, not the density. Of the post-fix draws 35 queued every shape they meant
+ * to; the 34 that stopped short are `stop a run mid-draw` doing what its name
+ * says. So the crash rationale is FALSIFIED at 103 shapes, and the evidence is
+ * for the exact chart kind the raise admits rather than for a size in general.
+ *
+ * WHY 105 AND NOT MORE. At their sample sizes the kinds above the old budget
+ * are waffle 103, sunburst 101, area 111, tilemap 122. 105 admits the two that
+ * sit at or below the measured point and keeps a clear margin under the two
+ * that do not. Area and tilemap have NEVER been drawn as shapes on a host, and
+ * neither has the violin at the 253 this comment's ancestor quoted. Those are
+ * what the gate is still for.
+ *
+ * Sunburst at 101 comes in on shape count without a draw of its own — two below
+ * the measured waffle, and this project's own kind-cost experiment puts the
+ * spread between four geometries at 1.27x per shape, not orders of magnitude.
+ * That is the one part of this raise resting on inference rather than a round.
+ *
+ * AND THE UNIT IS RIGHT EVEN THOUGH THE NUMBER WAS NOT. Microsoft's resource
+ * limits "apply to add-ins running in Office clients on Windows and Mac, but
+ * not on mobile apps or in a browser", and `untrack()` — its named remedy for
+ * "large batch operations may generate a lot of proxy objects" — does not exist
+ * in the PowerPoint API at all (Word declares it 174 times, OneNote 35, Excel
+ * 3, PowerPoint 0; measured here as `untrack-available-on-shape = no`, stable,
+ * 383 rounds). With no resource budget, no untrack and no published ceiling,
+ * the only quantity an add-in controls is how many shapes it sends. Time is an
+ * output of the host's mood; a shape count is an input this code chooses, which
+ * is why item 3's "re-express it as a time estimate" was answered no.
  */
-export const DEMO_SHAPE_BUDGET = 90;
+export const DEMO_SHAPE_BUDGET = 105;
 
 /**
  * How long a demo item that gave up on a call waits to hear how that call
