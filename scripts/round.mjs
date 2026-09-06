@@ -1086,6 +1086,25 @@ export function cli(run, dir, entry = cliEntry(), ensure = ensureSessionDir) {
     // string, and the difference decides whether a round is alive. Recorded, not
     // folded in — the same distinction `unreachable` exists to keep.
     state.lastFailed = !r.error && r.status !== 0;
+    /**
+     * WHAT THE FAILED CALL SAID, because throwing it away cost a cycle.
+     *
+     * A non-zero call returns "" here and the reason went nowhere. On
+     * 2026-09-06 `open` failed on every attempt of a cycle with
+     *
+     *     Browser is already in use for C:/devtools/pw-profile
+     *
+     * and the driver reported `browser-gone` — "the process died" — then
+     * "the file list shows no `Presentation64` to open". Both false. A
+     * playwright daemon had died leaving its Chrome alive on the profile, so
+     * `list` saw no browser while the profile was very much held. Every
+     * attempt reopened nothing and blamed the file list, and the cycle only
+     * moved once the orphaned Chrome was ended by hand.
+     *
+     * Kept only for the failing call, and only as text for a human to read.
+     * Nothing branches on stdout being empty because of it.
+     */
+    state.lastStderr = r.status === 0 ? null : String(r.stderr ?? "");
     return r.status === 0 ? String(r.stdout ?? "") : "";
   };
   sh.state = state;
@@ -1619,6 +1638,80 @@ export const DECK_NAME = process.env.PW_DECK ?? "Presentation64";
 
 export function noBrowser(listOutput) {
   return /\(no browsers\)/i.test(String(listOutput ?? ""));
+}
+
+/**
+ * Did `open` refuse because something outside the daemon holds the profile?
+ *
+ * The third state between "a browser this session can drive" and "no browser
+ * at all": Chrome still running after the playwright daemon that launched it
+ * died. `list` reports `(no browsers)` — truthfully, the daemon knows of none
+ * — while the profile directory is locked by a process nothing here can
+ * address. `noBrowser` cannot see it and `close-all` cannot end it.
+ *
+ * Matched on the profile phrase rather than the `--isolated` advice beside it,
+ * because isolated is not a remedy here and a message that changes its
+ * suggestion should not change this answer. Anything that is not a string is
+ * false: a call that never ran left no stderr, and an absence must never read
+ * as a diagnosis.
+ */
+export function profileHeldByOrphan(stderr) {
+  return /browser is already in use for/i.test(String(stderr ?? ""));
+}
+
+/**
+ * The command that ends an orphaned browser, for the platform this runs on.
+ *
+ * A FUNCTION OF THE PLATFORM RATHER THAN A READ OF `process.platform`, for the
+ * reason `is-main.mjs` gives at length: rounds run on Windows and CI runs on
+ * ubuntu, so a helper that could only be exercised on the platform under it
+ * would go green against the bug it exists to catch.
+ *
+ * Matched on `--user-data-dir=<profile>`, which is the only thing that
+ * separates this driver's browser from the operator's own Chrome. Both are
+ * `chrome.exe`; matching the NAME would close the window someone is reading
+ * this in.
+ */
+export function endOrphanCommand(profile, platform = process.platform) {
+  if (platform === "win32")
+    return [
+      "powershell",
+      [
+        "-NoProfile",
+        "-Command",
+        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | Where-Object { $_.CommandLine -like '*${profile}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`,
+      ],
+    ];
+  return ["pkill", ["-f", `user-data-dir=${profile}`]];
+}
+
+/**
+ * End a browser that holds the profile and answers to no daemon.
+ *
+ * ONLY EVER CALLED AFTER `open` HAS JUST REFUSED, and that guard is the whole
+ * licence for it. The driver already closes browsers — `--fresh` does it every
+ * leg, `close-all` does it in the branch above — so ending one it launched is
+ * not a new authority. What would be new is ending one speculatively, so this
+ * cannot be reached except from a refusal that names this exact condition.
+ *
+ * WHY IT IS WORTH DOING AT ALL. This was written as a message and left for a
+ * person, and then the state recurred twice in one evening: the browser died
+ * 746s into round 415, its daemon with it, and thirteen Chrome processes went
+ * on holding `pw-profile` with nothing able to address them. A message is the
+ * right answer for a condition an operator will see; this one arrives at 3am in
+ * the middle of an unattended cycle, and every retry after it is wasted.
+ *
+ * Returns whether the command ran, not whether it worked — the caller finds
+ * that out by trying `open` again, which is a fact rather than an inference.
+ */
+export function endOrphanedBrowser(profile, run = spawnSync, platform = process.platform) {
+  const [cmd, args] = endOrphanCommand(profile, platform);
+  try {
+    const r = run(cmd, args, { encoding: "utf8", timeout: 30_000 });
+    return !r?.error;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -3061,6 +3154,42 @@ export async function recover(sh, sleep, profile = PROFILE_DIR) {
       sh("close-all");
     }
     sh("open", ...roundConfigArg(), "--persistent", `--profile=${profile}`, "--headed", "https://onedrive.live.com/");
+    // AND END THE ORPHAN WHEN THE CLOSE ABOVE COULD NOT HAVE HELPED.
+    //
+    // `close-all` reaches browsers the DAEMON knows about. An orphan — Chrome
+    // still running after its daemon died — is not one of those, so `list`
+    // reports nothing, the guard above skips the close, and `open` then refuses
+    // for a profile the driver has just been told is free. Recovery walks on to
+    // the deck and blames the file list, every attempt, until `--retry` is out.
+    //
+    // THIS WAS A MESSAGE FOR AN OPERATOR FOR ABOUT AN HOUR, on the argument
+    // that ending an OS process is a decision about someone's machine. Then the
+    // state recurred: the browser died 746s into round 415 and left thirteen
+    // Chrome processes holding the profile. A message is the right answer to a
+    // condition a person is watching; this one arrives mid-cycle, unattended,
+    // and every attempt after it is wasted. The driver already closes browsers
+    // — `--fresh` does it every leg — so ending one it launched, on its own
+    // profile, only after `open` has refused for exactly this reason, is the
+    // same authority rather than a new one.
+    if (profileHeldByOrphan(sh.state?.lastStderr)) {
+      console.log(`  a browser holds ${profile} and answers to no daemon — ending it, then opening again`);
+      if (endOrphanedBrowser(profile)) {
+        await sleep(3000);
+        sh(
+          "open",
+          ...roundConfigArg(),
+          "--persistent",
+          `--profile=${profile}`,
+          "--headed",
+          "https://onedrive.live.com/",
+        );
+      }
+      // NOT "it worked". The retry above either opened a browser or did not,
+      // and the readiness check below is what says which — an inference here
+      // would be a third opinion nobody asked for.
+      if (profileHeldByOrphan(sh.state?.lastStderr))
+        console.error(`  the profile is still held — end the Chrome on ${profile} by hand, then this recovers itself`);
+    }
     await sleep(15000);
   }
   // THE DECK TAB, WHETHER OR NOT THE BROWSER IS NEW.

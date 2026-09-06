@@ -46,6 +46,9 @@ const {
   isOverflow,
   recoveryFor,
   noBrowser,
+  profileHeldByOrphan,
+  endOrphanCommand,
+  endOrphanedBrowser,
   browserDiedMidRound,
   onlyDirtyDeck,
   DEAD_BROWSER_POLLS,
@@ -1011,6 +1014,94 @@ describe("talking to the browser at all", () => {
     // so the loop reopens it rather than waiting for a person.
     expect(r.codes).toEqual(["browser-gone"]);
     expect(shouldRetry("not-ready", 0, 3, r.codes), "a dead browser is the loop's to fix").toBe(true);
+  });
+
+  it("tells an orphaned browser holding the profile from no browser at all", () => {
+    // SEVEN ATTEMPTS AGAIN, 2026-09-06, and the same message was wrong in a new
+    // way. A playwright daemon died leaving its Chrome running on
+    // `C:/devtools/pw-profile`. `list` answered `(no browsers)` — truthfully,
+    // the daemon knew of none — so `noBrowser` was true, the `close-all` guard
+    // was skipped, and `open` refused a profile the driver had just decided was
+    // free. Recovery then reported "the file list shows no `Presentation64` to
+    // open", which named the one thing that was fine.
+    //
+    // The two states LOOK identical from `list` and differ only in what `open`
+    // says, which is why the stderr had to stop being thrown away.
+    expect(profileHeldByOrphan("Error: Browser is already in use for C:/devtools/pw-profile, use --isolated")).toBe(
+      true,
+    );
+    expect(noBrowser("  (no browsers)"), "and `list` cannot tell them apart").toBe(true);
+    // An unrelated failure is not this one.
+    expect(profileHeldByOrphan("Error: Timeout 30000ms exceeded")).toBe(false);
+    // A call that never ran left no stderr, and an absence must not read as a
+    // diagnosis — `sh` returns null for a call that SUCCEEDED, too.
+    expect(profileHeldByOrphan(null)).toBe(false);
+    expect(profileHeldByOrphan(undefined)).toBe(false);
+  });
+
+  it("ends the orphan by its profile, never by being called chrome", () => {
+    // THE ONE THING THAT MUST NOT GO WRONG. The driver's browser and the
+    // operator's own are both `chrome.exe`; only `--user-data-dir` separates
+    // them, so a matcher that named the process would close the window someone
+    // is reading this in.
+    const [cmd, args] = endOrphanCommand("C:/devtools/pw-profile", "win32");
+    expect(cmd).toBe("powershell");
+    expect(args.join(" "), "the profile is the whole filter").toContain("C:/devtools/pw-profile");
+    expect(args.join(" ")).toContain("Stop-Process");
+
+    // The platform is a PARAMETER for `is-main.mjs`'s reason: rounds run on
+    // Windows and CI on ubuntu, so a test that could only exercise the platform
+    // under it would go green against the case it exists to cover.
+    const [posixCmd, posixArgs] = endOrphanCommand("/tmp/pw-profile", "linux");
+    expect(posixCmd).toBe("pkill");
+    expect(posixArgs.join(" "), "and the profile is still the filter").toContain("user-data-dir=/tmp/pw-profile");
+  });
+
+  it("reports whether the end-the-orphan command ran, not whether it worked", () => {
+    // Whether the profile came free is answered by trying `open` again. An
+    // inference here would be a third opinion, and a wrong one is how a
+    // recovery loop declares success into a wedged host.
+    const calls: string[][] = [];
+    const ran = endOrphanedBrowser(
+      "C:/p",
+      (cmd: string, args: string[]) => {
+        calls.push([cmd, ...args]);
+        return {};
+      },
+      "win32",
+    );
+    expect(ran).toBe(true);
+    expect(calls, "it has to actually spawn something").toHaveLength(1);
+
+    // A spawn that never happened is not an ended browser.
+    expect(endOrphanedBrowser("C:/p", () => ({ error: new Error("ENOENT") }), "win32")).toBe(false);
+    expect(
+      endOrphanedBrowser(
+        "C:/p",
+        () => {
+          throw new Error("blocked by group policy");
+        },
+        "win32",
+      ),
+      "a throwing spawn must not take the round down with it",
+    ).toBe(false);
+  });
+
+  it("keeps what a failed CLI call said, and nothing from one that worked", () => {
+    // The stderr is the only place the two browser-absent states differ, so a
+    // driver that discards it cannot tell them apart however carefully it reads
+    // `list`. Recorded per call, like `lastFailed` beside it.
+    const runs = [
+      { status: 1, stdout: "", stderr: "Browser is already in use for C:/devtools/pw-profile" },
+      { status: 0, stdout: "ok", stderr: "" },
+    ];
+    let n = 0;
+    const sh = cli(() => runs[n++], ".", "C:/fake/playwright-cli.js");
+
+    sh("open");
+    expect(sh.state.lastStderr, "the reason the call failed went nowhere").toContain("already in use");
+    sh("list");
+    expect(sh.state.lastStderr, "a successful call must clear it, not inherit the last failure").toBeNull();
   });
 
   it("notices a browser that dies UNDER a running round, which the quiet counter cannot", async () => {
