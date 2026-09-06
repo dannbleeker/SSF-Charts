@@ -78,7 +78,7 @@ whole-history figure and should not be quoted as current: it is dominated by the
 
 ## 1. Open
 
-**Everything actually open, as of 2026-09-01.** The sections below carry the
+**Everything actually open, as of 2026-09-06.** The sections below carry the
 evidence; this list carries the state. Anything not on it is either shipped,
 refused, or a finding rather than a task.
 
@@ -107,7 +107,9 @@ about the shape budget:**
 
 **The 4:3 arm is no longer on this list, and was never on it as a numbered
 item.** It closed 2026-09-05 on fifteen post-fix rounds against four pre-fix
-ones, p = 0.0010. See the two-master entry at the end of this file.
+ones, p = 0.0010; twenty-six post-fix rounds now stand against the same four,
+one failure among them, **p = 0.00018**. See the two-master entry at the end of
+this file.
 
 **3 — DECIDED, AND TWO THIRDS SHIPPED, 2026-09-04.** The question was "picture
 or native shapes for a crowded slide". The answer is "ask, and keep the picture
