@@ -11476,6 +11476,14 @@ function tracePartsOutcome(
      * nobody could name; it is an outcome traced for no charts at all. Read
      * `""` as "not applicable" and `(visible)` as "not answered yet", because
      * conflating those two is how a denominator goes wrong.
+     *
+     * CROSS-CHECKED, so "it records the slide" is measured rather than
+     * asserted. Rounds 414 and 415 each produced one `the id read-back threw`,
+     * and in both the field agreed exactly with the slide named independently
+     * inside the neighbouring 5010's `debugInfo.fullStatements` —
+     * `258#707172623` and `258#4078365002`. Two readings, different code
+     * paths, same answer. Two events is not many; it is two more than the
+     * field had before it was believed.
      */
     slides: [...new Set(items.map((it) => slideKeyFor(it.opts, it.getSlide)))].join(","),
     // The three states a chart can be in, counted rather than inferred.

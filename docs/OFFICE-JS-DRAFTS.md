@@ -82,10 +82,12 @@ Script Lab and watch it fail, without any part of this add-in.
 >
 > **This add-in tags shapes on slides it added itself, constantly, and it
 > works.** `addSlideForChart` adds the slide in its own `PowerPoint.run` and
-> returns an id; `insertSceneIntoSlide` then opens a NEW run, draws onto that
-> id and calls `target.tags.add(CHART_TAG, …)`. That is Draft A's failing
-> configuration exactly: a shape drawn on a slide the add-in introduced in an
-> EARLIER run, then tagged.
+> returns an id. `insertSceneIntoSlide` then opens a NEW run, draws onto that
+> id, and the tag is written by `rescueGroupAndTag` — or, for a chart that
+> could not be tagged inline, by `settleAndTagChart` / `settleByCollectionRead`
+> in a later run still. Every one of those is `tags.add(CHART_TAG, …)` on a
+> shape sitting on a slide the add-in introduced in an EARLIER run. That is
+> Draft A's failing configuration exactly.
 >
 > Be exact about what the archive does and does not say here. It says 8,221 of
 > ~9,600 draw batches went to a slide added that round — that is where the

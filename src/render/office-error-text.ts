@@ -25,7 +25,9 @@ export const STEP_KEY = "__powerchartStep";
  * How many of `fullStatements` a trace keeps at each end. See `trimDebugInfo`.
  *
  * Ten and ten, against the batch this project actually issues: a chart is drawn
- * `SHAPES_PER_SYNC` at a time and each shape costs several statements, so ten at
+ * `SHAPES_PER_SYNC` at a time (that constant stayed in `powerpoint.ts` when this
+ * file was lifted out of it, which is why the name has no definition here) and
+ * each shape costs several statements, so ten at
  * the head carries the handles the batch opened with and ten at the tail carries
  * what it was doing when it stopped, without the other eight shapes' noise.
  */
