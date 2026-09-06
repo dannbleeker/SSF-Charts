@@ -253,6 +253,53 @@ labelled a product bug, and had Microsoft activity on 2026-08-31.
 
 ---
 
+## STOP — DRAFT A DID NOT REPRODUCE WHEN I RAN IT, 2026-09-06
+
+The checklist below says to paste each snippet into Script Lab once before
+filing, and that a snippet which does not reproduce "is a finding about the
+draft, not about the host". I ran Draft A against the live host on
+`Presentation72`. It is a finding about the draft.
+
+**Draft A, exactly as written above, on slide 0 of a real deck:**
+
+    before=2 | created | reread=3 | tag=OK-NO-REPRO
+
+The re-read listed **all three** shapes — not short — and the tag through the
+creation handle **succeeded**. Both of the draft's two failures are absent.
+
+**The condition is not "any slide", and the draft never said which.** Two more
+runs, same session, minutes apart:
+
+| where the shapes are drawn | what happened |
+| --- | --- |
+| slide 0, an ordinary document slide | no shortfall, tag succeeds — **no repro** |
+| a slide added in the SAME `PowerPoint.run` | the shape add itself throws `GeneralException` — that is Draft B's defect, reached before Draft A's question |
+| a slide added in an EARLIER run, then reused | the add never resolved — 60s `TIMEOUT`, which is office-js#1650 |
+
+The answer sheet's own sample tags say why: every sample of
+`collection-read-poisons-the-creation-handle` is marked `scratch=reused-slide`.
+That is a slide **the add-in created earlier in the session and kept**, which is
+neither of the two states a stranger would naturally try, and the draft asks
+them to use `getItemAt(0)`.
+
+**What this means for filing.** Do not send Draft A as written. Microsoft's
+template is explicit — "If we cannot reproduce the issue, we cannot triage" —
+and a repro that does not repro is worse than no issue: it spends the one
+credibility this project has upstream. Draft C, the comment on #6237, is
+unaffected and remains the cheapest thing on the list.
+
+**What would make Draft A filable:** a snippet that reaches the poisoned state
+from a cold start, with the slide's provenance stated. The probe does it 3 of 3,
+so the state is real and reachable; what is missing is the shortest path to it
+that does not depend on this add-in's own scratch-slide bookkeeping. That is an
+hour with a live host and a settled deck, and it was not available tonight — by
+the end of these three runs the host had stopped resolving slide adds at all.
+
+**Draft B was not run.** Its arm did fire incidentally — the same-run case above
+threw `GeneralException` exactly where Draft B predicts — but that was a
+side-effect of testing A, on a deck already 51 slides deep, not a clean run of
+B's own snippet. Treat B as unverified rather than as supported by this.
+
 ## Before submitting — a checklist for the owner
 
 1. **Read the snippets.** They are written from measurements, not run as
