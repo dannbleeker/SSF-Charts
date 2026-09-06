@@ -26,10 +26,10 @@ two-master fix (`6dfaa4b`, 2026-09-04):
     era / arm        rounds   all-green   scenario pass rate
     PRE-fix  16:9       250         194                96.9%
     PRE-fix  4:3         48          28                94.3%
-    post-fix 16:9         3           2                98.1%
+    post-fix 16:9         7           6                99.2%
     post-fix 4:3         24          20                96.6%
 
-    crash records:  94 on PRE-fix builds,  2 on post-fix,  96 total
+    crash records:  94 on PRE-fix builds,  3 on post-fix,  97 total
 
 **All-green rounds at 4:3 went from 28 of 48 to 20 of 24** — 58% to 83% — and
 the crash archive is the blunter number: ninety-four records on pre-fix builds
@@ -38,12 +38,24 @@ edited it: `a big chart on a slide of its own` reads 224.5 deaths per 1000
 against a ceiling of 460, `stop a run mid-draw` 140.4 against 330. Both were
 above 320 in early September.
 
-WHAT IS THIN, and it is the honest caveat: **post-fix 16:9 is three rounds.**
-The 4:3 arm has the evidence because that is where the bug was; the healthy arm
-has barely been re-measured since the fix. A 16:9 crash on 2026-09-05 (round
-attempt on Presentation64, 448s, mid-draw on an in-place update) sits inside the
-known 4.4% background rate for that arm and is not a regression — the gate says
-so — but three rounds is three rounds.
+**THE THIN ARM WAS FILLED THE SAME NIGHT.** Post-fix 16:9 was three rounds when
+this table was first written; rounds 404-407 on Presentation64 are all 19 of 19,
+taking it to seven rounds and a 99.2% scenario pass rate.
+
+**And the two crashes that preceded them are the more interesting half.** Both
+landed on 16:9 within thirteen minutes (23:34 and 23:47 on 2026-09-05), which is
+two in about six attempts against that arm's 4.4% historical rate. They are not
+a regression — the gate calls none, and both died mid-draw on an in-place
+update, a shape the archive holds many of — but the ORDER is the thing: they
+came at the end of a browser session that had been open for five hours driving a
+39-slide deck and a seventeen-minute self-test, and the four clean rounds
+followed a `--fresh` restart. That is the aged-pane effect this archive already
+measures (the rounds gate prints "fresh pane 217/229 round(s) refused no group ·
+aged pane 12/19"), showing up as crashes rather than as refusals.
+
+Read as health: the product is fine and the HARNESS wants a fresh browser more
+often than it asks for one. Read as a caveat: any run of clean rounds that
+follows a restart is measuring a fresh session as much as a fixed build.
 
 The pooled "4:3 crashes 36.1% of attempts" the rounds gate prints is a
 whole-history figure and should not be quoted as current: it is dominated by the
