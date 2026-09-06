@@ -18,6 +18,42 @@ PowerPointApi 1.4), plus polygon *outlines* — no freeform curves, and no
 images. The SVG and skill-pptx renderers additionally have filled polygons and
 patterns.
 
+## 0a. A chart is still editable tomorrow — MEASURED 2026-09-06, first time ever
+
+The most basic property a chart tool has, and **no scenario tests it**. All 412
+archived rounds run inside a single session on a deck the driver sweeps
+immediately afterwards, so nothing had ever asked whether a chart survives the
+document being closed and reopened.
+
+`Presentation72.pptx` answered it by accident of being a throwaway nobody swept.
+Its charts were drawn around 18:00 on 2026-09-05; this was measured the next
+morning, across several browser restarts including a `--fresh` that closes the
+browser outright, and across four deployed builds.
+
+    the add-in's sideload survived the reopen     yes, `Insert chart` returned
+    slides / shapes read back                     51 / 122, unread 0
+    shapes still carrying a POWERCHART tag        33, on 32 slides
+    a config tag parsed                           334 bytes -> "stacked / Stacked"
+    the pane recognised the selection             "An SSF chart is selected on
+                                                   the slide. Edit it"
+    clicking through                              "Chart loaded — edits will
+                                                   update it in place."
+
+Every link holds: save, close, reopen, scan, read the tag, parse it, recognise
+the selection, load it for editing. **Zero pages came back short** on a 51-slide
+deck, which is also the deepest clean scan on record here.
+
+WHAT IT DOES NOT COVER, so it is not over-read: one chart was loaded, not
+edited-and-redrawn; the deck never left OneDrive, so nothing here speaks to
+downloading it and reopening in desktop PowerPoint; and it is one document, not
+a population. It is a strong single observation of a property that previously
+had none at all.
+
+WHY IT IS NOT A SCENARIO: a scenario cannot close and reopen a document. This
+stays a hand measurement unless the driver learns to, which is the honest
+blocker and the reason it sits here as evidence rather than in the open list as
+a task.
+
 ## 0. Product health, measured 2026-09-06
 
 The one summary worth reading first, split on whether a build contains the
