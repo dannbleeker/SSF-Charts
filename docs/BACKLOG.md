@@ -211,15 +211,17 @@ it waits on the owner's GitHub identity:**
 
 
     5  filing this project's host measurements to the office-js tracker
-       — docs/OFFICE-JS-DRAFTS.md, nothing filed, and BOTH drafts went ON HOLD
-       the evening of 2026-09-06, each for its own reason and neither for
-       failing to reproduce. Draft A reproduces 3 of 3 with four controls; what
-       is unverified is its SCOPE, and the product contradicts the scope as
-       written — this add-in tags shapes on slides it added, thousands of
-       times, and it works. Draft B may be OUR bug: its failing arm is the
-       pre-77f9ca4 pattern this repo already diagnosed as a stale add-time id.
-       One experiment decides each, both written up in that file. Submission
-       is the owner's identity and his alone
+       — docs/OFFICE-JS-DRAFTS.md, nothing filed. Drafts A and B are now DEAD,
+       killed on 2026-09-06 by the experiment they were held for: a slide this
+       add-in made in a PREVIOUS session tags fine, so neither "add-in
+       introduced" nor "a held proxy" is the variable. DRAFT D replaces them
+       and is better: `shapes.load("items/id")` returns an EMPTY collection for
+       a shape a screenshot shows on the slide, for a while after that slide
+       was added, and `getItem` refuses the slide's add-time id with 5010 in
+       the same window. Recency is the axis. Three things to do before filing
+       are listed in that file — bound the window, reproduce in Script Lab
+       without this add-in, re-search the tracker on the corrected symptom.
+       Submission is the owner's identity and his alone
 
 
 **The 4:3 arm is no longer on this list, and was never on it as a numbered

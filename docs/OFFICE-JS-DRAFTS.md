@@ -74,9 +74,99 @@ Script Lab and watch it fail, without any part of this add-in.
 
 ---
 
+## DRAFT D — the one that survived the experiment, 2026-09-06 evening
+
+**A AND B ARE BOTH DEAD.** They were held earlier this evening pending one
+experiment each; the experiment ran on `Presentation72` — 51 slides, made by
+this add-in on 2026-09-05, reopened today — and neither draft's variable
+survived it. What follows is what actually happens, and it is a better issue
+than either.
+
+### What was measured, on a live host, this evening
+
+Three arms first, each drawing a shape and tagging it from a run LATER than the
+one that made the slide:
+
+    a  the document's own slide (index 0)            tag OK
+    b  a slide added THIS session, then settled      tag OK
+    c  a slide the ADD-IN made in a PREVIOUS
+       session (index 5, the slide that threw
+       5010 yesterday)                               tag OK
+
+**All three passed.** That alone kills Draft A's title: "however that slide
+arrived" is wrong, because arm c is an add-in-introduced slide and it behaves
+exactly like the document's own.
+
+Pushing on the newly added case, three trials each:
+
+    slides.load("items/id") on a slide added
+      moments ago returns an ADD-TIME id             4123571130#123571113
+    slides.getItem(<that id>)                        THREW 5010,
+                                                     InvalidParam passed
+                                                     to GetItem(id)      3 of 3
+    the same slide's id read moments later           323#2528698050
+    slide.shapes.load("items/id"), fresh run,
+      by index                                       0 shapes            3 of 3
+    ... and by the settled id                        0 shapes            3 of 3
+
+And the control that decides what "0 shapes" means: **a screenshot of that
+slide shows the rectangle sitting on it.** The shape is there. The collection
+says it is not.
+
+### The axis is RECENCY, and that is the whole finding
+
+    slide 0   the document's own                     6 shapes, tag OK
+    slide 5   add-in made it in a PREVIOUS session   7 shapes, tag OK
+    slide 67  added minutes ago                      0, then 1 later
+    slide 68  added minutes ago, NEVER SELECTED      0, then 1 later
+    slide 69  the newest                             still 0
+
+Selection is not the trigger — slide 68 was never shown and filled in anyway.
+Time is. The empty read is TRANSIENT, and slides that existed when the session
+started never show it at all.
+
+### Which means all three earlier diagnoses were wrong
+
+- **Not "add-in-introduced"** — slide 5 is, and is fine.
+- **Not "cannot be tagged"** — nothing refuses the tag. The collection is empty,
+  so there is no listed shape to tag. Where a shape IS listed, the tag succeeds.
+- **Not "a held proxy"** (Draft B) — these are fresh runs and fresh proxies.
+
+**The honest issue is: `Slide.shapes.load("items/id")` returns an empty
+collection for a shape that is demonstrably on the slide, for some period after
+the slide was added, and `SlideCollection.getItem` refuses that slide's
+add-time id with 5010 in the same window.**
+
+### Before this is filed
+
+1. **Bound the window.** "Some period" is not a bug report. Read one such slide
+   every 15s until it fills, three times, and quote the distribution.
+2. **Reproduce without this add-in.** Everything above ran inside the pane's
+   frame; the snippet is plain Office.js and should be pasted into Script Lab
+   on a fresh deck to be sure nothing here is ours.
+3. **Search the tracker again** with the corrected symptom — "shapes collection
+   empty after slides.add" is a different query from the one that found #6237.
+
+### And it vindicates our own code
+
+`settleAndTagChart`, `settleByCollectionRead` and the `77f9ca4` rule about
+add-time ids all exist because of exactly this, and all three are correct. The
+product retries in a fresh context and its charts do come back re-editable —
+which is why 1,535 archived charts show nine losses and none since the
+two-master fix. **This is a host timing defect the add-in already survives**,
+not an open wound.
+
+---
+
 ## DRAFT A — a shape drawn on an add-in-introduced slide cannot be tagged
 
-> ## HOLD — DO NOT FILE THIS YET. The product contradicts its own title.
+> ## DEAD, 2026-09-06 evening. Kept for the record, not for filing.
+>
+> The experiment this hold asked for was run. Arm c — a slide the add-in made
+> in a PREVIOUS session, the one that threw 5010 yesterday — tagged fine, so
+> "however that slide arrived" is false and the axis is recency, not
+> provenance. See DRAFT D above. Everything below is the reasoning that got
+> there, and the hold underneath it is what stopped it being filed.
 >
 > Found 2026-09-06 while measuring the archive, after the draft was written.
 >
@@ -267,7 +357,16 @@ that slide arrived
 
 ## DRAFT B — a held slide proxy throws only on a freshly added slide
 
-> ## HOLD — DO NOT FILE. This repo may already own this bug.
+> ## DEAD, 2026-09-06 evening. Kept for the record, not for filing.
+>
+> "Holding a proxy across a sync" is not the variable either: fresh runs with
+> fresh proxies read the same freshly added slide as empty, three times, and
+> read a slide from a previous session correctly in the same minute. The hold
+> below guessed the stale add-time id, which is closer — that id does throw
+> 5010, measured 3 of 3 — but the collection is empty even by the SETTLED id,
+> so the id is not the whole of it. See DRAFT D above.
+>
+> ## The hold that stopped it being filed
 >
 > Found 2026-09-06 by reading `powerpoint.ts` against the draft, not by running
 > anything. Draft B is unverified either way; what follows is why verifying it
