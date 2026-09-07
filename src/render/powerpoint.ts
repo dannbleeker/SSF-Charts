@@ -11304,9 +11304,11 @@ function tracePartsOutcome(
    * fail is worth less than the sentence saying so, and teaching the fake to
    * produce the case would mean building the double around the bug.
    *
-   * WHAT CONFIRMS IT IS A ROUND. Rounds 415-417 carry 12 zero-chart events
-   * each out of ~32. If this guard works, the next round carries none, and the
-   * archive says so without anyone asserting anything.
+   * WHAT CONFIRMS IT IS A ROUND, AND IT DID. Rounds 415-418 each carry 12
+   * zero-chart events out of ~33. Round 419, the first on a build with this
+   * guard, carries **0 zero-chart and 21 real** — the prediction written here
+   * before the round ran, met exactly. The archive said so without anyone
+   * asserting anything, which is what a round is for.
    */
   if (!items.length) return;
   trace("draw", "parts list outcome", {
