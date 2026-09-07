@@ -2589,6 +2589,28 @@ All cleared 2026-08-16. See git.
   as a host limit. Anything that revisits this needs a host that resolves a
   scratch slide more than once, and the probe will say so the day one appears.
 
+- **Settling the count `addSlides` verifies with** — swept 2026-09-07, and not
+  done. The reasoning that gets you here is sound: the same late count that made
+  `insertSlidesFromPptx` report `landed: 0` is read raw at `powerpoint.ts:4184`,
+  and there it does not just misreport — a false deficit RETRIES the adds, which
+  on a deck that was never short means duplicate slides.
+
+  The archive says it has never happened. **128 `slides added` events across 401
+  rounds, 0 shortfalls, 0 `slide add(s) never landed`, 0 `slide count disagreed
+  between contexts`.** The retry loop has never run on this host. The drop it
+  guards against is real but predates the archive — 10 slides for 20 issued adds
+  in `Presentation_3.pptx` — so there is nothing here to fix and no round that
+  could judge a change to it.
+
+  Note the thin denominator honestly: 128 events is 0.3 a round, so this is
+  "never seen in 128 tries", not "cannot happen". If a shortfall ever appears,
+  the settle is the first thing to reach for and this is why.
+
+  `replaceSlideWithDeck` was the other site the same sweep found, and that one
+  WAS changed — its raw count returns "failed" before the delete, leaving the
+  user both slides. It has never run in the archive either; what carried it is
+  that the defect is proven on the same API call on the same host.
+
 - **A golden-image gate on the generated deck** — rejected as a hash comparison,
   and largely covered as a structural one. The cheap half of this DID ship:
   `validate-ooxml.mjs` checks the deck against the OOXML grammar and

@@ -9387,7 +9387,21 @@ export async function replaceSlideWithDeck(slideId: string, base64: string): Pro
   } catch {
     return "failed";
   }
-  if ((await slideCount()) !== before + 1) return "failed";
+  // SETTLED, for the same reason `insertSlidesFromPptx` is: this host reports
+  // slides late, and the raw read there returned `landed: 0` for slides that
+  // were on the deck in rounds 148, 315, 375 and 422 — the same
+  // `insertSlidesFromBase64` call, on the same host. Here the consequence is
+  // worse than a wrong number: the swap returns "failed" BEFORE the delete, so
+  // the user is told nothing happened and left with the new slide and the
+  // original both sitting there.
+  //
+  // Said plainly, because the evidence is borrowed rather than direct: THIS
+  // PATH HAS NEVER RUN IN THE ARCHIVE — 0 trace events across 401 rounds — so
+  // no round has measured it and none will judge this. What carries the change
+  // is that the defect is proven on the same API call on the same host, and
+  // that the repair is an existing helper with the same semantics: it costs one
+  // settle when the count is short and nothing at all when it is not.
+  if ((await settledSlideCount(before + 1)) !== before + 1) return "failed";
   // Let the host settle before deleting. office-js#5022's only known workaround
   // is "a timer of 1-2 seconds between the shape.delete() and the next
   // context.sync()", and this is the same shape of thing one step up: a
@@ -9412,6 +9426,15 @@ export async function replaceSlideWithDeck(slideId: string, base64: string): Pro
     DECK_INSERT_TIMEOUT_MS(1),
     "removing the slide a generated deck replaced",
   ).catch(() => {});
+  // NOT SETTLED, and the asymmetry is the reason rather than an oversight.
+  // `settledSlideCount` re-reads when the count is BELOW a floor, which is the
+  // shape of a late ADD. A late DELETE leaves the count too HIGH, so the helper
+  // would never fire on it, and the mirror of it does not exist. Building one
+  // for a path that has never run in 401 rounds would be a guess with no way to
+  // be judged; what this line can be wrong about is calling a swap that worked
+  // "duplicated", which is a wrong label on a deck the user can see, not a
+  // wrong action. Left as it is, said out loud.
+  //
   // The deck's own answer, and now the only one — for the refusal case as much
   // as for the success case. A delete whose sync went unanswered still lands
   // often enough that reading the count is strictly better information than

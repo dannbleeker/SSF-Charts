@@ -49,6 +49,7 @@ import {
   replacedShapeCount,
   getSlideShapeBounds,
   _setSelectionTimeoutForTest,
+  _setCountSettleDelayForTest,
   replaceSlideWithDeck,
   deleteShapesById,
   addScratchSlide,
@@ -1477,6 +1478,44 @@ describe("looking away while a chart redraws", () => {
       ).not.toContain("s1");
     } finally {
       unansweredNullChecks.clear();
+    }
+  });
+
+  /**
+   * A deck this host took, counted before it caught up, reported as a failure.
+   *
+   * The swap decides on `slideCount() !== before + 1`, and the raw read is the
+   * one `insertSlidesFromPptx` was returning `landed: 0` from — same
+   * `insertSlidesFromBase64` call, same host, four times in the archive (rounds
+   * 148, 315, 375, 422). Here it is worse than a wrong number: the return is
+   * BEFORE the delete, so a user told "failed" is left with the new slide and
+   * the original both on the deck.
+   *
+   * A ceiling of two, one bind. Two is the deck's size when `before` is read,
+   * so that read is accurate — the ceiling only caps a deck that has grown past
+   * it — and the read after the insert is pinned back to exactly `before`,
+   * which is the reading that produces the false "failed".
+   */
+  it("does not call a swap failed because the deck had not caught up", async () => {
+    const built = await buildDeckBase64(
+      [{ scene: buildChart(sampleConfig("clustered")), title: "A", configJson: "{}", slot: 0, run: "r1" }],
+      { width: 720, height: 405 },
+    );
+    const deck = [makeSlide("s1"), makeSlide("s2")];
+    installHost(deck);
+    faults.slideCountCeiling = 2;
+    faults.slideCountCeilingBinds = 1;
+    _setCountSettleDelayForTest(20);
+    try {
+      expect(await replaceSlideWithDeck("s1", built.base64)).toBe("swapped");
+      // The allowance is spent by the raw read too, so this proves the lag
+      // happened whichever version is running — it cannot be the assertion that
+      // does the work.
+      expect(faults.slideCountCeilingBinds, "the ceiling never bound, so no lag was reproduced").toBe(0);
+    } finally {
+      faults.slideCountCeiling = null;
+      faults.slideCountCeilingBinds = 0;
+      _setCountSettleDelayForTest(4_000);
     }
   });
 
