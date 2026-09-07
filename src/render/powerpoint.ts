@@ -2840,10 +2840,18 @@ export async function updateChartsInSlides(
       // line is `a by-id lookup refused the whole resolve — re-reading the
       // slides instead`. So it costs a whole extra resolve, twice a round.
       //
-      // WHY IT FIRES ON EVERY CHART: this is guarded by `parts.length`, and the
-      // parts list has never once been produced on this host — `withParts` is 0
-      // across 872 charts. Every chart therefore reaches `.group`, and the ones
-      // that are not groups throw.
+      // WHY IT FIRES ON EVERY CHART: this is guarded by `parts.length`, and in
+      // practice the parts list is not there when it is checked — `withParts`
+      // is 0 across 872 charts. Every chart therefore reaches `.group`, and the
+      // ones that are not groups throw.
+      //
+      // "HAS NEVER ONCE BEEN PRODUCED ON THIS HOST" STOOD HERE AND IS NOT WHAT
+      // THAT ZERO SHOWS, corrected 2026-09-07. `withParts` is counted only on
+      // charts whose in-place update was refused, and 77% of those refusals
+      // are refused BECAUSE there is no parts list; the production-side
+      // `gotPartsList` is 35. The behaviour this comment describes is
+      // unaffected — the guard does fire on every chart — but the reason is
+      // "the list is absent here", not "the list is never written".
       //
       // Which means the parts-list repair may remove this by itself: a chart
       // that arrives carrying parts never queues `.group` at all. Left to a
@@ -11117,8 +11125,24 @@ async function ungroupedFallback(
   // THE IDS ARE SOMETIMES ALREADY HERE, and asking for them again is what costs
   // the parts list when they are.
   //
-  // `withParts` is **0 across 872 charts in 156 rounds** — CHART_PARTS_TAG has
-  // never once been produced on this host. The exits say why: 50 events died at
+  // `withParts` is **0 across 872 charts in 156 rounds** — and the inference
+  // drawn from that here, "CHART_PARTS_TAG has never once been produced on this
+  // host", DOES NOT FOLLOW. Corrected 2026-09-07.
+  //
+  // `withParts` is incremented in the churn block, which sits after the
+  // `continue` taken whenever `tryInPlaceUpdate` succeeds — so it only ever
+  // sees charts whose in-place update was REFUSED. 3,048 successes skip it
+  // against 2,002 refusals that reach it, and of those refusals **1,532 (77%)
+  // are refused BECAUSE the chart has no parts list**. The counter asks "did
+  // this chart have a parts list?" of a population three quarters of which is
+  // there precisely because it did not.
+  //
+  // The production-side counter disagrees outright: `gotPartsList` is 35, not
+  // zero, so lists ARE written. See `docs/BACKLOG.md`. What the exits below
+  // describe is still real; what cannot be concluded from this number is that
+  // the tag is never produced.
+  //
+  // The exits say why: 50 events died at
   // "the id read-back threw", `InvalidParam passed to GetItem(id)`, code 5010,
   // `errorLocation: ShapeCollection.getItem`. That is the sync below. Office.js
   // rewrites a created proxy's object path to `shapes.getItem(id)`, and this

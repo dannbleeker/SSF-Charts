@@ -3014,6 +3014,44 @@ attributed crashes to scenarios by their median start time in RECENT rounds,
 which would have blamed three scenarios that mostly did not exist when those
 crashes happened. The records name what was in flight themselves.
 
+### Two "flaky scenarios" are one flaky dependency — 2026-09-07, p = 1e-13
+
+Round 422 came in 17 of 19 and the rounds gate stopped the cycle on its one
+fatal check, a scenario that had been passing. Reading it produced something
+better than the regression it was reporting.
+
+**The two that fell are not independent. They almost never fail apart.**
+
+    rounds running both                                        398
+    `insert on top of an earlier run` failed                     9   2.26%
+    `two slides claiming one slot` failed                       11   2.76%
+    BOTH failed in the same round                                8
+    expected under independence                               0.25
+
+    2x2: both 8 | only insertTwice 1 | only duplicateSlot 3 | neither 386
+    Fisher's exact, one-tailed                          p = 1.0e-13
+
+Of the nine rounds where the first failed, **eight** had the second fail too.
+The co-failing rounds are 148, 287, 297, 315, 360, 361, 375 and 422 — and 360
+and 361 are the pair whose `deck grew by NaN` verdicts account for eight of the
+nine "chart losses" corrected elsewhere in this file.
+
+**WHAT THEY SHARE IS `insertSlidesFromBase64`.** Both scenarios build a probe
+deck and insert it through `insertSlidesFromPptx`; neither does anything else in
+common. Round 422's failure is that call throwing `GeneralException` at
+`errorLocation: Microsoft.Office.PrivateApiService`, with the base64 payload in
+the statement.
+
+So the archive has been carrying this as two scenarios that each fail about 2%
+of the time. It is **one dependency that fails about 2% of rounds and takes both
+of its dependents with it** — which is a different fact, with a different fix,
+and a much better place to look.
+
+NOT MY CHANGES, and the gate said so before I could wonder: "THE SHIPPED BUNDLE
+IS UNCHANGED since the previous round at this profile — nothing under `src/`
+differs between the two builds." Verified independently — `git diff bc88a7c
+1334194 -- src/` is empty; only docs, rounds and crash records moved.
+
 ### `withParts` is 0 on a pool that excludes its own successes — 2026-09-07
 
 The oldest unexplained zero in this repo, and the reason it may not mean what it
@@ -3030,10 +3068,31 @@ through to delete-and-redraw. Measured across the archive:
     churn events carrying `withParts`                       1,406
     their sum                                                   0
 
-**A chart WITH a parts list is precisely the kind the in-place path can handle**,
-because it can name every shape it must touch. If that is so, charts with parts
-lists preferentially succeed and are never counted, and the zero is what the
-sampling produces rather than what the host does.
+**AND IT IS WORSE THAN "EXCLUDES ITS SUCCESSES" — THE POOL IS SELECTED ON THE
+VERY PROPERTY BEING MEASURED.** `tryInPlaceUpdate` traces why it refuses, and
+those refusals are exactly the population that reaches the counter. Across the
+archive:
+
+    1,197  the chart has no parts list, so its nodes cannot be mapped to shapes
+      335  the chart has no parts list and no readable group members
+      392  this update draws a picture, not in the scene the differ compares
+       61  too much of the chart changed to be worth writing shape by shape
+       12  the chart carries no scene fingerprint — drawn by an older build
+        5  the parts list does not match the scene one for one
+    -----
+    2,002  refusals, of which 1,532 (77%) are refused BECAUSE there is no
+           parts list
+
+So `withParts` asks "did this chart have a parts list?" of a population three
+quarters of which is there precisely because it did not. **The zero is very
+largely circular**, and cannot be read as evidence about how often lists exist.
+
+ONE LOOSE END, NAMED RATHER THAN TIDIED: five refusals say "the parts list does
+not match the scene one for one" — those charts HAD a list. If they reach the
+churn block they should make `withParts` at least 5, and it is 0. Either the
+`watching` guard excluded them or `it.target.partIds` is empty where that
+refusal reads a list from elsewhere. Not chased down; recorded because a strict
+zero with five known counterexamples upstream is a thread someone should pull.
 
 WHAT THIS DOES AND DOES NOT SHOW. It does not show that parts lists are read
 back — nothing here does. It shows that **0 of 1,406 is not evidence that they
