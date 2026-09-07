@@ -3684,6 +3684,63 @@ describe("a deck count that is behind, not blind", () => {
     });
   });
 
+  /**
+   * AND THE INSERT ITSELF STOPS REPORTING SLIDES THAT LANDED AS SLIDES THAT
+   * DID NOT.
+   *
+   * The test above compensates one layer up: `runSelfTest` settles its own
+   * count, so the scenario judged the right population while
+   * `insertSlidesFromPptx` went on returning `landed: 0` — the docstring above
+   * records that as the round's signature rather than as a defect. It is both.
+   *
+   * The archive says what the raw count costs a caller that has no second
+   * layer. Rounds 148, 315, 375 and 422 each trace `landed: 0` here, then
+   * `insert on top of an earlier run` failing with a GeneralException, then the
+   * NEXT insert of two slides measuring `landed: 4` — the two extra being the
+   * ones this call had just said did not arrive. Four of 1,641 traced inserts,
+   * and 4 of the 4 GeneralException failures that scenario has ever had.
+   *
+   * A CEILING OF FIVE, ONE BIND, and both numbers are load-bearing.
+   *
+   * Five is the deck's size when this scenario starts, so `before` is read
+   * accurately — the ceiling only binds on a deck that has grown past it — and
+   * the read after the insert is pinned back to exactly `before`. That is what
+   * makes `landed: 0` rather than merely short, which is the archive's actual
+   * signature. A ceiling of seven produces `landed: 2` and this case would
+   * assert nothing.
+   *
+   * One bind, because the repair has to be the thing that clears it. With two
+   * the re-read is capped as well and the count stays short, which is the state
+   * the test above pins.
+   *
+   * AND THE REPRODUCTION GUARD DOES NOT READ A TRACE THE FIX ITSELF EMITS.
+   * `count came back short` is written by `settledSlideCount`, so a version of
+   * this test that guarded on it failed under the mutant with "nothing was
+   * reproduced" — the guard tripping, never the assertion. The allowance is
+   * spent by the raw read too, so counting it down proves the lag happened
+   * under either.
+   */
+  it("reports the slides a late deck really took, not the zero it first read", () => {
+    installHost([makeSlide("s1")]);
+    faults.slideCountCeiling = 5;
+    faults.slideCountCeilingBinds = 1;
+    _setCountSettleDelayForTest(120);
+    setTracing(true);
+    return runSelfTest("probe", NAME).then(() => {
+      setTracing(false);
+      expect(faults.slideCountCeilingBinds, "the ceiling never bound, so no lag was reproduced").toBe(0);
+      const handed = traceLog().entries.filter((e) => e.message === "handed the host a generated deck");
+      expect(handed.length, "no deck was inserted, so there is nothing to assert about").toBeGreaterThan(0);
+      // THE ASSERTION. A deck that landed is never reported as having landed
+      // nothing.
+      const zeros = handed.filter((e) => (e.data as { landed?: number }).landed === 0);
+      expect(
+        zeros.length,
+        `an insert reported landed: 0 for slides that landed — ${JSON.stringify(handed.map((e) => e.data))}`,
+      ).toBe(0);
+    });
+  });
+
   it("skips, naming the shortfall, when the count never settles", () => {
     installHost([makeSlide("s1")]);
     // The same ceiling, but it never lifts — so the settle cannot rescue it and

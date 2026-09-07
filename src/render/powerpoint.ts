@@ -7459,7 +7459,31 @@ export async function insertSlidesFromPptx(
     DECK_INSERT_TIMEOUT_MS(expectedSlides),
     `inserting ${expectedSlides} slide(s) from a generated deck`,
   );
-  const after = await slideCount();
+  // SETTLED, because a raw count here reports slides that landed as slides that
+  // did not. `settledSlideCount` was written for this host behaviour and its
+  // docstring cites round 297 — an insert on this very path reporting
+  // `landed: 0` for two slides that were on the deck — and then this call was
+  // left reading `slideCount()` anyway.
+  //
+  // The archive shows what that costs, and it is not a cosmetic number. Four
+  // rounds — 148, 315, 375 and 422 — trace `landed: 0` here, the scenario
+  // `insert on top of an earlier run` failing with a GeneralException, and then
+  // the NEXT scenario's insert of two slides measuring `landed: 4`. Those two
+  // extra slides are the ones this call had just said did not arrive. Four of
+  // 1,641 traced inserts, and 4 of the 4 GeneralException failures that
+  // scenario has ever had.
+  //
+  // It also settles the question the other way. A retry on this path was staged
+  // on those same four rounds, read as "the insert failed and the next attempt
+  // passed". It did not fail: a retry would have handed the host a second copy
+  // of a deck already on the slide, and the `landed: 4` reading is what a
+  // duplicate looks like. The change was dropped.
+  //
+  // Costs nothing when the count is honest — the re-read is conditional on it
+  // being short. `before` unread stays unread: NaN is not >= anything, so this
+  // re-reads once and still returns a number the caller can see is not one,
+  // which is what `slideCount` refuses a default for in the first place.
+  const after = await settledSlideCount(before + expectedSlides);
   trace("insert", "handed the host a generated deck", {
     expectedSlides,
     landed: after - before,
