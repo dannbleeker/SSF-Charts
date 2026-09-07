@@ -145,6 +145,13 @@ for (let n = 0; n < TRIALS; n++) {
       trial: n,
       index: set.index,
       idAtAdd: set.idAtAdd,
+      // THE THRESHOLD, WRITTEN DOWN. `before` is the sole thing `seen` is
+      // compared against, and the first run of this harness left it out of the
+      // output entirely — so "the slide had 2 placeholders before the draw" was
+      // inferable from the data but not re-derivable from it, which is a weaker
+      // thing than it reads as. A file that records a verdict without its
+      // threshold is asking to be taken on trust.
+      before: set.before,
       filledAtMs,
       censored: filledAtMs === undefined,
       reads,
