@@ -49,6 +49,7 @@ const {
   profileHeldByOrphan,
   endOrphanCommand,
   endOrphanedBrowser,
+  describePane,
   browserDiedMidRound,
   onlyDirtyDeck,
   DEAD_BROWSER_POLLS,
@@ -1085,6 +1086,36 @@ describe("talking to the browser at all", () => {
       ),
       "a throwing spawn must not take the round down with it",
     ).toBe(false);
+  });
+
+  it("says what the pane was showing when the run button is missing", () => {
+    // `no-run-button` ended three cycles on 2026-09-06/07, each AFTER a
+    // successful re-sideload — pane back, Automation tab selected, deck swept,
+    // `ready`, then the refusal. The stop asks for a person and handed them
+    // nothing, so the only question left ("what was on the pane?") had no
+    // answer in any of the three logs.
+    const paneOnTheWrongTab = [
+      "### Elements",
+      '- tab "Chart" [selected] [ref=f8e13]',
+      '- tab "Elements" [ref=f8e14]',
+      '- tab "Automation" [ref=f8e16]',
+      '- button "Insert into slide" [ref=f8e99]',
+    ].join("\n");
+    const said = describePane(paneOnTheWrongTab);
+    expect(said, "the tab list is what separates a wrong tab from a broken pane").toContain('tab "Automation"');
+    expect(said).toContain('button "Insert into slide"');
+
+    // A pane that answered nothing must not read as a pane with no controls —
+    // they are different failures and this runs where both are possible.
+    expect(describePane(""), "an empty answer").toContain("answered nothing at all");
+    expect(describePane(undefined)).toContain("answered nothing at all");
+    // Prose and refs in the same output are not controls.
+    expect(describePane("### Chart\n- generic: some text\n  - img [ref=f1]")).toContain("answered nothing at all");
+
+    // CAPPED, because this prints underneath the stop it explains. A full
+    // accessibility dump would bury the message it is attached to.
+    const many = Array.from({ length: 40 }, (_, i) => `- button "B${i}" [ref=f${i}]`).join("\n");
+    expect(describePane(many).split("\n"), "an uncapped dump buries the stop").toHaveLength(13);
   });
 
   it("keeps what a failed CLI call said, and nothing from one that worked", () => {

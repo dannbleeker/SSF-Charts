@@ -1669,6 +1669,34 @@ export function profileHeldByOrphan(stderr) {
 }
 
 /**
+ * What the pane is showing, for a stop that otherwise hands a person nothing.
+ *
+ * `no-run-button` ended three cycles on 2026-09-06/07, each after a browser
+ * death and a SUCCESSFUL re-sideload: the log shows the pane back, the
+ * Automation tab selected, the deck swept, `ready`, and then the refusal. The
+ * mitigation in `attempt` — select the tab and look again — had already run and
+ * already failed, so the only useful next question is what the pane actually
+ * had on it, and that answer was discarded all three times.
+ *
+ * TABS AND BUTTONS ONLY, and capped. Enough to separate "on the wrong tab" from
+ * "rendered without its controls" from "not a pane at all" — three different
+ * next steps that were one message. A full accessibility dump would bury the
+ * stop it is attached to.
+ *
+ * Anything unparseable reads as nothing rather than throwing: this runs on a
+ * path that has already failed, and a diagnostic that can end a round is worse
+ * than no diagnostic.
+ */
+export function describePane(findOutput, limit = 12) {
+  const lines = String(findOutput ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => /^- (tab|button) "/.test(l))
+    .slice(0, limit);
+  return lines.length ? `  the pane is showing:\n    ${lines.join("\n    ")}` : "  the pane answered nothing at all";
+}
+
+/**
  * The command that ends an orphaned browser, for the platform this runs on.
  *
  * A FUNCTION OF THE PLATFORM RATHER THAN A READ OF `process.platform`, for the
@@ -2202,6 +2230,13 @@ export async function attempt(argv, deps, sh, healed = false) {
   }
   if (!runBtn) {
     console.error("  could not find the run button, and the Automation tab did not bring it back");
+    // Swallowed on purpose: this runs on a path that has already failed, and a
+    // diagnostic that can end a round is worse than no diagnostic.
+    try {
+      console.error(describePane(sh("find", "--regex", '/(tab "|button ")/')));
+    } catch {
+      /* the pane is past describing; the refusal above is the report */
+    }
     return { code: 1, reason: "no-run-button" };
   }
   console.log("  running — this takes about ten minutes");
