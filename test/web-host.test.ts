@@ -511,6 +511,20 @@ describe("the everyday paths on a host that refuses stale proxies", () => {
        * One field closes it, and this pins the field so it cannot quietly go.
        */
       expect(String(outcome!.data?.slides), "the parts-list event does not say which slide").toContain(slideId!);
+      /**
+       * NOT ASSERTED HERE: that no event carries `charts: 0`.
+       *
+       * 3,000 of 6,179 archived events do — an outcome traced for an empty item
+       * list, nearly half the population, corrupting every denominator computed
+       * off this event. `tracePartsOutcome` now guards against it.
+       *
+       * The obvious assertion went in and came straight back out: it passed
+       * with the guard and without it, because this double never reaches
+       * `groupAndTagAll` with an empty item list. A test that cannot fail reads
+       * as coverage and is not, and teaching the fake to produce the case would
+       * be building the double around the bug. The guard's own docstring
+       * carries the survivor, and a round is what confirms it.
+       */
       // And it must be a WHOLE list — a tag naming fewer shapes than the chart
       // drew strands the unnamed ones on the next edit, which is worse than none.
       const fresh = deck.find((s) => s.id === slideId);
