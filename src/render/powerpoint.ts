@@ -6386,15 +6386,49 @@ export function _setBlankReReadDelayForTest(ms: number): void {
 /**
  * How long to leave the host alone after a structural change to the deck.
  *
- * The only workaround anyone has for office-js#5022 — `context.sync()` running
- * forever after add → delete → re-read — is a pause. The reporter's own words:
- * *"I had better result by adding a timer of 1-2 seconds between the
- * `shape.delete()` and the next `await context.sync()`."* Microsoft has it under
- * investigation and has offered nothing else.
+ * THE CITATION THAT STOOD HERE HAS BEEN CORRECTED THREE WAYS, 2026-09-07, and
+ * what it justifies is now weaker than it read.
  *
- * A second is a real cost and it is not a guess dressed as one: it is the
- * cheapest known answer to a failure that costs a whole operation, and it is
- * spent only where two structural changes meet back to back.
+ * It said: the only workaround anyone has for office-js#5022 — `context.sync()`
+ * running forever after add → delete → re-read — is a pause, quoting the
+ * reporter's *"I had better result by adding a timer of 1-2 seconds between the
+ * `shape.delete()` and the next `await context.sync()`"*, and adding that
+ * Microsoft "has it under investigation and has offered nothing else".
+ *
+ * 1. **The quote stops one sentence early.** The reporter's next words are *"But
+ *    sometimes it still struggling and never finish."* A workaround its own
+ *    author says still hangs is not the cheapest known answer.
+ * 2. **#5022 is closed, and not by a fix.** Closed as completed 2024-11-18,
+ *    five hours after the reporter self-diagnosed: *"I forgot an effect that
+ *    occur everytime an element is selected and that use PowerPoint.run &&
+ *    context.sync. So everytime my code created a Shape, Powerpoint select it
+ *    and a parallel sync occured. By removing this effect everything work
+ *    well."* The bug was a second `PowerPoint.run` racing the first. So the
+ *    issue is not evidence of a host defect at all — and `issue-status.mjs`
+ *    reporting it as FIXED UPSTREAM is its own kind of wrong: nothing was
+ *    fixed, the report was withdrawn.
+ * 3. **This add-in already prevents that cause.** `onSelectionChanged` returns
+ *    early while `hostBusy()` and replays the last event afterwards, which is
+ *    exactly the guard the reporter was missing.
+ *
+ * AND THE PROBE BUILT TO WATCH FOR THE SYMPTOM HAS NEVER SEEN IT.
+ * `picture-then-shape-read` drives add-picture-then-re-read every round and
+ * answers `silent` on a hang. Across 401 rounds:
+ *
+ *     327  unreadable      the load did not land — office-js#6363's signature
+ *      47  yes             the re-read answered
+ *      23  threw
+ *       4  no-scratch-slide
+ *       0  silent          the hang this constant is paid against
+ *
+ * So the second is spent on a failure this host has not once produced, while the
+ * failure it does produce is a different one that a pause is not the remedy for.
+ *
+ * LEFT AT ONE SECOND ANYWAY, deliberately. It is spent only where two
+ * structural changes meet back to back, nothing here measures what removing it
+ * would do, and a cost removed on the strength of a corrected citation is
+ * exactly as unevidenced as a cost kept on one. This wants a pair of rounds at
+ * `SETTLE_MS = 0`, not an edit made while reading a GitHub thread.
  */
 let SETTLE_MS = 1_000;
 

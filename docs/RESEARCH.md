@@ -109,7 +109,7 @@ still open:
 | Behaviour we defend against | Issue | Status |
 |---|---|---|
 | `InvalidParam passed to GetItem(id)` — a shape proxy goes stale across a sync | [office-js#2903](https://github.com/OfficeDev/office-js/issues/2903) | closed **"not planned"** |
-| `context.sync()` hangs forever after add → delete → re-read shapes | [office-js#5022](https://github.com/OfficeDev/office-js/issues/5022) | under investigation; the only workaround anyone has is a 1–2 s sleep |
+| `context.sync()` hangs forever after add → delete → re-read shapes | [office-js#5022](https://github.com/OfficeDev/office-js/issues/5022) | **WITHDRAWN, not fixed** — closed 2024-11-18 after the reporter found his own selection handler was opening a parallel `PowerPoint.run`. Not evidence of a host defect, and our probe has never seen the symptom (0 `silent` in 401 rounds) |
 | Loaded properties silently unavailable after `sync()` (our "hollow reads") | [office-js#6363](https://github.com/OfficeDev/office-js/issues/6363) | labelled **regression + product bug**; reporter tried ten approaches, none worked |
 | `sync()` hangs past ~51 items in one `load()` | [office-js#4272](https://github.com/OfficeDev/office-js/issues/4272) | open — this is why `READBACK_PAGE` is 20 |
 | `setSelectedShapes([])` does not clear the selection on the web | [office-js#3083](https://github.com/OfficeDev/office-js/issues/3083) | open — why `clearShapeSelection` re-selects the *slide* instead |

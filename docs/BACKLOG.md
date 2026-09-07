@@ -1207,10 +1207,16 @@ not be checked against a live host in the time left. A saved round trip is not
 worth an unvalidated edit to that function.
 
 **RE-DERIVED AND STILL LIVE, 2026-09-07.** Counted independently from the whole
-archive: **274 of the 282 rounds since 143 carry it, exactly twice each, and a
-re-read followed all 274 times.** The eight that do not are rounds that ended
-before the path ran. So the cost is unchanged and the repair has never once
-failed — which is why this has stayed cheap to ignore.
+archive: **274 of the 282 rounds since 143 carry it, and a re-read followed all
+274 times.** The eight that do not are rounds that ended before the path ran. So
+the cost is unchanged and the repair has never once failed — which is why this
+has stayed cheap to ignore.
+
+> **"EXACTLY TWICE EACH" STOOD HERE AND WAS MY OWN MISCOUNT**, corrected the
+> same evening. Two trace ENTRIES, one event: the error line `resolving the
+> charts' shapes` and its recovery line `a by-id lookup refused the whole
+> resolve`. Rounds 426 and 427 carry one refusal apiece. Anyone re-deriving this
+> should count the recovery line, which fires once per refusal.
 
 The same pass killed a lookalike. `drawing the chart's shapes` also throws
 GeneralException, 15 rounds' worth, `errorLocation` `SlideCollection.getItem`
@@ -1235,9 +1241,35 @@ subtracted because `queueGroupMembers` also declines below PowerPointApi 1.8 and
 when the refusal is already latched for the batch, so it is not
 `charts - withParts` and a version that computed it would be wrong on both.
 
-**What to read when the next rounds land**: `withParts` above 0 says the fix
-below may be unnecessary; `withParts` at 0 across a cycle says the parts list is
-genuinely absent at this point and the doomed round trip is worth buying.
+**ANSWERED BY ROUNDS 426 AND 427, both all-green on `630e4b3`.** The question
+was whether a chart ever reaches the update carrying a parts list, because one
+that does never queues `.group`:
+
+    charts at the update          28   (14 a round, one chart per batch)
+    withParts                      0   every one
+    queuedGroup                   28   every one
+
+**So the parts-list repair will NOT remove this by itself.** The list is absent
+at this point, every chart therefore asks for `.group`, and the hypothesis this
+entry was holding the fix for is dead. Note what the number is not: it says the
+list is absent HERE, not that it is never written — `gotPartsList` is 35 on the
+production side, and the two can both be true if the list does not survive onto
+the target.
+
+**AND THE COST IS AN ORDER OF MAGNITUDE SMALLER THAN THIS SECTION'S TITLE.**
+"A doomed round trip on every grouped-chart update" is wrong. All 14 charts a
+round queue `.group`; exactly ONE refuses, and in both rounds it is the same
+chart — `draw-6`. Twelve of the fourteen `.group` reads are honoured. So the
+price is one poisoned sync per round on one identifiable chart, not one per
+update.
+
+That also points at a smaller fix than the one below: not "skip the by-id
+resolve on the grouped-member path", but "do not ask a shape that is not a group
+for its group". What blocks it today is that nothing on `EditTarget` says
+whether the old shape was grouped — `old.load("left,top,type")` answers, but not
+until the sync `.group` has already poisoned. A `grouped` flag on the target
+would be the whole change, and it is worth a read of the target-producing paths
+before anyone touches the batch shape.
 
 ### The largest product cost was in the FAST path, not the redraws — 2026-08-29
 
@@ -2753,6 +2785,45 @@ All cleared 2026-08-16. See git.
 What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
+
+### office-js#5022 was WITHDRAWN, and a 1-second cost was resting on it — 2026-09-07
+
+A 100-agent web pass over this project's upstream citations. Most of it
+confirmed what the repo already had — #6363 is the live hollow-read bug, #6237
+is the date placeholder, #6329's save-per-sync is accepted and unfixed — and one
+citation came back materially different.
+
+**`SETTLE_MS = 1_000` cited #5022 as "under investigation", quoting the reporter's
+1-2 second timer as "the cheapest known answer".** Checked against the GitHub
+API rather than the summary:
+
+- The quote stops one sentence early. The next words are *"But sometimes it
+  still struggling and never finish."*
+- The issue is **closed as completed, 2024-11-18**, five hours after the
+  reporter self-diagnosed: an effect of his own, firing on every selection,
+  opened a second `PowerPoint.run` alongside the one in flight. Nothing was
+  fixed. `issue-status.mjs` reads that state as "FIXED UPSTREAM — re-read what
+  cites it", which is right to flag and wrong about why.
+- **This add-in already prevents the cause.** `onSelectionChanged` returns early
+  while `hostBusy()` and replays the last event when the work finishes.
+
+And the probe built to watch for the symptom has never seen it.
+`picture-then-shape-read` answers `silent` on a hang; across 401 rounds it is
+**327 unreadable · 47 yes · 23 threw · 4 no-scratch-slide · 0 silent.** The 327
+are #6363's signature, not #5022's. So the second is paid against a failure this
+host has never produced.
+
+**NOT REMOVED.** Nothing here measures what removing it would do, and a cost
+dropped on a corrected citation is exactly as unevidenced as one kept on it. The
+open task is a pair of rounds at `SETTLE_MS = 0` — cheap, and the only thing
+that can answer it.
+
+**What the research did NOT find**, recorded so the gap is not mistaken for a
+clean bill: nothing at all on `Shape.group` / `ShapeGroup.shapes` on the web
+host, and nothing on `untrack()` for PowerPoint proxies — zero surviving claims
+on that whole sub-question. And the id-space transition (a fresh slide's
+`4123571130#123571113` becoming `323#2528698050`) is undocumented anywhere; the
+one candidate source was refuted. Both remain ours to characterise.
 
 ### The file insert has two failure modes and they are disjoint — 2026-09-07
 

@@ -2653,6 +2653,18 @@ const PROBES: Probe[] = [
     // shapes are read back to rename the new image. The reporter's only
     // workaround is a 1-2 second pause, and it still recurs.
     //
+    // WHY IT CLOSED, added 2026-09-07, and it changes what this probe is
+    // evidence about: the reporter WITHDREW it. *"I forgot an effect that occur
+    // everytime an element is selected and that use PowerPoint.run &&
+    // context.sync. So everytime my code created a Shape, Powerpoint select it
+    // and a parallel sync occured. By removing this effect everything work
+    // well."* Nothing was fixed upstream, so this cannot be asking whether a fix
+    // arrived — it is asking whether a host that was never shown to have the
+    // defect has it. Kept: the question is still worth an answer, this is the
+    // only thing here that can give one, and its `silent` arm is the repo's only
+    // watch on a sync that never returns. In 401 rounds that arm has never
+    // fired — 327 unreadable, 47 yes, 23 threw, 4 no-scratch-slide, 0 silent.
+    //
     // `drawDemoItem` does exactly this shape. A chart too dense to draw becomes
     // ONE picture, and `needsRefresh` is true whenever `pictureBase64` is set —
     // so the picture is added and the shape collection is re-read a sync later,

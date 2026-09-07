@@ -212,12 +212,34 @@ Two corrections to what this file said before:
   date/time placeholder shape, which is #6237's trigger, not this one. The
   earlier note here had it in the wrong family and that error is fixed rather
   than quietly dropped.
-- **#5022 is the closer match for the OTHER thing measured tonight** — sync
+- ~~**#5022 is the closer match for the OTHER thing measured tonight** — sync
   hanging indefinitely after repeated add/delete work. Open, "under
-  investigation", and it matches the session degradation seen on
-  Presentation72 (reads at 18ms, `slides.add()` never returning, cured by a
-  reload). Not the same as the empty read; a separate observation that has a
-  separate home.
+  investigation"…~~ **WRONG ON BOTH COUNTS, corrected 2026-09-07.** #5022 is
+  closed as completed (2024-11-18) and was WITHDRAWN rather than fixed: the
+  reporter found an effect of his own firing on every selection and opening a
+  parallel `PowerPoint.run`. It is not a host defect and it is not a home for
+  anything. The session degradation on Presentation72 is still a real
+  observation; it has no upstream match, and #6363 is the nearest live issue for
+  the read half of it.
+
+- **AND THIS DECK CARRIES NO DATE PLACEHOLDER**, which is what makes the
+  separation above hold locally rather than only on the ticket text. #6237's
+  trigger is one Header-and-Footer "Date and time" placeholder making every
+  shape-tag read on that slide fail with 5010, so the check is whether such a
+  slide exists here. Two readings say no:
+
+      shape names across the last 40 rounds   PowerChart, title, category-N,
+                                              seg-N-M, series-label-N,
+                                              "Title 1", "Subtitle 2"
+      slides reporting ZERO shapes            1 of 2,311, and it is the deck's
+                                              blank first slide
+
+  Layout placeholders ARE listed when present ("Title 1", "Subtitle 2"), so the
+  API is not hiding them. The one slide that reads empty is empty in 244 rounds
+  and held exactly one shape in round 261 — `Group 12`, a stray that round left
+  behind. A slide poisoned by #6237 would read empty every time while holding
+  content, and no slide here does. So our 5010s are the RECENCY family, and
+  Draft D is filed against the right one.
 - #6498 ("Insert shapes in Powerpoint Web does not reflect instantly") is about
   visual reflection of Slide Master edits. Different thing.
 
