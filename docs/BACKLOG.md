@@ -2853,9 +2853,28 @@ own `steps`; the last one before the record was written:
 
 `crashes/README.md` already says that scan runs AFTER every verdict is in. So
 the largest single cause of lost rounds is a read taken at maximum session
-fatigue, after the round's measurements are complete. **Making it cheaper, or
-skipping it when the session is deep, would plausibly cut lost rounds a long
-way — and it changes what every round collects, so it is the owner's call.**
+fatigue, after the round's measurements are complete.
+
+**AND IT IS CHEAP, WHICH IS WHAT MAKES THE NUMBER DAMNING.** Measured over the
+last 60 rounds where the scan completed:
+
+    scan duration            p25 6.8s   p50 7.6s   p90 11.6s
+    scan as a share of the
+      round's own work        p50 1.4%   p90 1.9%
+
+**1.4% of the time, 41% of the deaths** — around a thirty-fold
+over-representation. This is not a heavy operation that sometimes fails; it is a
+seven-second read that is the last thing in flight for four host deaths in ten.
+
+(The duration is measured on scans that SURVIVED — a scan that killed the host
+leaves no round file. So this is the cost when it works, and the true cost is
+worse.)
+
+**Making it cheaper, or skipping it when the session is deep, would plausibly
+cut lost rounds a long way — and it changes what every round collects, so it is
+the owner's call.** Recommendation: do it, and measure the crash rate either
+side, because this is the one change here with a large expected effect and a
+clean before/after.
 
 A WRONG TURN AVOIDED, recorded because it was nearly taken: the first attempt
 attributed crashes to scenarios by their median start time in RECENT rounds,
