@@ -60,9 +60,14 @@ the corroboration target has moved.
   tag read. Its reporter attributes it to a **date placeholder on the slide**,
   which is a different trigger from the one measured here — so this is a
   corroborating comment with a second mechanism, not a duplicate.
-- #4204 is an open re-file of #2903 with zero comments. Worth knowing #2903 is
-  not the dead end the repo's `KNOWN_ISSUES` treats it as: its closure was an
-  automated inactivity sweep, not an engineering decision.
+- ~~#4204 is an open re-file of #2903 with zero comments.~~ **WRONG, corrected
+  2026-09-07.** #4204 reports the same error STRING on a date/time placeholder
+  shape — #6237's trigger, not #2903's. It is in the placeholder family, not
+  the new-slide family, and reading it as a re-file put the closest prior art
+  in the wrong bucket for two days. What stands from this bullet: **#2903 is
+  not the dead end `KNOWN_ISSUES` treats it as** — its closure was an automated
+  inactivity sweep, not an engineering decision. See DRAFT D's own duplicate
+  search, which is the current one.
 
 ## On the Script Lab repro
 
@@ -113,6 +118,38 @@ And the control that decides what "0 shapes" means: **a screenshot of that
 slide shows the rectangle sitting on it.** The shape is there. The collection
 says it is not.
 
+### THE SHARPEST VERSION, measured 2026-09-07 on a clean deck
+
+`Presentation73`, six slides, healthy host — the control slide reads 3 shapes
+on every single read, 124 of them, so nothing below is a sick session.
+
+Six trials. Each adds a slide, reads its shape count, draws one rectangle on
+it, and then re-reads every ~6 seconds for two minutes:
+
+    before the draw                    2 shapes   (the layout's two placeholders)
+    after the draw, at 1.9s            2 shapes
+    ... and at every read to 121s      2 shapes
+    trials that ever counted the
+      rectangle                        0 of 6
+    reads taken                        124
+    control slide, every read          3 shapes
+
+**And a screenshot of the last of those slides shows the rectangle sitting on
+it**, next to the two placeholders the API does report. The slide has three
+things on it. `slide.shapes.load("items/id")` returns two, and the one it omits
+is the one the add-in just drew.
+
+So it is not a delay of about two seconds. On this deck it is not a delay at
+all inside two minutes — the drawn shape is simply not in the collection, while
+the slide's own placeholders are. **#2903's 2-second workaround is not enough,
+and saying so with a number is the contribution.**
+
+WHAT KEEPS IT HONEST: on `Presentation72` two comparable slides DID eventually
+report the drawn shape, minutes later and after other work had happened on the
+deck. So "never" is wrong as a universal claim; "not within two minutes, six
+times out of six, while visibly present" is what was measured. The upper bound
+is unmeasured and should be, before anyone writes "permanent".
+
 ### The axis is RECENCY, and that is the whole finding
 
     slide 0   the document's own                     6 shapes, tag OK
@@ -137,15 +174,61 @@ collection for a shape that is demonstrably on the slide, for some period after
 the slide was added, and `SlideCollection.getItem` refuses that slide's
 add-time id with 5010 in the same window.**
 
-### Before this is filed
+### THE DUPLICATE SEARCH, done 2026-09-07 — and this is NOT ORIGINAL
 
-1. **Bound the window.** "Some period" is not a bug report. Read one such slide
-   every 15s until it fills, three times, and quote the distribution.
-2. **Reproduce without this add-in.** Everything above ran inside the pane's
-   frame; the snippet is plain Office.js and should be pasted into Script Lab
-   on a fresh deck to be sure nothing here is ours.
-3. **Search the tracker again** with the corrected symptom — "shapes collection
-   empty after slides.add" is a different query from the one that found #6237.
+Searched on the corrected symptom, which is a different query from the one that
+found #6237.
+
+**#2903 is the same bug.** "Different behavior between PowerPoint desktop and
+Online when creating a new slide and adding content to it": `slides.add()`,
+then `getItemAt()`, then content — text does not render, images land on the
+wrong slide, and the console carries **`InvalidParam passed to GetItem(id)`**.
+The reporter's workaround is **a 2-second delay after slide creation**, which
+"partially resolves" it.
+
+**AND THE MEASUREMENT SAYS TWO SECONDS IS NOT ENOUGH.** An earlier draft of
+this paragraph claimed the shape becomes visible at "1.87 - 1.93 seconds, eight
+trials", and called the match with #2903's guess striking. It was an artifact
+and it is retracted: those trials stopped as soon as the collection was
+non-empty, and a slide from `slides.add()` arrives carrying two layout
+placeholders, so every trial "filled" on the placeholders at the first read and
+never looked at the rectangle at all. A trigger that cannot fail is not a
+measurement. See the corrected numbers below.
+
+**#2903 is CLOSED — by an automated inactivity sweep, not by an engineering
+decision.** That is worth saying plainly to whoever reads the filing.
+
+Two corrections to what this file said before:
+
+- **#4204 is not a re-file of #2903.** It reports the same error STRING on a
+  date/time placeholder shape, which is #6237's trigger, not this one. The
+  earlier note here had it in the wrong family and that error is fixed rather
+  than quietly dropped.
+- **#5022 is the closer match for the OTHER thing measured tonight** — sync
+  hanging indefinitely after repeated add/delete work. Open, "under
+  investigation", and it matches the session degradation seen on
+  Presentation72 (reads at 18ms, `slides.add()` never returning, cured by a
+  reload). Not the same as the empty read; a separate observation that has a
+  separate home.
+- #6498 ("Insert shapes in Powerpoint Web does not reflect instantly") is about
+  visual reflection of Slide Master edits. Different thing.
+
+**So the recommendation changes.** This is not a new issue to file; it is
+**#2903 with the measurement it never had**. Two ways to play it, and the
+choice is the owner's:
+
+    comment on #2903      keeps the history together; risks being unread,
+                          because the issue is closed and stale
+    file fresh, citing    gets attention; costs a duplicate if a maintainer
+    #2903 as prior art    disagrees. Say in the first line that #2903 reported
+                          it in 2023, was closed by inactivity, and that this
+                          adds the number its reporter guessed at
+
+### Still to do before it goes out
+
+1. **Reproduce without this add-in.** Everything above ran inside the pane's
+   frame. The snippet is plain Office.js and should be pasted into Script Lab
+   on a fresh deck, so nothing in the report depends on our code.
 
 ### And it vindicates our own code
 
