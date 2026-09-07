@@ -295,10 +295,29 @@ Chrome on the profile before believing it:
     Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" |
       Where-Object { $_.CommandLine -like '*pw-profile*' }
 
-**Nothing here explains WHY it happens.** Both losses on 2026-09-06 came
-mid-round — one at 746s — and left no entry in the Windows Application log. The
-driver handles the consequence; the cause is open, and the mechanism above is
-labelled as inference for that reason.
+**Nothing here explains WHY it happens.** The losses come mid-round and leave no
+entry in the Windows Application log. The driver handles the consequence; the
+cause is open, and the mechanism above is labelled as inference for that reason.
+
+**A BROWSER DEATH IS NOT A HOST CRASH, and the timings say so.** Easy to
+conflate — both end a round, both are recovered from — but they are different
+events. PowerPoint's own crash raises its error dialog and leaves a crash
+record; a browser death takes the whole process. Where they happen differs too:
+
+    host crashes, 105 records naming a time   p25 429s  p50 529s  p90 623s
+    browser deaths timed on 2026-09-06/07     746s, 877s, 910s, 1626s
+
+Four readings is not a distribution, and it is the only timing evidence there
+is — `browser-gone` appears sixteen times in `driverRun.recovered` across the
+archive with no elapsed time recorded against any of them. But all four fall
+beyond the host-crash p90, so treating the two as one phenomenon is the thing to
+avoid until something measures it properly.
+
+**A CHEAP WAY TO MEASURE IT PROPERLY, since the driver already prints the
+number:** the "browser died Ns into the round" line carries the elapsed time and
+nothing keeps it. Recording it on `driverRun` beside `recovered` would turn four
+hand-copied readings into a column. Not done here because it changes what a
+round file contains.
 
 ## Do not push while a cycle is running
 
