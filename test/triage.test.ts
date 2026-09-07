@@ -5354,7 +5354,13 @@ describe("the scenario that killed the host", () => {
     /**
      * A scenario that stops passing is exit 1 here. One that starts taking
      * PowerPoint down produces no verdict to notice it by and is at least as
-     * serious, so it exits 1 too — the owner's call, made 2026-09-03.
+     * serious, so it is fatal too — the owner's call, made 2026-09-03.
+     *
+     * IT IS EXIT 3 SINCE 2026-09-07, and the owner's decision is untouched: the
+     * check is exactly as fatal, it simply no longer shares a code with the
+     * regression check. Sharing one meant `cycle.mjs` printed "a scenario that
+     * WAS passing has stopped" for a host death, and round 428 ended a night
+     * that way with 19 of 19 scenarios green.
      *
      * Asserted as source because reaching it needs a crashes/ directory that
      * breaches, and the gate's main block is not exported.
@@ -5363,8 +5369,14 @@ describe("the scenario that killed the host", () => {
     expect(src, "the gate no longer computes fatal scenarios").toMatch(/fatalScenarios\(crashes\)/);
     // The window is generous because the guidance printed between the two grew
     // when this became a rate. What is asserted is that a breach still reaches
-    // `exit(1)`, not that the prose is any particular length.
-    expect(src, "a breach no longer stops the gate").toMatch(/breaches\.length[\s\S]{0,2000}process\.exit\(1\)/);
+    // a fatal exit, not that the prose is any particular length.
+    expect(src, "a breach no longer stops the gate").toMatch(/breaches\.length[\s\S]{0,2000}process\.exit\(3\)/);
+    // AND NOT BY FALLING THROUGH TO THE REGRESSION EXIT. `exit(1)` appears
+    // later in this file for the check that judges verdicts; a breach that
+    // reached THAT would be back to one code for two questions.
+    expect(src, "the breach exits through the regression code").not.toMatch(
+      /breaches\.length[\s\S]{0,2000}process\.exit\(1\)/,
+    );
     // And it reads the CRASH records, not the salvaged rounds — a salvaged
     // round carries verdicts and a killed scenario has none.
     expect(src).toMatch(/loadCrashRecords\(\)/);

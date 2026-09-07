@@ -572,12 +572,23 @@ profile is worse than a round not run.
 ### When 4:3 disagrees
 
 `npm run rounds:gate` answers several different questions and they must not be
-confused. **Exactly one of them is fatal.**
+confused. **Two of them are fatal, and they now have different exit codes.**
+
+> "Exactly one of them is fatal" stood here and was wrong: the host-death check
+> below has been fatal since it was written. Both exited 1, so `cycle.mjs`
+> printed the regression message for either — and round 428 ended a night with
+> 19 of 19 scenarios green while its stop line said a scenario had stopped
+> passing. Corrected 2026-09-07, with the codes split.
 
 - **A REGRESSION** — a scenario fell against its OWN profile's history. Fatal,
-  exit 1. Judged only against rounds at the same slide size, because a 4:3 round
-  measured against three 16:9 rounds would be flagged for scoring differently,
-  which it does by design.
+  **exit 1**. Judged only against rounds at the same slide size, because a 4:3
+  round measured against three 16:9 rounds would be flagged for scoring
+  differently, which it does by design.
+- **A HOST DEATH RATE** — a scenario is killing PowerPoint more often than it
+  used to, against the ceilings in `FATAL_SCENARIO_RATE`. Fatal, **exit 3**. No
+  verdict falls, so the scenario list says nothing about it; read the
+  deaths-per-1000 table the gate prints. Nothing needs editing to clear it — it
+  is a rate, and it falls on its own as clean runs accumulate.
 - **A DIVERGENCE** — a scenario passed at one slide size and failed at another,
   on the same build. **Reported, never fatal.** The response is to run 4:3
   again, or as a pair, before treating the difference as a property of the slide

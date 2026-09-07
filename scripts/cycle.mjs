@@ -162,6 +162,19 @@ export function nextStep({ exitCode, receipt, gateStatus }) {
       why: "the gate could not judge this round — nothing was checked, and that is not a regression",
     };
   }
+  // TWO FATAL CHECKS, TWO MESSAGES. Everything non-zero used to say "a scenario
+  // that WAS passing has stopped", and round 428 showed what that costs: 19 of
+  // 19 scenarios green, the gate red on a host DEATH, and a stop line sending
+  // its reader to hunt a failed verdict that was not there. A stop that
+  // misnames its own cause is worse than a terse one, because it is acted on.
+  if (gateStatus === 3) {
+    return {
+      go: false,
+      why:
+        "a scenario is KILLING THE HOST more often than it did — no verdict fell, so read the death rate " +
+        "the gate printed, not the scenario list",
+    };
+  }
   if (gateStatus !== 0) {
     return {
       go: false,

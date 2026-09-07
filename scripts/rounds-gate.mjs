@@ -375,7 +375,16 @@ if (isMain(import.meta.url, process.argv[1])) {
         "  meant to be higher, that is a person deciding a scenario may kill PowerPoint more often\n" +
         "  than it used to. See docs/ROUNDS.md.",
     );
-    process.exit(1);
+    // EXIT 3, NOT 1, AND THE CODE IS THE POINT. This gate has two fatal checks
+    // and they shared one exit code, so `cycle.mjs` — its only consumer — printed
+    // "a scenario that WAS passing has stopped" for both. Round 428 tripped THIS
+    // one: 19 of 19 scenarios green, one host death, and a stop message that
+    // sent its reader looking for a failed verdict that did not exist.
+    //
+    // `docs/ROUNDS.md` said of this gate that it "answers several different
+    // questions and they must not be confused. Exactly one of them is fatal."
+    // Two are, and that doc is corrected alongside this.
+    process.exit(3);
   }
   const gone = scenarioRegressions(rounds);
   // A SECOND, DIFFERENT QUESTION. The gate above asks whether a scenario fell

@@ -57,6 +57,21 @@ describe("a night's cycle", () => {
     expect(step.why).toMatch(/WAS passing/);
   });
 
+  it("names the host-death check by itself, instead of blaming a verdict that did not fall", () => {
+    // Round 428: 19 of 19 scenarios green, the gate red because `what a chart
+    // kind costs` had killed PowerPoint for the first time in 35 runs. Both
+    // fatal checks exited 1, so the night stopped saying "a scenario that WAS
+    // passing has stopped" — and its reader went looking for a failed verdict
+    // that was not in the round file.
+    const step = nextStep({ exitCode: 0, receipt: receipt(), gateStatus: 3 });
+    expect(step.go).toBe(false);
+    expect(step.why).toMatch(/KILLING THE HOST/);
+    // AND IT MUST NOT ALSO SAY THE OTHER THING. A message naming both checks is
+    // the same failure with more words — the reader still cannot tell which one
+    // fired.
+    expect(step.why, "the host-death stop still claims a scenario stopped passing").not.toMatch(/WAS passing/);
+  });
+
   it("stops when a leg finished but filed nothing", () => {
     // A ROUND THAT FINISHED IS NOT A ROUND THAT WAS FILED. `attempt` returns 0
     // when the pane says the run is done; archiving happens after and is
