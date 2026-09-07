@@ -227,8 +227,114 @@ choice is the owner's:
 ### Still to do before it goes out
 
 1. **Reproduce without this add-in.** Everything above ran inside the pane's
-   frame. The snippet is plain Office.js and should be pasted into Script Lab
-   on a fresh deck, so nothing in the report depends on our code.
+   frame. The snippet below is plain Office.js and should be pasted into Script
+   Lab on a fresh deck, so nothing in the report depends on our code. **Script
+   Lab has to be installed under the owner's account, so this step is his
+   whichever way it goes.** If it reproduces, file. If it does not, the finding
+   is about this add-in and must not be filed at all.
+
+---
+
+## THE TEXT TO PASTE, if step 1 passes
+
+Everything below this line is the issue body. Nothing above it is.
+
+> ### Your Environment
+>
+> - Platform: Office on the web
+> - Host: PowerPoint
+> - Browser: Chrome
+>
+> ### Expected behavior
+>
+> After `slide.shapes.addGeometricShape(...)` and `context.sync()`, a later
+> `slide.shapes.load("items/id")` should list the shape that was added.
+>
+> ### Current behavior
+>
+> On a slide created by `slides.add()` in the same session, it does not — and
+> not as a delay. The shape is drawn and visible on the slide; the collection
+> reports only the layout's placeholders and never the added shape, from a
+> fresh `PowerPoint.run`, by index or by the slide's id, for at least two
+> minutes.
+>
+> Measured on a six-slide deck, six trials, polling every ~6 seconds:
+>
+> | | |
+> | --- | --- |
+> | shapes on the new slide before the draw | 2 (the layout's placeholders) |
+> | after the draw, first read at 1.9s | 2 |
+> | every read out to 121s | 2 |
+> | trials where the added shape was ever listed | **0 of 6** |
+> | total reads | 124 |
+> | a pre-existing slide, read beside every one of those | 3, every time |
+>
+> A screenshot of the last such slide shows the added rectangle on it, next to
+> the two placeholders the API does report.
+>
+> A slide that existed before the session behaves correctly throughout,
+> including in the same run, in the same minute, immediately after a failing
+> read on a new slide.
+>
+> ### Related
+>
+> #2903 reports what I believe is the same defect — `slides.add()`, then
+> `getItemAt()`, then content that does not appear, with
+> `InvalidParam passed to GetItem(id)` in the console. It was closed by an
+> inactivity sweep rather than by an engineering decision. Its reporter found
+> that a 2-second delay after slide creation "partially resolves" it; the
+> measurement above says two seconds is not enough, and that the shape is not
+> merely late but absent from the collection for at least two minutes while
+> being visibly present on the slide.
+>
+> Separately, `slides.getItem(<id>)` throws `InvalidParam passed to GetItem(id)`
+> (5010) when given the id that `slides.load("items/id")` returns for a slide
+> added moments earlier — an id in a different space (`4123571130#123571113`)
+> from the one the same slide reports shortly after (`323#2528698050`). 3 of 3.
+> That may be the same root or a second one.
+>
+> ### Steps to reproduce
+>
+> ```js
+> // Run 1 — add a slide, and let it settle in a separate run.
+> await PowerPoint.run(async (c) => { c.presentation.slides.add(); await c.sync(); });
+> let index;
+> await PowerPoint.run(async (c) => {
+>   const slides = c.presentation.slides;
+>   slides.load("items/id");
+>   await c.sync();
+>   index = slides.items.length - 1;
+> });
+>
+> // Run 2 — how many shapes does the new slide have before we touch it?
+> await PowerPoint.run(async (c) => {
+>   const s = c.presentation.slides.getItemAt(index);
+>   s.shapes.load("items/id");
+>   await c.sync();
+>   console.log("before:", s.shapes.items.length);   // e.g. 2 placeholders
+> });
+>
+> // Run 3 — draw one shape and sync.
+> await PowerPoint.run(async (c) => {
+>   const s = c.presentation.slides.getItemAt(index);
+>   const r = s.shapes.addGeometricShape(PowerPoint.GeometricShapeType.rectangle);
+>   r.left = 20; r.top = 20; r.width = 40; r.height = 30;
+>   await c.sync();
+> });
+>
+> // Run 4 — and again every few seconds. The count never rises.
+> await PowerPoint.run(async (c) => {
+>   const s = c.presentation.slides.getItemAt(index);
+>   s.shapes.load("items/id");
+>   await c.sync();
+>   console.log("after:", s.shapes.items.length);    // still 2, for minutes
+> });
+> ```
+>
+> Change `getItemAt(index)` to a slide that existed before the session and the
+> count rises as expected.
+
+---
 
 ### And it vindicates our own code
 
