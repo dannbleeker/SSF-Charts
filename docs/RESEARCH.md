@@ -363,8 +363,16 @@ slide-layout engine. The README feature table is the authoritative list.
   could work from a sandboxed PowerPoint add-in.
 - §4b's issue links were read 2026-08-01. All were open then except #2903,
   which is closed "not planned" — a decision rather than a fix. Re-check before
-  assuming any of them has been resolved — and if #6363 or #5022 ever are, the
-  shape path's cost/benefit changes and is worth re-opening.
+  assuming any of them has been resolved — and if #6363 is, the shape path's
+  cost/benefit changes and is worth re-opening.
+
+  **#5022 was in that sentence and has been removed from it, 2026-09-07.** It is
+  closed, but as a WITHDRAWAL rather than a fix — the reporter found his own
+  selection handler opening a parallel `PowerPoint.run` — so there is nothing
+  there to be resolved and nothing to wait for. `npm run issue-status` reports it
+  as "FIXED UPSTREAM", which is the right flag on the wrong reading: a
+  closed-completed issue is not proof that a host defect existed, let alone that
+  it was fixed.
 - The selection wedge in §4b has **no issue of its own**. It was measured here,
   on build `55011a3`, and filed against no tracker — so unlike everything else
   in that table it rests on this project's own evidence. Worth reporting

@@ -1257,19 +1257,32 @@ production side, and the two can both be true if the list does not survive onto
 the target.
 
 **AND THE COST IS AN ORDER OF MAGNITUDE SMALLER THAN THIS SECTION'S TITLE.**
-"A doomed round trip on every grouped-chart update" is wrong. All 14 charts a
-round queue `.group`; exactly ONE refuses, and in both rounds it is the same
-chart — `draw-6`. Twelve of the fourteen `.group` reads are honoured. So the
-price is one poisoned sync per round on one identifiable chart, not one per
-update.
+"A doomed round trip on every grouped-chart update" is wrong. Charted per chart
+across rounds 426, 427, 428 and 429 — the same in all four:
 
-That also points at a smaller fix than the one below: not "skip the by-id
-resolve on the grouped-member path", but "do not ask a shape that is not a group
-for its group". What blocks it today is that nothing on `EditTarget` says
-whether the old shape was grouped — `old.load("left,top,type")` answers, but not
-until the sync `.group` has already poisoned. A `grouped` flag on the target
-would be the whole change, and it is worth a read of the target-producing paths
-before anyone touches the batch shape.
+    13 of 14   updated IN PLACE, no redraw, `.group` answered
+     1 of 14   refused — `draw-6`, every round, deterministic
+
+`draw-6` is inside `explode a degraded picture`, and **its old shape is a
+picture**: `removed: 1`, one shape, not a group. So the mechanism is the one the
+code comment always named — `.group` on a shape that is not a group returns
+GeneralException and poisons the sync — and it fires on exactly the one chart in
+the suite whose old shape is not a group. The other thirteen are groups, their
+`.group` reads are honoured, and they never reach a redraw at all.
+
+**And the fix would not save the redraw.** That is the part worth knowing before
+anyone spends the hot path on it. After the refusal, draw-6 redraws 24 shapes
+because "the chart has no parts list and no readable group members". A picture
+has no group members whether or not the sync was poisoned, so it would redraw
+anyway — exploding a picture to native shapes IS a redraw. What the fix saves is
+one poisoned sync and one recovery re-read, once a round. Real, and small.
+
+The shape of it: not "skip the by-id resolve on the grouped-member path", but
+"do not ask a shape that is not a group for its group". `EditTarget` carries no
+flag for that, and `old.load("left,top,type")` cannot answer in time — the sync
+that would tell us is the one `.group` has already poisoned. The explode path,
+though, KNOWS it is exploding a picture. That is where a flag would come from,
+and it is a caller-side change rather than a batch-shape one.
 
 ### The largest product cost was in the FAST path, not the redraws — 2026-08-29
 
