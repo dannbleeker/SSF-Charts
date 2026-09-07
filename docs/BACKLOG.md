@@ -3014,6 +3014,111 @@ attributed crashes to scenarios by their median start time in RECENT rounds,
 which would have blamed three scenarios that mostly did not exist when those
 crashes happened. The records name what was in flight themselves.
 
+### A round's verdicts are not independent, and all-green is a session statistic — 2026-09-07
+
+The general form of the pair below, and it changes how every rate in §0 should
+be read.
+
+    rounds                                              398
+    rounds with at least one failure                    131
+    total scenario failures                             263
+    failures per round      0:267  1:56  2:62  3:8  4:1  12:1  13:1  15:2
+
+    of the 131 failing rounds, 75 had TWO OR MORE          57%
+    expected under independence, using each scenario's
+      own measured failure rate                            28%
+
+**EVERYTHING ABOVE COUNTS SKIPS AS FAILURES, AND 43% OF THEM ARE SKIPS.** A
+selftest entry carries a `skipped` flag beside `ok`, and of the 263 not-ok
+entries **113 are skips** — a precondition that was not there, not a product
+that failed. The detail text never says "skip", which is how both an adversarial
+pass and I missed it.
+
+**AND CALLING THAT A DISTORTION WAS ITSELF TOO STRONG**, corrected within the
+hour by reading the instrument instead of only the archive. `rounds-gate.mjs`
+already separates them — `const ran = s.filter((x) => !x.skipped).length` — and
+states the stance in as many words: **"A skipped scenario is not a passing
+one."** So counting a skipped round as not-all-green is a deliberate,
+conservative choice this project already made, not an accident.
+
+What is genuinely wrong is only the LABEL. "All-green" reads as "nothing
+failed", and it means "everything ran AND passed". Both numbers are worth
+having and they differ by eleven points:
+
+    all-green counting skips as failures      269 of 400   67.3%
+    all-green ignoring skips                  315 of 400   78.8%
+    scenario pass rate, skips as failures                  95.35%
+    scenario pass rate, skips ignored                      97.35%
+
+**Eleven and a half points of the all-green rate is skipped scenarios**, and
+`test/backlog-health-table.test.ts` pins the stricter definition, so the rows
+are internally consistent — it is the word "all-green" that carries more than it
+should. **Quote the number with the definition attached, or quote both.**
+
+WITH SKIPS SEPARATED THE STRUCTURE IS DIFFERENT AND MUCH SHARPER:
+
+    genuine failures per round   0:315   1:23   2:60   3:1   4:1
+
+Two failures is nearly THREE TIMES commoner than one. Genuine failures arrive in
+pairs, and four pairs account for all sixty rounds:
+
+    43   explode a degraded picture  +  same scale across the deck
+     9   a big chart on a slide of its own  +  stop a run mid-draw
+     6   insert on top of an earlier run  +  two slides claiming one slot
+     2   an update follows a moved chart  +  same scale across the deck
+
+**One pair is 43 of those 60 rounds — 86 of the archive's 150 genuine failures,
+57% of everything that has ever actually failed here.** This file already knew
+those two are the scenarios that fail; it did not know they fail *together*.
+
+AND THE FOUR "CATASTROPHIC" ROUNDS ARE CASCADES OF SKIPS, NOT FAILURES —
+which is the correction to what this section said an hour ago:
+
+    round 287   13 of 14 not-ok    9 say "no probe chart"   ALL 40 ARE SKIPS
+    round 360   15 of 16 not-ok   11 say "no probe chart"
+    round 361   15 of 16 not-ok   11 say "no probe chart"
+    round 384   12 of 18 not-ok    9 say "no probe chart"
+
+Ten scenarios need a probe chart to work on — `edit the chart the user
+selected`, `does a rasterise poison the next draw`, `edit a chart on the visible
+slide`, `an update follows a moved chart`, `one chart alone on a warm deck` and
+the rest — and they get it from the run's opening, the same file-insert path as
+the pair below. **When the opening fails to place probe charts, every one of
+them SKIPS**, correctly and by design, and the archive records ten not-ok
+entries for one event. Every one of the 40 "no probe chart" entries carries
+`skipped: true`; not one is a failure.
+
+    those 4 rounds are 1.0% of rounds and 21% of all NOT-OK entries
+    "no probe chart" is 40 of 263 not-ok entries — 15%, and 0 of 150 failures
+
+    all not-ok as failures   399 rounds  5,639 runs  263  pass 95.34%
+    minus those 4 rounds     395 rounds  5,575 runs  208  pass 96.27%
+
+Four rounds move the archive's apparent pass rate by nearly a point **without
+containing a single product failure between them.** That is what counting a
+skipped precondition as evidence does to a mean — and it is why the two
+readings above differ by eleven points.
+
+The pairwise view says the same thing. Ranked by excess over independence, the
+top pairs run 39x to 100x, and they are not random — `edit the chart the user
+selected`, `does a rasterise poison the next draw`, `edit a chart on the visible
+slide`, `which selection call wedges the host`, `an update follows a moved
+chart` and `one chart alone on a warm deck` co-fail with each other repeatedly.
+
+**SO ALL-GREEN IS AS MUCH A READING OF THE SESSION AS OF THE BUILD.** A round is
+not 19 independent trials; when it goes wrong it tends to go wrong in several
+places at once. Two consequences worth carrying:
+
+- Any confidence interval computed as 19 independent Bernoulli trials is too
+  narrow, including anything anyone derives from the §0 table.
+- The all-green rate and the "231 of 263 rounds needed a repair" figure earlier
+  in this file are measuring overlapping things: session health shows up in
+  both.
+
+Nothing here says the product is better or worse than the table reports. It says
+the table's denominator is softer than it looks, in the same family as the four
+denominator traps above.
+
 ### Two "flaky scenarios" are one flaky dependency — 2026-09-07, p = 1e-13
 
 Round 422 came in 17 of 19 and the rounds gate stopped the cycle on its one
@@ -3043,9 +3148,36 @@ common. Round 422's failure is that call throwing `GeneralException` at
 the statement.
 
 So the archive has been carrying this as two scenarios that each fail about 2%
-of the time. It is **one dependency that fails about 2% of rounds and takes both
-of its dependents with it** — which is a different fact, with a different fix,
-and a much better place to look.
+of the time. It is **one shared dependency taking both dependents down at once**
+— a different fact, with a different fix, and a much better place to look.
+
+**"ONE DEPENDENCY THAT FAILS ~2%" WAS TOO TIDY, narrowed an hour later by
+reading the eight rather than the aggregate.** They are not one exception:
+
+    148  GeneralException          the insert throwing
+    315  GeneralException
+    375  GeneralException
+    422  GeneralException
+    287  Failed to fetch dynamically imported module   a stale deploy, not the host
+    297  the deck scan could not see the whole deck    a blind scan
+    360  deck grew by NaN                              instrument artifact
+    361  deck grew by NaN                              instrument artifact
+
+**Four of the eight are `insertSlidesFromBase64` throwing.** The other four are
+three unrelated causes. What makes all eight co-fail is not one call but the
+pair's position: they are the first two scenarios in the run and share the whole
+early deck path — build a probe deck, insert it, scan it back. Anything that
+breaks that breaks both.
+
+The correlation stands at p = 1e-13 and the diagnosis narrows: **the first two
+scenarios are not two independent readings of the product, they are one reading
+of whether the round's opening worked.** Which also means the archive has ~2%
+fewer independent scenario samples than its verdict count implies.
+
+A caution against the obvious next step: co-failing rounds average 3.8 slides
+against 7.0, and 1,325 syncs against 2,046. That is the round not getting far —
+an effect of failing early, not a cause of it, and it would read as a tidy
+"smaller decks fail more" if taken at face value.
 
 NOT MY CHANGES, and the gate said so before I could wonder: "THE SHIPPED BUNDLE
 IS UNCHANGED since the previous round at this profile — nothing under `src/`
