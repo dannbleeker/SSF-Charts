@@ -259,6 +259,26 @@ the three rounds it came from.
 better than what was published, which is its own lesson: the error ran against
 the product, and nobody checks a number that flatters the other side.
 
+**AND THAT CORRECTION WAS ITSELF TOO NARROW — fourth revision, 2026-09-07.**
+Nobody checked it either, for the same reason: it flattered the product. It
+counted ONE scenario, because `insert on top of an earlier run` is the only one
+that phrases the result as "N of M charts re-editable". **At least four others
+measure the same thing in different words**, and the biggest of them is
+`same scale across the deck`, which reports "N still re-editable" against the
+deck's eight charts. Pooling every scenario that reports it:
+
+    rounds 023-078    649 charts    88 not re-editable   13.6%
+    rounds 079+     4,018 charts    10 not re-editable   0.25%
+    TOTAL           4,667 charts    98                    2.1%
+
+**The archive reports 98 charts not re-editable, not one.** 88 of them fall in
+the first 56 rounds and stop dead at 078. Of the 10 since, 8 are the NaN
+artifact above — so **2 genuine losses in 4,018 charts since round 079, 0.05%**.
+
+The product's reliability still reads well, and now it rests on 4,667 charts
+across five scenarios instead of 1,556 from one, and it shows the early era
+honestly instead of hiding it behind a regex.
+
 WHAT IT IS NOT, checked rather than assumed. The first draft of this paragraph
 said "every scenario that draws charts", which is false: exactly ONE scenario
 prints that phrase, and 1,388 / 4 = 347 rounds confirms it arithmetically. That
@@ -2763,7 +2783,7 @@ to measure.
 WHAT IS ACTUALLY THE OWNER'S CALL is narrower: a twentieth scenario changes the
 verdict set, so every cross-build comparison gains a column and the all-green
 rate is no longer measuring the same thing either side of it. This file has
-gone 14 -> 16 -> 18 -> 19 before, so it is a normal decision rather than a
+gone 12 -> 13 -> 14 -> 15 -> 16 -> 17 -> 18 -> 19 before, so it is a normal decision rather than a
 forbidden one.
 
 **AND THE OBVIOUS ALTERNATIVE IS CLOSED**, so nobody spends an hour on it. A
@@ -2795,8 +2815,28 @@ where every column exists:
     PRE         2472    0.240       0.074              0.078 |    0.363
     post         714    0.246       0.070              0.057 |    0.403
 
-Flat. **The product absorbs the same amount of host misbehaviour and now
-survives it** — a better thing to have learnt than "the host improved".
+Flat — **and "flat" does not survive controlling for MIX, which is the third
+revision this entry has needed.** Restricting to shared NAMES does not equalise
+how often each is run. Post runs all 17 exactly 45 times; PRE runs 13 of them
+172 times and the other four 164, 36, 24 and 12 times, because they were added
+mid-archive. Weighting every scenario equally instead of pooling instances:
+
+    era    errors  idRefusals  generalExceptions | repaired
+    PRE     0.294       0.063              0.134 |    0.325
+    post    0.247       0.071              0.058 |    0.403
+
+Two of the four columns change direction. Errors FELL 16% once mix is
+controlled, where the pooled table says they rose slightly; `generalExceptions`
+fell 57%. (The post row is identical either way, which is the check: post is
+already balanced at 45 apiece.)
+
+**So the honest conclusion is weaker than the one first written here.** It is
+not "friction is flat"; it is **"the answer depends on the weighting, and a
+comparison that flips under a reasonable reweighting was never robust enough to
+carry a claim"**. What survives both readings: nothing in this table shows
+friction getting materially WORSE after the fix, and the product's outcomes
+improved regardless. **The product absorbs at least as much host misbehaviour as
+before and now survives it** — which is the durable half.
 
 **`repaired` IS ON THE OTHER SIDE OF THE BAR, and putting it in a friction
 table was a category error.** `hostFriction.reReadsRepaired += pending.length -
@@ -2848,7 +2888,11 @@ before the denominator was right.
 Two instrument findings from the same afternoon, both fixable, both found while
 attacking something else.
 
-**3,000 of 6,179 `parts list outcome` events carry `charts: 0`** — an outcome
+**About HALF of all `parts list outcome` events carried `charts: 0`** — 3,012 of
+6,275 through round 421, and 3,000 of 6,179 when this was written, which is the
+same ratio and a reminder that the integers here drift every round. Note the
+denominator now includes the rounds cited below as evidence, which the first
+version of this paragraph excluded while quoting them. An outcome
 traced for an empty item list. Nearly half the population is noise, and it
 inflates every denominator taken off this event, including the "640 carry the
 id read-back threw" that started an evening's enquiry. A regression with a
@@ -2864,10 +2908,21 @@ creation handles. It fits everything and it is wrong. Split the dominant exit
 ("no loose chart had siblings", 5,855 events): 3,000 have no charts at all, and
 the other 2,855 are single charts that were GROUPED, which `powerpoint.ts` says
 in as many words have no parts tag by design. Grouping succeeding is the good
-outcome, and it is the whole explanation.
+outcome.
 
-**AND 41% OF HOST DEATHS HAPPEN IN ONE SCAN.** Every crash record carries its
-own `steps`; the last one before the record was written:
+**"AND IT IS THE WHOLE EXPLANATION" WAS TOO STRONG, corrected within hours by
+attacking it.** That exit is 2,855 of 6,179 parts-outcome events — 46%, not all
+of them — and the 3,000 charts:0 events explain nothing whatever, being the
+no-op regression guarded two paragraphs up. **324 events took the two exits that
+DID want a list** (`the id read-back threw` 309, `read the ids back` 15), and
+grouping says nothing about those: those charts were loose. So grouping explains
+the dominant EXIT, not `withParts` being 0, which stays open. The refutation of
+the empty-collection story survives; its replacement over-reached in the same
+breath.
+
+**AND 41% OF HOST DEATHS HAPPEN IN ONE SCAN — WITHDRAWN THE SAME DAY. Read the
+correction below the table, not the table.** Every crash record carries its own
+`steps`; the last one before the record was written:
 
     41  pane    collecting deck evidence — scanning
     15  error   drawing the chart's shapes
@@ -2896,16 +2951,99 @@ seven-second read that is the last thing in flight for four host deaths in ten.
 leaves no round file. So this is the cost when it works, and the true cost is
 worse.)
 
-**Making it cheaper, or skipping it when the session is deep, would plausibly
-cut lost rounds a long way — and it changes what every round collects, so it is
-the owner's call.** Recommendation: do it, and measure the crash rate either
-side, because this is the one change here with a large expected effect and a
-clean before/after.
+**THE RECOMMENDATION THAT STOOD HERE IS WITHDRAWN.** It said making the scan
+cheaper would cut lost rounds a long way. Four things kill it, all found by
+attacking my own correction a few hours after writing it and all verified
+independently.
+
+**1. The number was already in this repo TWICE, and already acted on.**
+`scripts/round.mjs` says "41 of the 75 crash records on file — **55%** — end at
+the same trace line", names it "the POST-ROUND inventory pass, which runs after
+every verdict is already banked", and records that the pane **already bounds it
+with `DECK_EVIDENCE_TIMEOUT_MS`, 45 seconds, "exactly so a host dying in there
+cannot take the round with it"**. `powerpoint.ts` carries the same 41 against a
+denominator of 60. Mine restated that same frozen 41 against 99 — publishing the
+repo's own 55% as 41% by growing the denominator, which makes the crash profile
+look more diffuse than this project's own reading of it, and then recommending a
+mitigation that was built weeks ago.
+
+**2. It is a frozen numerator over a growing archive.** Every one of the 41 is
+dated 2026-08-27 to 2026-09-01. **33 crash records since contain the line zero
+times**, while the trace still exists in `app.ts`. The count was 36 at 60
+records and has been 41 ever since.
+
+**3. The 08-27 start is when the LINE began, not the deaths.** `b5c534a` warns
+of exactly this trap for the cross-arm comparison and I walked into the
+time-series version of it.
+
+**4. The timing was the wrong interval.** "p50 7.6s, 1.4% of a round" measured
+scan-start to the round's LAST trace — everything after the scan, not the
+awaited call that kills. The call at risk is the gap to the NEXT trace:
+
+    rounds <= 340, the scan-death era    p50 1390ms   p90 1612ms
+    rounds  > 340, what I measured       p50    0ms   p90 1636ms
+
+The transition is sharp — round 359 has a 2285ms gap, 360 onward reads 0-1ms.
+**The scan's first awaited call stopped costing anything, which is the most
+plausible reason deaths stopped landing in it.** What made it free is NOT
+established: the three commits between those builds are about a probe returning
+undefined, a slide-profile fix and an instrumentation field, and none of them
+obviously touches the scan. Saying "the scan was fixed on 2026-09-02" would be a
+fifth guess dressed as a finding.
+
+**5. And the step is last BY CONSTRUCTION.** It is logged one statement before
+the phase's first host call, so any hang in that call leaves it as the final
+line whatever the cause. The 41 then sat silent a median of 173 seconds after
+it — a host hang, not a death sampled inside a short scan. Attributing risk to a
+step chosen because it precedes the hang is the trigger-that-cannot-fail shape,
+one level up from the test I threw away this morning.
+
+**What survives is worth keeping**: within the window where the line exists,
+every crash record that contains it ENDS at it. That concentration is real and
+this project found it first. It is not current, the mitigation already exists,
+and nothing should be changed on the strength of it.
+
+**THE HONEST SUMMARY OF THIS WHOLE ENTRY**: I rediscovered a known finding,
+restated it with a worse denominator, measured the wrong interval by a factor of
+thousands, read a frozen count as a live rate, and recommended a fix that had
+already shipped. It took a second adversarial pass to notice, and the reason it
+survived the first one is that it sounded like a discovery.
 
 A WRONG TURN AVOIDED, recorded because it was nearly taken: the first attempt
 attributed crashes to scenarios by their median start time in RECENT rounds,
 which would have blamed three scenarios that mostly did not exist when those
 crashes happened. The records name what was in flight themselves.
+
+### `withParts` is 0 on a pool that excludes its own successes — 2026-09-07
+
+The oldest unexplained zero in this repo, and the reason it may not mean what it
+has been quoted to mean. Found by a skeptic attacking a correction, verified
+here.
+
+`powerpoint.ts` increments `withParts` inside the churn block — and that block
+sits AFTER the `continue` taken whenever `tryInPlaceUpdate` succeeds. So the
+counter only ever sees charts whose in-place update was REFUSED and which fell
+through to delete-and-redraw. Measured across the archive:
+
+    in-place updates that succeeded, skipping the counter   3,048
+    declined, falling through to where it counts            2,002
+    churn events carrying `withParts`                       1,406
+    their sum                                                   0
+
+**A chart WITH a parts list is precisely the kind the in-place path can handle**,
+because it can name every shape it must touch. If that is so, charts with parts
+lists preferentially succeed and are never counted, and the zero is what the
+sampling produces rather than what the host does.
+
+WHAT THIS DOES AND DOES NOT SHOW. It does not show that parts lists are read
+back — nothing here does. It shows that **0 of 1,406 is not evidence that they
+are not**, because two thirds of the population never reaches the counter. The
+sibling counter on the production side, `gotPartsList`, is NOT zero — 35 events
+— so lists do get written; they have simply never been observed on a path that
+excludes most of its own traffic.
+
+Not fixed here. Moving the counter above the `continue` changes what the field
+means across 1,406 archived events, and that is a decision about the archive.
 
 ### Round duration is a fourth denominator trap — 2026-09-07
 
@@ -2913,7 +3051,7 @@ crashes happened. The records name what was in flight themselves.
     per SCENARIO                 PRE p50 17.5s ->  post p50 15.1s  (-14%)
                                  PRE p90 62.9s ->  post p90 87.8s
 
-The +47% is the scenario list growing 14 -> 19. Per scenario the typical case
+The +47% is the scenario list growing 12 -> 19 (12 at round 023, 19 at 398). Per scenario the typical case
 got slightly faster and the tail got heavier. Nobody has quoted the +47% yet;
 this exists so nobody starts.
 
