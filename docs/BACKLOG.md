@@ -1206,6 +1206,39 @@ every round — and the verification that justified it also showed the change co
 not be checked against a live host in the time left. A saved round trip is not
 worth an unvalidated edit to that function.
 
+**RE-DERIVED AND STILL LIVE, 2026-09-07.** Counted independently from the whole
+archive: **274 of the 282 rounds since 143 carry it, exactly twice each, and a
+re-read followed all 274 times.** The eight that do not are rounds that ended
+before the path ran. So the cost is unchanged and the repair has never once
+failed — which is why this has stayed cheap to ignore.
+
+The same pass killed a lookalike. `drawing the chart's shapes` also throws
+GeneralException, 15 rounds' worth, `errorLocation` `SlideCollection.getItem`
+or `getItemAt` — but **every one of them is in rounds 356-373 and there has not
+been one since**. Anyone grepping the archive for GeneralException meets both
+and should not merge them: one is a live per-round cost, the other is a closed
+era.
+
+**THE MEASUREMENT THIS ENTRY WAS WAITING FOR NOW EXISTS**, and no restructuring
+came with it. `powerpoint.ts` traces `parts lists at the update` once per batch,
+before the sync that may refuse it: `charts`, `withParts`, `queuedGroup`. The
+question is the one the code comment poses — a chart that arrives carrying parts
+never queues `.group`, so if the parts-list repair lands, this cost may remove
+itself and the edit to the hot path is never needed.
+
+Why a new counter rather than the one that was already there: `churn.withParts`
+is incremented in the REDRAW loop, so it only ever sees charts whose in-place
+update was **already refused** — a pool that excludes its own successes. Its 0
+was read as "no chart ever arrives with a list" until 2026-09-07, when
+`gotPartsList` turned out to be 35. `queuedGroup` is recorded rather than
+subtracted because `queueGroupMembers` also declines below PowerPointApi 1.8 and
+when the refusal is already latched for the batch, so it is not
+`charts - withParts` and a version that computed it would be wrong on both.
+
+**What to read when the next rounds land**: `withParts` above 0 says the fix
+below may be unnecessary; `withParts` at 0 across a cycle says the parts list is
+genuinely absent at this point and the doomed round trip is worth buying.
+
 ### The largest product cost was in the FAST path, not the redraws — 2026-08-29
 
 **Looking for the picture feature below, I measured the redraws and found they

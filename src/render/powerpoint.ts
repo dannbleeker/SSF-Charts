@@ -2860,6 +2860,35 @@ export async function updateChartsInSlides(
       const groupMembers = parts.length ? undefined : queueGroupMembers(old);
       return { it, old, parts, groupMembers, wasConfig, wasScene };
     });
+    // WHAT THE BATCH ARRIVED CARRYING — the measurement the comment above asks
+    // for, taken before the sync that may refuse it.
+    //
+    // The other `withParts` counter (`churn`, in the redraw loop) cannot answer
+    // this: it is incremented only for charts whose in-place update was ALREADY
+    // refused, so it counts a pool that excludes its own successes. Reading its
+    // 0 as "no chart ever arrives with a parts list" is the inference that was
+    // corrected on 2026-09-07. This one counts every chart in the batch,
+    // whatever happens to it afterwards.
+    //
+    // `queuedGroup` is the population that can throw — `.group` on a shape that
+    // is not a group returns GeneralException and poisons this sync. It is NOT
+    // `charts - withParts`: `queueGroupMembers` also returns undefined when the
+    // host is below PowerPointApi 1.8 and when the refusal is already latched
+    // for this batch. Those two make it a real reading rather than a restated
+    // subtraction, and the number to watch is whether it ever reaches 0.
+    //
+    // NO EMPTINESS GUARD, deliberately, and this line is why nobody should add
+    // one. `tracePartsOutcome` needs its guard because it can be reached with
+    // an empty list; this cannot. `items.length` returns at the top of the
+    // function and `live.length` returns twenty lines above, so `withOld` holds
+    // at least one chart by the time control gets here. A guard here would be a
+    // condition no input can make false — an instrument that cannot report
+    // nothing, dressed as one that checks.
+    trace("update", "parts lists at the update", {
+      charts: withOld.length,
+      withParts: withOld.filter((e) => e.parts.length > 0).length,
+      queuedGroup: withOld.filter((e) => e.groupMembers !== undefined).length,
+    });
     // THE REFUSAL LANDS HERE, not on the proxies. A by-id lookup that this host
     // will not honour poisons the SYNC it was queued in — `InvalidParam passed
     // to GetItem(id)`, errorLocation `ShapeCollection.getItem` — so an

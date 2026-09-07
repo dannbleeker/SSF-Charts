@@ -914,6 +914,60 @@ describe("the everyday paths under a host that answers nothing it was not asked 
     expect(target, "one unreadable sibling failed the whole redraw").toBeTruthy();
   });
 
+  it("counts the parts lists a batch ARRIVED with, not just the ones a refusal left behind", async () => {
+    /**
+     * The archive cannot answer "does a chart reach the update carrying a parts
+     * list?" and that is the question the doomed round trip turns on: a chart
+     * with parts never queues `.group`, and `.group` on a shape that is not a
+     * group is what poisons the resolve — twice a round, 274 rounds running,
+     * always repaired by a re-read that costs a whole extra pass.
+     *
+     * The counter that looked like it answered this is `churn.withParts`, and
+     * it does not: it is incremented in the REDRAW loop, so it only ever sees
+     * charts whose in-place update was already refused. Its 0 was read as "no
+     * chart ever arrives with a list" until 2026-09-07, when the production-side
+     * `gotPartsList` turned out to be 35. Both arms are asserted here because
+     * one arm alone passes on a counter wired to a constant.
+     */
+    const withList = deckWithChart();
+    installHost([withList.slide], [withList.chart], withList.slide);
+    const sibling = makeShape("geometric", "rectangle", { left: 300, top: 10, width: 20, height: 20 });
+    withList.slide.created.push(sibling);
+    setTracing(true);
+    try {
+      const next = { ...cfg(), title: "edited" };
+      let mark = traceMark();
+      await updateChartInSlide(
+        buildChart(next),
+        { slideId: "s1", shapeId: withList.chart.id, left: 10, top: 10, partIds: [sibling.id] },
+        { tagData: JSON.stringify(next) },
+      ).catch(() => null);
+      const carried = traceLog(mark).entries.find((e) => e.message === "parts lists at the update");
+      expect(carried, "the batch said nothing about what it arrived carrying").toBeDefined();
+      expect(carried!.data).toMatchObject({ charts: 1, withParts: 1 });
+
+      // The other arm, on a fresh deck: same call, no `partIds`.
+      const bare = deckWithChart();
+      installHost([bare.slide], [bare.chart], bare.slide);
+      mark = traceMark();
+      await updateChartInSlide(
+        buildChart(next),
+        { slideId: "s1", shapeId: bare.chart.id, left: 10, top: 10 },
+        { tagData: JSON.stringify(next) },
+      ).catch(() => null);
+      const empty = traceLog(mark).entries.find((e) => e.message === "parts lists at the update");
+      expect(empty, "the no-list batch said nothing").toBeDefined();
+      expect(empty!.data).toMatchObject({ charts: 1, withParts: 0 });
+      // AND `queuedGroup` IS NOT `charts - withParts`. This host answers no
+      // `.group` at all, so the chart with no list still queues nothing — which
+      // is the whole reason the field is recorded rather than subtracted. A
+      // version that computed it would say 1 here.
+      expect(empty!.data).toMatchObject({ queuedGroup: 0 });
+    } finally {
+      setTracing(false);
+    }
+  });
+
   it("tags the charts it can when one target has no tags at all", async () => {
     // A real host answered `shape.tags` as UNDEFINED — "Cannot read properties
     // of undefined (reading 'add')", four times in one run, each on a chart
