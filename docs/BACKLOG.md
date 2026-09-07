@@ -2732,6 +2732,60 @@ What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
 
+### The file insert has two failure modes and they are disjoint — 2026-09-07
+
+**FIXED THE SAME DAY, and the interesting half is the change it killed.**
+
+`insertSlidesFromPptx` measured its result with a raw `slideCount()`. Counted
+over the whole archive: **1,641 traced inserts, 14 landing short, 4 landing
+OVER.** The four overs are the finding.
+
+Every one of them — rounds **148, 315, 375, 422** — is the same three lines in
+the same order:
+
+    handed the host a generated deck    expectedSlides 2, landed 0
+    scenario FAILED                     insert on top of an earlier run: GeneralException
+    handed the host a generated deck    expectedSlides 2, landed 4
+
+The second insert's `before` count includes two slides the first insert had just
+reported as not having arrived. They arrived; the count was read before the deck
+caught up. `settledSlideCount` was written for exactly this and its docstring
+cites round 297 — an insert on this path returning `landed: 0` for slides that
+landed — and the call site was left reading the unsettled count anyway.
+`selftest.ts` settles its own count, which is why the scenario judged the right
+population while the product function returned zero to everyone else.
+
+Scale of it: `insert on top of an earlier run` ran in **401 of 401 rounds** and
+failed 9 times; **4 of those 9 are GeneralExceptions, and all 4 are these.**
+
+**THE RETRY THAT WAS STAGED FOR THIS PATH IS DROPPED**, and the same four rows
+are why. It was read as "the insert failed and the next attempt passed". The
+insert did not fail. A retry would have handed the host a second copy of a deck
+already on the slide — and `landed: 4` is what that looks like from here. Do not
+re-propose it from these rows.
+
+**The 45-second timeout is a DIFFERENT event, not this one.** 19 timeouts across
+16 rounds (076, 081, 099, 107, 139, 140, 225, 302, 369, 395, 397, 401, 402, 406,
+407), every one at exactly the budget, every one on a 2-slide insert. **Not one
+is in a round that landed short.** `withTimeoutOrVerify` swallows them and lets
+the deck's own count answer, so a timeout here is a slow insert rather than a
+failed one. Merging the two counts would produce a 33-event "insert failure
+rate" out of two unrelated things.
+
+### GeneralException in the archive is two things, and one of them is closed
+
+A count of the string is a count of nothing. Per round it looks like a constant
+~12, which is a property of the harness: four trace strings, some repeating the
+word. What they actually are:
+
+- **`resolving the charts' shapes`** — the live one. 274 of the 282 rounds since
+  143, exactly twice each, repaired by a re-read all 274 times. See the doomed
+  round trip, above.
+- **`drawing the chart's shapes`** — 15 rounds, `errorLocation`
+  `SlideCollection.getItem` or `getItemAt`, and **every one is in rounds 356-373
+  with none since**. A closed era, and every round in it that failed did so on
+  `stop a run mid-draw` or `a big chart on a slide of its own`.
+
 ### The archive draws on a slide it did not itself add TWICE — 2026-09-06
 
 The denominator that decides what 385 rounds are evidence *of*, and it went
