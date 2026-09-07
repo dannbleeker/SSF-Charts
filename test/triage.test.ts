@@ -5323,6 +5323,35 @@ describe("the scenario that killed the host", () => {
     expect(fatalDeathsAllowed(330, 0)).toBe(0);
   });
 
+  it("a ceiling of ZERO cannot be cleared by clean rounds, whatever the guidance says", async () => {
+    /**
+     * The gate prints "falls on its own as runs pile up without deaths … NOTHING
+     * NEEDS EDITING to make it green" beside every breach. For a seeded ceiling
+     * that is true — the allowance is `p*n + 2*sqrt(p(1-p)n)` and grows with n.
+     * At a ceiling of zero it is false, and pinning it here is the point: the
+     * crash record stays in `crashes/` forever, so the breach outlives any
+     * number of clean rounds.
+     *
+     * Round 428 is the case. `what a chart kind costs` killed the host once in
+     * 35 runs and is absent from `FATAL_SCENARIO_RATE`, so the cycle stops after
+     * one round every night until a person decides something — while that
+     * table's own docstring says "Do not add a name here to quiet a gate". Both
+     * rules are right alone and together they leave no green path.
+     *
+     * NOT a claim that the trip is wrong. A first host death is the case the
+     * check exists for. What is recorded here is that it is permanent, because
+     * the message beside it says the opposite.
+     */
+    // @ts-expect-error - plain .mjs tool, no types.
+    const { fatalRateBreaches } = await import("../scripts/triage.mjs");
+    const asMeasured = fatalRateBreaches({ "what a chart kind costs": 1 }, { "what a chart kind costs": 35 }, {});
+    expect(asMeasured, "a first-ever death did not trip the check").toHaveLength(1);
+    expect(asMeasured[0]).toMatchObject({ count: 1, runs: 35, allowed: 0 });
+    // A thousand clean rounds later, with the same single death on record.
+    const muchLater = fatalRateBreaches({ "what a chart kind costs": 1 }, { "what a chart kind costs": 100_000 }, {});
+    expect(muchLater, "the zero-ceiling breach cleared itself, so the guidance is right after all").toHaveLength(1);
+  });
+
   it("trips on the FIRST death of a scenario that has never killed the host", async () => {
     /**
      * The case most worth catching, and the one thing the count version got
@@ -5367,15 +5396,18 @@ describe("the scenario that killed the host", () => {
      */
     const src = readFileSync(new URL("../scripts/rounds-gate.mjs", import.meta.url), "utf8");
     expect(src, "the gate no longer computes fatal scenarios").toMatch(/fatalScenarios\(crashes\)/);
-    // The window is generous because the guidance printed between the two grew
-    // when this became a rate. What is asserted is that a breach still reaches
-    // a fatal exit, not that the prose is any particular length.
-    expect(src, "a breach no longer stops the gate").toMatch(/breaches\.length[\s\S]{0,2000}process\.exit\(3\)/);
+    // The window is generous because the guidance printed between the two keeps
+    // growing — 2000 when this became a rate, 4000 once the zero-ceiling warning
+    // was added. What is asserted is that a breach still reaches a fatal exit,
+    // not that the prose is any particular length. The regression exit is 32,000
+    // characters further on, so the window can grow a long way before it stops
+    // separating the two.
+    expect(src, "a breach no longer stops the gate").toMatch(/breaches\.length[\s\S]{0,4000}process\.exit\(3\)/);
     // AND NOT BY FALLING THROUGH TO THE REGRESSION EXIT. `exit(1)` appears
     // later in this file for the check that judges verdicts; a breach that
     // reached THAT would be back to one code for two questions.
     expect(src, "the breach exits through the regression code").not.toMatch(
-      /breaches\.length[\s\S]{0,2000}process\.exit\(1\)/,
+      /breaches\.length[\s\S]{0,4000}process\.exit\(1\)/,
     );
     // And it reads the CRASH records, not the salvaged rounds — a salvaged
     // round carries verdicts and a killed scenario has none.

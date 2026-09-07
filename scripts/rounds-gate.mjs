@@ -367,7 +367,7 @@ if (isMain(import.meta.url, process.argv[1])) {
       );
     console.error(
       "  A scenario that stops passing is exit 1 here; one that starts taking PowerPoint down is\n" +
-        "  at least as serious and produces no verdict to notice it by.\n" +
+        "  at least as serious and produces no verdict to notice it by, and exits 3.\n" +
         "  A RATE, not a count, and the difference matters when you act on this: the count version\n" +
         "  went red on the next death after it was seeded, because deaths only accumulate. This one\n" +
         "  falls on its own as runs pile up without deaths, so a landed fix protects itself and\n" +
@@ -375,6 +375,27 @@ if (isMain(import.meta.url, process.argv[1])) {
         "  meant to be higher, that is a person deciding a scenario may kill PowerPoint more often\n" +
         "  than it used to. See docs/ROUNDS.md.",
     );
+    // EXCEPT AT A CEILING OF ZERO, WHERE THE PARAGRAPH ABOVE IS NOT TRUE. It
+    // was written for the seeded ceilings, and for those it holds: the allowance
+    // is `p*n + 2*sqrt(p(1-p)n)`, which grows with runs. At `p = 0` that
+    // expression is 0 for every n — `fatalDeathsAllowed` returns 0 before it
+    // computes anything — so a scenario absent from the table breaches on its
+    // first death and CANNOT fall back under, however many clean rounds follow.
+    // The crash record is in `crashes/` permanently.
+    //
+    // So a first-ever death makes this gate red until a person changes
+    // something, while the table's own docstring says "Do not add a name here to
+    // quiet a gate". Both instructions are right on their own and together they
+    // leave no green path. Said out loud here rather than resolved, because what
+    // a first death should DO — stop the night once, or stop it until
+    // acknowledged — is a decision about the instrument, not a bug in it.
+    if (breaches.some((b) => b.allowed === 0))
+      console.error(
+        "\n  ONE OF THESE HAS A CEILING OF ZERO, AND THAT LINE CANNOT GO GREEN ON ITS OWN.\n" +
+          "  The allowance grows with runs only when the ceiling is above zero; at zero it is zero for\n" +
+          "  every denominator, and the crash that tripped it stays in `crashes/`. Clean rounds will not\n" +
+          "  clear this one. It needs a person to decide what a scenario's FIRST host death should cost.",
+      );
     // EXIT 3, NOT 1, AND THE CODE IS THE POINT. This gate has two fatal checks
     // and they shared one exit code, so `cycle.mjs` — its only consumer — printed
     // "a scenario that WAS passing has stopped" for both. Round 428 tripped THIS
