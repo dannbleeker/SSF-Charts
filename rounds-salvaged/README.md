@@ -17,6 +17,27 @@ host's own `pageSetup` reading, what slide size they ran at. Those 22 are here.
 `src/taskpane/app.ts` now banks the log _before_ the scan, so this should stop
 accruing.
 
+**THOSE NUMBERS ARE FROM THE FIRST SALVAGE PASS AND ARE STALE**, corrected
+2026-09-07 after they were quoted into a `docs/BACKLOG.md` argument. `619d5a1`
+on 2026-09-03 — "The salvage was not broken — its bars were refusing 47 real
+rounds" — widened what could be recovered, and this directory grew. As it
+stands:
+
+    files                          69
+    distinct runs                  68   041 and 043 are the same round,
+                                        salvaged from two crash records five
+                                        hours apart on 2026-08-29
+    complete                       50
+    partial (`salvagedPartial`)    18   reach as low as 3 of 14
+    verified 4:3                   32
+    verified 16:9                   7
+    no verified size               29
+
+So **only 39 of the 68 can enter an aspect arm at all**, and 18 of those must be
+conditioned on reach before any rate is computed — the rule `salvage-crashed.mjs`
+states in its own header, and which `BACKLOG.md` broke twice before anyone
+checked.
+
 ## Why they are not in `rounds/`
 
 `rounds/README.md` opens with the contract: `NNN-<build>.json`, **oldest first**.
@@ -58,5 +79,13 @@ often a scenario has ever failed, whether the 4:3 arm agrees with 16:9.
 **All 22 are 4:3**, which is itself the finding — the validation leg runs last
 and deepest into a session, so it is the one that keeps dying in the scan. It
 takes that arm from 26 rounds to 48.
+
+**STALE AS ABOVE, and the "26 to 48" is the dangerous half.** Of the 68 runs
+here, 32 are verified 4:3, 7 are 16:9 and 29 have no verified size — so "all
+are 4:3" is no longer true, and the direction of the finding (the validation leg
+dies deepest) survives while the count does not. The 26 + 22 = 48 arithmetic
+also happens to equal the archived PRE 4:3 round count, which is a coincidence
+and a live double-count hazard for anyone reading this beside `BACKLOG.md`.
+`rounds/` is clean: no file in it carries `salvagedFrom`, checked.
 
 Pooling them properly needs an ordering key that does not exist yet.

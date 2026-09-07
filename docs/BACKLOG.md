@@ -102,20 +102,98 @@ post-fix barely crashes — and putting them back moves one arm a long way:
     PRE 4:3    archived   28 / 48   58.3%      + salvaged   57 / 81   70.4%
     PRE 16:9   archived  194 / 250  77.6%      + salvaged  199 / 257  77.4%
 
-So the 4:3 improvement below is **70% to 86%, not 58% to 86%**, on the more
-generous reading. NEITHER POOL IS CLEAN and the honest answer is the range: a
-salvage exists only when the host died in `collectDeckEvidence`, i.e. after
-every verdict was already in, so salvages are selected for having COMPLETED and
-score 85.5% all-green — better than either archived PRE arm. Rounds that
-crashed mid-scenario are in neither pool and are presumably the worst of all.
-The true PRE 4:3 rate is somewhere between 58% and 70%, and nothing here can
-narrow it further.
+A salvage exists only when the host died in `collectDeckEvidence`, i.e. after
+every verdict was already in, so salvages are selected for having COMPLETED.
+Rounds that crashed mid-scenario are in neither pool and are presumably the
+worst of all.
 
-The post-fix arm needs no such adjustment: there are zero post-fix salvages,
-which is itself a consequence of the fix rather than a choice about pooling.
+**"ZERO POST-FIX SALVAGES, WHICH IS A CONSEQUENCE OF THE FIX" WAS CIRCULAR and
+is withdrawn.** Salvaging had already been designed out before the fix landed:
+`rounds-salvaged/README.md` records that `app.ts` "now banks the log _before_
+the scan, so this should stop". Every salvaged build is dated 2026-08-24 to
+2026-09-02; `6dfaa4b` is 2026-09-04. There was no window in which a post-fix
+salvage could have existed, so their absence credits the two-master fix with
+something a different change caused. **A check with no failing branch is not a
+check** — the same shape as a test that passes with and without the code it
+guards.
 
-**All-green rounds at 4:3 went from 28 of 48 to 24 of 28** — 58% to 86% on the
-archive alone, 70% to 86% with the salvages folded in — and
+**AND "70% TO 86%" IS ALSO WRONG, corrected 2026-09-07.** An adversarial pass
+confirmed every figure above to the digit and then found the thing that
+matters, verified here independently: **THE POOLS SAT DIFFERENT EXAMS.**
+
+    archived PRE 4:3   18 distinct scenario names
+    salvaged PRE 4:3   15
+    archived-only      where a rotated shape lands, stop a run mid-draw,
+                       a big chart on a slide of its own
+
+Two of those three are among the most failure-prone in the suite, so the
+archived pool was sitting a harder exam than the salvaged one — and post-fix
+sits a harder one still, at 19. **All-green is exactly the statistic that
+punishes extra chances to fail, so it was never comparable across eras at all.**
+
+**HOW BADLY, inside ONE era and ONE arm, with no build change involved.**
+Archived PRE 4:3, split by how many scenarios the round ran:
+
+    13 scenarios    9 / 15   60%
+    14 scenarios   17 / 18   94%
+    15 scenarios    1 /  5   20%
+    16 scenarios    1 /  6   17%
+    17 scenarios    0 /  4    0%
+
+From 94% to 0% on the length of the exam alone. (The 13-scenario row breaks the
+run and is 15 rounds, so read the trend, not the first cell.) **This undercuts
+every row of the table at the top of this section, not just the 4:3 one** — and
+it is the one bias in this whole entry that runs AGAINST the fix rather than
+for it, because the post-fix arm sat the longest exam of all and still scored
+96.6% on the common set.
+
+Scored on the 15 scenarios all three 4:3 pools ran:
+
+    PRE archived                 36 / 48   75.0%
+    PRE salvaged, all            28 / 32   87.5%
+    PRE salvaged, COMPLETE only  24 / 28   85.7%
+    PRE pooled, complete only    60 / 76   78.9%
+    post archived                28 / 29   96.6%
+
+**So the honest headline is 79% to 97% on a fixed exam, pooling only complete
+salvages** — not 58 to 86, and not 70 to 86. The salvage selection effect is
+still real and still large: 85.7% against 75.0% ON THE SAME EXAM is a pool
+selected for having finished.
+
+**AND THE POOLING BROKE A RULE THIS REPO HAD ALREADY WRITTEN DOWN.**
+`scripts/salvage-crashed.mjs` says, of a round that reached 6 of 16 scenarios:
+"has not PASSED the other ten, and a naive rate reads ten silences as ten
+successes. So the reach is written down and **anything pooling these must
+condition on it**." My first two poolings did not. 18 of the 68 salvaged runs
+are partial, and their reach is brutal — `4/14` eleven times, `3/14` once —
+each counting as all-green beside rounds that ran eighteen. The rows above
+exclude them.
+
+**AND `rounds-salvaged/` HOLDS 69 FILES BUT 68 RUNS.** `041-4275306.json` and
+`043-4275306.json` are the same round salvaged twice — identical build, host,
+slide size, `salvagedPartial`, missing list and per-scenario milliseconds, from
+two crash records five hours apart on 2026-08-29. It is the only duplicate in
+the pool, checked by comparing every file's fingerprint against every other's.
+Both are 4:3, so every 4:3 salvage figure above is deduplicated; the whole-pool
+"69" quoted earlier in this section is a file count, not a run count.
+
+**AND ONLY 39 OF THE 68 CAN ENTER AN ARM AT ALL.** 29 carry no `slideSize`,
+because `salvage-crashed.mjs` refuses to CLAIM a profile it could not verify and
+parks the reading in `slideSizeUnverified` instead. So 32 reach the 4:3 arm, 7
+the 16:9 arm, and 29 reach neither. "69 salvages" describes a directory, not a
+population that can be pooled.
+
+**THE SAME HOLE EXISTS IN THE MAIN ARCHIVE and the §0 table does not mention
+it.** 54 archived rounds, 023 through 078, carry no `slideSize` either. PRE 16:9
+(250) plus PRE 4:3 (48) is 298 of 352 pre-fix archived rounds; the other 54 are
+in no row of that table.
+
+The `scenario pass rate` column in the table above was the comparable one all
+along, and it says 94.3% to 97.1%.
+
+**All-green rounds at 4:3 went from 28 of 48 to 24 of 28** — figures that
+compare two different exams, kept here because the sentence below quotes them —
+and
 the crash archive is the blunter number: ninety-four records on pre-fix builds
 against two on post-fix — which says "two" where the table above says "three",
 and neither could be re-derived; see the flag on the crash line. The direction
@@ -132,8 +210,28 @@ re-editable" every round, and nobody had added them up. Across 386 rounds:
     PRE        347    1,379 of 1,388  99.35%      9
     post        39      156 of   156 100.00%      0
 
-**Nine losses in 1,535, every one pre-fix.** It is not "did the round pass" but
-"of the charts placed, how many were still charts the add-in could edit".
+**"NINE LOSSES IN 1,535" WAS WRONG TWICE, corrected 2026-09-07 after an
+adversarial pass and checked here before being believed.**
+
+First, the denominator was the NUMERATOR: 1,535 is the count that SURVIVED.
+Charts placed is 1,544 at that pool, 1,556 as of round 418. Dividing losses by
+survivors, in a section about denominators.
+
+Second and much larger: **eight of the nine are not losses.** All nine come from
+three rounds, and they are:
+
+    243   3 of 4 charts re-editable                       1 genuine
+    360   deck grew by NaN (want 4); 0 of 4               4 instrument
+    361   deck grew by NaN (want 4); 0 of 4               4 instrument
+
+`selftest.ts` already says of that NaN verdict, in these words, that it "reads
+as measured data loss and was nothing of the kind" — `deckGrowth` could not read
+the deck and the scenario reported total loss. I quoted a nine without reading
+the three rounds it came from.
+
+**So the number is ONE genuine loss in 1,556 charts placed — 0.064%.** That is
+better than what was published, which is its own lesson: the error ran against
+the product, and nobody checks a number that flatters the other side.
 
 WHAT IT IS NOT, checked rather than assumed. The first draft of this paragraph
 said "every scenario that draws charts", which is false: exactly ONE scenario
@@ -218,9 +316,17 @@ it waits on the owner's GitHub identity:**
        and is better: `shapes.load("items/id")` returns an EMPTY collection for
        a shape a screenshot shows on the slide, for a while after that slide
        was added, and `getItem` refuses the slide's add-time id with 5010 in
-       the same window. Recency is the axis. Three things to do before filing
-       are listed in that file — bound the window, reproduce in Script Lab
-       without this add-in, re-search the tracker on the corrected symptom.
+       the same window. Recency is the axis.
+       TWO OF THE THREE PRE-FILING TASKS ARE DONE (2026-09-07). The window is
+       bounded and there isn't one: on a clean deck the drawn shape is not
+       counted at all inside two minutes, 0 of 6 trials, 124 reads, control
+       healthy throughout — so #2903's guessed 2-second workaround is not
+       enough, and an earlier "1.9 second" figure of mine was an artifact and
+       is retracted. The tracker search says THIS IS NOT ORIGINAL: it is
+       #2903, closed by an inactivity sweep, and the contribution is the
+       measurement its reporter guessed at. What remains is a Script Lab repro
+       with no part of this add-in in it — which needs Script Lab installed
+       under the owner's account, so it is his either way.
        Submission is the owner's identity and his alone
 
 
@@ -2560,6 +2666,18 @@ archive, so it is anchored to a round rather than left to decay:
     on a slide the document already had             1 batch
     the `(visible)` sentinel                      883 batches
       of which recoverable from the next batch    866  (863 added, 1 own, 2 ?)
+    a slide id absent from that round's final
+      inventory — swept before the deck was read  536 batches
+
+**DO NOT QUOTE THE ABSOLUTES.** Two skeptics refuted this entry on 2026-09-07
+and both were right about the same thing: these counts drift every round — each
+round adds roughly +22 added, +4 sentinel, +12 unplaceable — so three figures
+written on three different evenings were sold as one measurement, and the
+fourth bucket was left out entirely, which is why the first three did not sum.
+Run the script for current values.
+
+**WHAT DOES NOT DRIFT IS THE ONE THAT MATTERS: the second row.** It was 1 at
+round 385, 1 at 413, and 1 at 418.
 
 Re-derive with `node scripts/slide-provenance.mjs`, which prints the failures
 and this denominator in one output on purpose: the first table is meaningless
@@ -2640,38 +2758,126 @@ question at all.
 §0 shows all-green 4:3 rounds going from 58% to 86% and crashes collapsing. The
 natural next sentence is "so the host is refusing less". It is not.
 
-`friction` is recorded per scenario in every round since 205. Per scenario:
+`friction` is a per-scenario DELTA — a snapshot after each scenario minus the
+one before it — so it sums and divides cleanly. The conclusion below survived an
+adversarial pass; the table under it did not, and was rebuilt on 2026-09-07.
 
-    era    rounds  scenarios   errors  idRefusals  generalExceptions  repaired
-    PRE       172       2479     0.24        0.07               0.08      0.36
-    post       38        697     0.25        0.08               0.05      0.56
+Like-for-like — the 17 scenario names present in BOTH eras — over rounds >= 205,
+where every column exists:
 
-Flat, or up. **The product absorbs the same amount of host misbehaviour and now
-survives it** — which is a better thing to have learnt than "the host improved",
-and it says where the remaining risk lives: not in fewer refusals, but in the
-repair path carrying more (0.36 to 0.56 repairs per scenario).
+    era    scenarios   errors  idRefusals  generalExceptions | repaired
+    PRE         2472    0.240       0.074              0.078 |    0.363
+    post         714    0.246       0.070              0.057 |    0.403
 
-**IGNORE THE `generalExceptions` COLUMN.** It is the one that fell, and it falls
-for a reason that is not the product: `selftest.ts` already records that
-`explode a degraded picture` throws EXACTLY ONE general exception in every round
-— "a constant, not a signal". One constant over a scenario list that grew from
-14 to 19 is 1/16 = 0.063 then and 1/19 = 0.053 now, which is the whole of the
-0.08 -> 0.05 move. A third denominator trap in the same three-line table.
+Flat. **The product absorbs the same amount of host misbehaviour and now
+survives it** — a better thing to have learnt than "the host improved".
 
-THE FIRST TWO READINGS OF THIS WERE BOTH WRONG, and the way they were wrong is
-the reusable part. Per round over the whole archive, `idRefusals` appeared to
-fall 3.6 to 1.5 — a 58% improvement, and an artifact: the field did not exist
-before round 205, so 180 rounds counted as zero and deflated the PRE average.
-Restricted to rounds that carried it, the same number appeared to RISE, 1.1 to
-1.5 — also an artifact, because scenarios were added over time and a round is
-not a fixed amount of work. Only per SCENARIO is a like-for-like unit. Two
-opposite conclusions from one dataset before the denominator was right.
+**`repaired` IS ON THE OTHER SIDE OF THE BAR, and putting it in a friction
+table was a category error.** `hostFriction.reReadsRepaired += pending.length -
+retry.length` counts the charts that RESOLVED on a retry pass, and its own
+docstring calls it "charts whose re-read was short or empty FIRST and complete
+after a pause ... the number that says whether `REREAD_RETRY_MS` is buying
+anything". Up is GOOD. An earlier version of this entry read 0.36 -> 0.56 as
+"the repair path carrying more" risk; it is the repair path working more often.
+
+**THE PUBLISHED VERSION OF THIS TABLE WAS WRONG THREE WAYS**, each found by a
+skeptic and each checked here before it was believed. They are kept because the
+shapes recur.
+
+1. **The window's stated reason was false for most of the table.** It said
+   rounds < 205 were excluded "because the field did not exist". Measured first
+   appearance: `errors` 023, `idRefusals` 023, `generalExceptions` 023,
+   `emptyReReads` 023 — only `reReadsRepaired` and its two neighbours start at
+   205. Three of four columns discarded 2,292 scenario instances for a reason
+   that did not apply to them.
+2. **`repaired` 0.36 -> 0.56 was a scenario-MIX artifact.** `what a chart kind
+   costs` is post-only and supplies 162 of 450 post repairs — 36% of them — from
+   21 of 773 instances, 2.7%. Like-for-like it is 0.363 -> 0.403.
+3. **Per-scenario fixes the COUNT and not the MIX.** Normalising by scenario
+   count still compares two different sets of scenarios.
+
+AND THE WINDOW HIDES THE REAL IMPROVEMENT. Same 17 scenarios, window removed:
+
+    era    scenarios   errors  idRefusals
+    PRE         4764    0.404       0.265
+    post         714    0.246       0.070
+
+Friction fell a long way across this archive's history — and almost all of it
+happened BEFORE the two-master fix, between rounds 023 and 204. Across the fix
+itself it is flat. Both statements are true and only the second is about the fix.
+
+**`generalExceptions` STILL SHOULD NOT BE READ AS PRODUCT.** `selftest.ts`
+records that `explode a degraded picture` throws exactly one per round — "a
+constant, not a signal" — so that column is largely a constant over a growing
+scenario list.
+
+TWO EARLIER READINGS, BOTH WRONG, kept for the shape: per round over the whole
+archive `idRefusals` appeared to FALL 58%, an artifact of 180 rounds counting as
+zero; per round over rounds that carried it, the same number appeared to RISE,
+an artifact of the scenario list growing. Four opposite readings of one dataset
+before the denominator was right.
+
+### Half the parts-list events are no-ops, and 41% of host deaths are one scan — 2026-09-07
+
+Two instrument findings from the same afternoon, both fixable, both found while
+attacking something else.
+
+**3,000 of 6,179 `parts list outcome` events carry `charts: 0`** — an outcome
+traced for an empty item list. Nearly half the population is noise, and it
+inflates every denominator taken off this event, including the "640 carry the
+id read-back threw" that started an evening's enquiry. A regression with a
+boundary: rounds 142-145 have none, round 146 (build `2521d23`) has three, and
+the round total stayed at 21, so three events CONVERTED rather than appeared.
+Guarded in `tracePartsOutcome`; no test kills that mutant and its docstring says
+why, so a round is what confirms it.
+
+**A SATISFYING CAUSAL STORY DIED HERE.** The empty-collection defect measured
+on 2026-09-07 looked like it explained this repo's oldest gap — `withParts` 0 of
+1,370 — because the parts list needs a COLLECTION read while tagging uses
+creation handles. It fits everything and it is wrong. Split the dominant exit
+("no loose chart had siblings", 5,855 events): 3,000 have no charts at all, and
+the other 2,855 are single charts that were GROUPED, which `powerpoint.ts` says
+in as many words have no parts tag by design. Grouping succeeding is the good
+outcome, and it is the whole explanation.
+
+**AND 41% OF HOST DEATHS HAPPEN IN ONE SCAN.** Every crash record carries its
+own `steps`; the last one before the record was written:
+
+    41  pane    collecting deck evidence — scanning
+    15  error   drawing the chart's shapes
+     6  draw    parts list outcome
+     4  probe   asking
+     4  draw    batch issued
+
+    last-step time: p25 468s   p50 529s   p90 761s
+
+`crashes/README.md` already says that scan runs AFTER every verdict is in. So
+the largest single cause of lost rounds is a read taken at maximum session
+fatigue, after the round's measurements are complete. **Making it cheaper, or
+skipping it when the session is deep, would plausibly cut lost rounds a long
+way — and it changes what every round collects, so it is the owner's call.**
+
+A WRONG TURN AVOIDED, recorded because it was nearly taken: the first attempt
+attributed crashes to scenarios by their median start time in RECENT rounds,
+which would have blamed three scenarios that mostly did not exist when those
+crashes happened. The records name what was in flight themselves.
+
+### Round duration is a fourth denominator trap — 2026-09-07
+
+    per ROUND (selftest total)   PRE p50 411s  ->  post p50 604s   (+47%)
+    per SCENARIO                 PRE p50 17.5s ->  post p50 15.1s  (-14%)
+                                 PRE p90 62.9s ->  post p90 87.8s
+
+The +47% is the scenario list growing 14 -> 19. Per scenario the typical case
+got slightly faster and the tail got heavier. Nobody has quoted the +47% yet;
+this exists so nobody starts.
 
 ### 231 of 263 rounds needed a repair before they could start — 2026-09-06
 
 `driverRun.recovered` has been recorded since round ~150 and had never been
-totalled. Of the 263 rounds carrying the field, **231 needed at least one
-recovery** before the driver would call the setup ready:
+totalled. **As of round 414** — 267 rounds by 418, and this ratio is the point
+rather than the integers — of the 263 rounds carrying the field, **231 needed at
+least one recovery** before the driver would call the setup ready:
 
     not-ready:pane-closed                            109
     crashed                                           71
