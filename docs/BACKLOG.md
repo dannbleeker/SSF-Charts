@@ -188,6 +188,32 @@ it.** 54 archived rounds, 023 through 078, carry no `slideSize` either. PRE 16:9
 (250) plus PRE 4:3 (48) is 298 of 352 pre-fix archived rounds; the other 54 are
 in no row of that table.
 
+**AND THEY ARE RECOVERABLE, so it is a fixable silent exclusion rather than
+lost data.** `deck.inventory` is present in all 54 and carries every shape's
+`left`. The widest one separates the profiles with a gap nothing falls into:
+
+    16:9   n=262   min 898   max 927.3
+    4:3    n= 74   min  90   max 690.9
+
+A threshold at 794 is **336 of 336 correct on every round that does carry a
+size**. Applied to the 54 it places 53 as 16:9 and 1 as 4:3, and folding them in
+would move the PRE 16:9 row from `250 / 194 / 96.9%` to `303 / 199 / 95.0%` —
+all-green from 77.6% to **65.7%**.
+
+**THAT CORRECTION RUNS IN THE PRODUCT'S FAVOUR, WHICH IS WHY IT GETS MORE
+SCRUTINY, NOT LESS.** Excluding those rounds flatters the PRE baseline and so
+understates the improvement. Two things make it more than a convenient story:
+the rule is separable by a factor with no overlap at all, and the excluded
+rounds ran the SHORTEST exams in the archive — 12 or 13 scenarios — while
+scoring 10.9% all-green. This file's own finding says a shorter exam should
+FLATTER a round. These are short and terrible anyway.
+
+**THE TABLE IS NOT RESTATED ON the strength of it.** The rule is a heuristic
+that could misfire on a nearly-empty deck, rounds 023-078 are a different era of
+instrument maturity as well as of build, and `test/backlog-health-table.test.ts`
+now pins those rows to their anchor. Folding them in changes a published
+comparison, so it is a decision rather than a repair.
+
 The `scenario pass rate` column in the table above was the comparable one all
 along, and it says 94.3% to 97.1%.
 

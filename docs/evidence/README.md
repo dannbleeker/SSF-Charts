@@ -65,3 +65,18 @@ TWO SCARS, both worth more than the result:
 - The archived jsonl did not record `before`, the threshold `seen` is compared
   against — so the "two placeholders" figure was inferable from the file but not
   re-derivable from it. Fixed; older lines in the jsonl predate the field.
+
+**A THIRD SCAR, found by a skeptic and larger than the other two.** Every read
+in that harness called `shapes.load("items/id")` on both slides and then kept
+only `.length`. So the archived jsonl carries no shape id at all, and the
+draft's central sentence — "the one it omits is the one the add-in just drew" —
+was **not re-derivable from the archive**. Two placeholders with the rectangle
+missing reads identically to one placeholder plus the rectangle with a
+placeholder missing. Only the SCREENSHOT distinguished them, and a screenshot is
+not something a query can join against.
+
+The harness now records `beforeIds` and `seenIds`, so the id sets can be
+differenced. Lines already in `empty-read-6-trials.jsonl` predate both fields.
+**The claim in DRAFT D stands on the screenshot until a re-run replaces it with
+id sets** — which is a weaker footing than the prose implied, and is why this is
+written down rather than quietly fixed.

@@ -75,12 +75,20 @@ const SETUP = `async () => {
   // eight trials of this experiment produced exactly that ambiguity.
   // (No backticks in here: this comment lives inside a template literal, and
   // the first version of it closed the string three lines early.)
-  let before = -1;
+  //
+  // AND THE IDS, not just the count. Every read here loads "items/id" and then
+  // kept only .length, so the archived file could support "returns two" and
+  // could NOT support the sentence the draft actually makes — that the shape it
+  // omits is the one just drawn. Two placeholders and one missing rectangle
+  // reads identically to one placeholder and one rectangle with a placeholder
+  // missing. Comparing the id SETS settles it; comparing counts never can.
+  let before = -1, beforeIds = [];
   await PowerPoint.run(async (c) => {
     const slide = c.presentation.slides.getItemAt(index);
     slide.shapes.load("items/id");
     await c.sync();
     before = slide.shapes.items.length;
+    beforeIds = slide.shapes.items.map(function (x) { return x.id; });
   });
   await PowerPoint.run(async (c) => {
     const slide = c.presentation.slides.getItemAt(index);
@@ -88,17 +96,18 @@ const SETUP = `async () => {
     s.left = 20; s.top = 20; s.width = 40; s.height = 30;
     await c.sync();
   });
-  return JSON.stringify({ index: index, idAtAdd: idAtAdd, before: before });
+  return JSON.stringify({ index: index, idAtAdd: idAtAdd, before: before, beforeIds: beforeIds });
 }`;
 
 const READ = (index) => `async () => {
-  let seen = -1, control = -1, threw = "";
+  let seen = -1, control = -1, threw = "", seenIds = [];
   try {
     await PowerPoint.run(async (c) => {
       const slide = c.presentation.slides.getItemAt(${index});
       slide.shapes.load("items/id");
       await c.sync();
       seen = slide.shapes.items.length;
+      seenIds = slide.shapes.items.map(function (x) { return x.id; });
     });
     await PowerPoint.run(async (c) => {
       const ctl = c.presentation.slides.getItemAt(${CONTROL_INDEX});
@@ -107,7 +116,7 @@ const READ = (index) => `async () => {
       control = ctl.shapes.items.length;
     });
   } catch (e) { threw = String(e && e.message).slice(0, 60); }
-  return JSON.stringify({ seen: seen, control: control, threw: threw });
+  return JSON.stringify({ seen: seen, seenIds: seenIds, control: control, threw: threw });
 }`;
 
 const found = pw("find", "Chart").out ?? "";
@@ -152,6 +161,7 @@ for (let n = 0; n < TRIALS; n++) {
       // thing than it reads as. A file that records a verdict without its
       // threshold is asking to be taken on trust.
       before: set.before,
+      beforeIds: set.beforeIds,
       filledAtMs,
       censored: filledAtMs === undefined,
       reads,

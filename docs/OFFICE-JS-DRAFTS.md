@@ -139,6 +139,14 @@ it**, next to the two placeholders the API does report. The slide has three
 things on it. `slide.shapes.load("items/id")` returns two, and the one it omits
 is the one the add-in just drew.
 
+**THAT LAST CLAUSE RESTS ON THE SCREENSHOT ALONE, and it should not.** The
+harness loaded `items/id` on every read and then kept only the COUNT, so the
+archived readings support "returns two" and cannot distinguish "two
+placeholders, rectangle missing" from "one placeholder plus the rectangle, a
+placeholder missing". The harness now records the id sets so a re-run can
+difference them; until then this sentence has a picture behind it and not a
+query. Say so if it is filed before the re-run.
+
 So it is not a delay of about two seconds. On this deck it is not a delay at
 all inside two minutes — the drawn shape is simply not in the collection, while
 the slide's own placeholders are. **#2903's 2-second workaround is not enough,
