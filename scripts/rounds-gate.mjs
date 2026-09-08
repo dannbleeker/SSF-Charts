@@ -585,11 +585,26 @@ if (isMain(import.meta.url, process.argv[1])) {
   const flaky = diverged.filter((d) => d.flaky);
   if (real.length) {
     console.log(`  ${real.length} scenario(s) DIVERGED between slide sizes on the same build:`);
-    for (const d of real)
+    for (const d of real) {
       console.log(
         `    ${d.name} — passed at ${d.passedIn.join(", ")}, failed at ${d.failedIn.join(", ")} (${d.build})`,
       );
-    console.log("  Run that profile again, or as a pair, before treating it as a property of the slide size.");
+      // THE SCENARIO'S OWN RECORD AT EACH PROFILE, beside the split. One build
+      // cannot tell "fails only here" from "fails at both, and this time the
+      // coin landed here" — and the first divergence this gate reported after
+      // being unblocked was the second kind, four points apart and fifty rounds
+      // stale, wearing a 4:3-flavoured detail.
+      const rates = Object.entries(d.history ?? {})
+        .map(
+          ([prof, h]) => `${prof} ${h.failed}/${h.ran}${h.ran ? ` (${((100 * h.failed) / h.ran).toFixed(0)}%)` : ""}`,
+        )
+        .join(" · ");
+      if (rates) console.log(`      lifetime, this scenario: ${rates}`);
+    }
+    console.log(
+      "  Run that profile again, or as a pair, before treating it as a property of the slide size —\n" +
+        "  and read the lifetime line first: rates that match mean the split is what chance does.",
+    );
   }
   // NAMED APART, because the response is different. A profile that disagrees
   // with ITSELF has said nothing about its slide size, and sending someone to

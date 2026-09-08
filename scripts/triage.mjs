@@ -2747,6 +2747,53 @@ export function profileDivergence(logs) {
         out.push({ build, name, passedIn, failedIn, unstableIn, flaky: true });
     }
   }
+  /**
+   * WHAT THE SCENARIO DOES AT EACH PROFILE OVER ITS WHOLE LIFE, attached to
+   * every divergence.
+   *
+   * The comparison above can only see one build. It already refuses to call a
+   * profile that disagrees with ITSELF a divergence — but it cannot see that a
+   * scenario fails a quarter of the time at BOTH profiles, in which case a
+   * single pass-here-fail-there split is the commonest thing chance produces.
+   *
+   * Not hypothetical. The first divergence this gate reported after it was
+   * unblocked on 2026-09-08 was `stop a run mid-draw`, passed at 16:9 and
+   * failed at 4:3 on build 31d358f, carrying a 4:3-flavoured detail — "the
+   * slide this drew on could not be deleted". Its lifetime record is 10 of 39
+   * at 4:3 against 9 of 41 at 16:9, and it has not failed that way since round
+   * 383. Four points apart, fifty rounds stale, and the report was pointing at
+   * an aspect ratio.
+   *
+   * So the rates travel with the finding. A reader who sees 25.6% against 22.0%
+   * closes it in a second; one who does not spends an afternoon on it, and
+   * `docs/ROUNDS.md` says what that does to a report people are meant to keep
+   * reading.
+   */
+  // NESTED, not a joined string key. The first version built `name + separator
+  // + profile`, and a NUL byte landed in the separator on the way to disk — in
+  // both places that built one. `no-control-bytes.test.ts` caught it, which is
+  // exactly what that test is for. A nested map has no separator to corrupt,
+  // and none to collide with either: a scenario name is free text.
+  const lifetime = new Map();
+  for (const log of logs) {
+    const prof = roundProfile(log);
+    for (const sc of log?.selftest ?? []) {
+      // Same rule as above: a scenario that did not measure says nothing, so it
+      // must not enter the denominator either.
+      if (!sc?.name || sc.skipped) continue;
+      if (!lifetime.has(sc.name)) lifetime.set(sc.name, new Map());
+      const byProfile = lifetime.get(sc.name);
+      const at = byProfile.get(prof) ?? { ran: 0, failed: 0 };
+      at.ran++;
+      if (!sc.ok) at.failed++;
+      byProfile.set(prof, at);
+    }
+  }
+  for (const d of out) {
+    d.history = {};
+    for (const prof of [...d.passedIn, ...d.failedIn, ...d.unstableIn])
+      d.history[prof] = lifetime.get(d.name)?.get(prof) ?? { ran: 0, failed: 0 };
+  }
   return out.sort((a, b) => a.build.localeCompare(b.build) || a.name.localeCompare(b.name));
 }
 

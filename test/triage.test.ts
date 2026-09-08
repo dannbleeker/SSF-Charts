@@ -748,6 +748,43 @@ describe("triage — logs that are not inserts", () => {
     ).toEqual([]);
   });
 
+  it("carries each profile's LIFETIME record, so a split can be read against chance", () => {
+    /**
+     * One build cannot tell "fails only at 4:3" from "fails at both, and this
+     * time the coin landed 4:3". The check refuses the second case only when a
+     * profile disagrees with ITSELF on that build; it cannot see a scenario
+     * that fails a quarter of the time everywhere.
+     *
+     * That is not hypothetical. The first divergence this gate reported after
+     * it was unblocked on 2026-09-08 was `stop a run mid-draw` — passed at
+     * 16:9, failed at 4:3, with a 4:3-flavoured detail about a slide that would
+     * not delete. Lifetime it is 10 of 39 at 16:9 and 12 of 38 at 4:3, and it
+     * had not failed that way for 49 rounds. The rates close the question; the
+     * split alone opens a false one.
+     */
+    const at = (build: string, w: number, pairs: [string, boolean | "skip"][]) => ({
+      build: `${build} · 2026-08-16`,
+      slideSize: { width: w, height: 540, source: "pageSetup" },
+      selftest: pairs.map(([name, ok]) => ({ name, ok: ok === true, ...(ok === "skip" ? { skipped: true } : {}) })),
+    });
+    const d = profileDivergence([
+      // History from OTHER builds: the scenario fails at both profiles.
+      at("old1111", 960, [["stop mid-draw", false]]),
+      at("old2222", 720, [["stop mid-draw", false]]),
+      // A skip must not enter either side of the ratio — it measured nothing,
+      // which is the same rule the divergence and regression checks follow.
+      at("old3333", 960, [["stop mid-draw", "skip"]]),
+      // The build that produces the split.
+      at("aaaaaaa", 960, [["stop mid-draw", true]]),
+      at("aaaaaaa", 720, [["stop mid-draw", false]]),
+    ]);
+    expect(d).toHaveLength(1);
+    expect(d[0].history, "the divergence carries no lifetime record").toEqual({
+      "16:9": { ran: 2, failed: 1 },
+      "4:3": { ran: 2, failed: 2 },
+    });
+  });
+
   it("does not call a scenario that DID NOT MEASURE a regression", () => {
     // THE GATE'S FIRST LIVE OUTING GOT THIS WRONG. Round 073 flagged `explode a
     // degraded picture` as having stopped passing, for a result whose own words

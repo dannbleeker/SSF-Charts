@@ -1697,6 +1697,37 @@ export function describePane(findOutput, limit = 12) {
 }
 
 /**
+ * Did the pane describe NOTHING — no tab, no button, nothing at all?
+ *
+ * The same parse as `describePane`, asked as a question, because the answer
+ * decides whether a round can be recovered or the night ends.
+ *
+ * WHY IT EXISTS. `no-run-button` has ended five cycles, every one of them AFTER
+ * a successful recovery: the pane reopens, the add-in re-sideloads, the deck is
+ * swept, the driver prints `ready`, and then the button is not there. It has
+ * been a terminal stop that whole time, on the theory that a pane sitting on
+ * the wrong tab needs a person to look at it.
+ *
+ * On 2026-09-08 the diagnostic finally printed and the pane was not on the
+ * wrong tab — it answered nothing at all. No tabs, no buttons, seconds after
+ * `host answered in 3ms · slide 1 resolved`. That is not a pane wanting a
+ * click; it is a pane that has gone, which `RECOVERABLE_STOPS` already handles
+ * as `pane-closed`. Recovery reopens it and the attempt loop tries again,
+ * instead of a night ending on attempt 3 of 7.
+ *
+ * KEPT SEPARATE FROM `describePane` rather than folded into it. That one
+ * formats for a person and is called inside a swallowing try/catch, because a
+ * diagnostic must never end a round. This one CHANGES CONTROL FLOW, so it has
+ * to be callable and testable on its own and must not be wrapped in the same
+ * swallow.
+ */
+export function paneAnsweredNothing(findOutput) {
+  return !String(findOutput ?? "")
+    .split("\n")
+    .some((l) => /^\s*- (tab|button) "/.test(l));
+}
+
+/**
  * The command that ends an orphaned browser, for the platform this runs on.
  *
  * A FUNCTION OF THE PLATFORM RATHER THAN A READ OF `process.platform`, for the
@@ -2232,10 +2263,26 @@ export async function attempt(argv, deps, sh, healed = false) {
     console.error("  could not find the run button, and the Automation tab did not bring it back");
     // Swallowed on purpose: this runs on a path that has already failed, and a
     // diagnostic that can end a round is worse than no diagnostic.
+    //
+    // The READING is taken outside the swallow and used below. An unreadable
+    // pane and a pane that answered nothing are not the same state, so a throw
+    // here must leave the stop exactly as it was rather than promote it.
+    let described = null;
     try {
-      console.error(describePane(sh("find", "--regex", '/(tab "|button ")/')));
+      described = sh("find", "--regex", '/(tab "|button ")/');
+      console.error(describePane(described));
     } catch {
       /* the pane is past describing; the refusal above is the report */
+    }
+    // A PANE WITH NO TABS AND NO BUTTONS IS A CLOSED PANE, and this driver has
+    // always known how to reopen one. `no-run-button` has ended five cycles,
+    // every time after a successful recovery and a printed `ready`; when the
+    // diagnostic finally spoke on 2026-09-08 it said "the pane answered nothing
+    // at all", seconds after the host answered in 3ms. Calling that a missing
+    // BUTTON is what made it terminal.
+    if (described !== null && paneAnsweredNothing(described)) {
+      console.error("  nothing at all is on the pane — treating it as a closed pane, which recovery can reopen");
+      return { code: 1, reason: "pane-closed" };
     }
     return { code: 1, reason: "no-run-button" };
   }
@@ -2731,15 +2778,45 @@ export async function keepCrashedRun(
   exists = existsSync,
   read = readFileSync,
   write = writeFileSync,
+  // Injected like the rest, so a test can prove the landing spot is cleared
+  // BEFORE the click rather than infer it from the file that ends up archived.
+  rm = rmSync,
 ) {
   try {
     const ref = refFor(sh, "Download the crashed run", /button "Download the crashed run"/);
     // Nothing kept, or a previous attempt already saved it — `clearCrashLog`
     // hides the button once pressed, so this does not re-download in a loop.
     if (!ref) return null;
+    const from = `${sh.dir ?? "."}/.playwright-cli/ssf-charts-crashed-run.json`;
+    /**
+     * CLEAR THE LANDING SPOT FIRST, so "its file never arrived" means what it
+     * says.
+     *
+     * The download lands on a fixed path. This used to click, wait, and archive
+     * whatever was sitting there — so a click that downloaded NOTHING, because
+     * the pane had died or the button was stale, re-archived the PREVIOUS
+     * download under today's date.
+     *
+     * Not a worry, an event: `crashes/2026-09-08T13-42-37-crashed-run.json` was
+     * written on 2026-09-08 and is byte-identical to
+     * `2026-09-07T22-13-42-crashed-run.json` — the same build stamp `36916a5 ·
+     * 2026-09-07 21:49Z`, the same `startedAt` to the millisecond, the same 855
+     * steps. Yesterday's crash filed a second time as though it were today's,
+     * in the very attempt that went on to find the pane empty.
+     *
+     * Nothing downstream was corrupted, and only because `loadCrashRecords`
+     * dedupes on `build + startedAt + steps`. Its docstring — "ONE EVENT FILED
+     * TWICE IS ONE EVENT" — was written for a different re-archive, and a death
+     * rate protected by a coincidence is not protected.
+     */
+    try {
+      rm(from, { force: true });
+    } catch {
+      // A landing spot that will not clear is no reason to skip the salvage.
+      // The freshness check below simply becomes as weak as it used to be.
+    }
     clickRef(sh, ref);
     await sleep(8000);
-    const from = `${sh.dir ?? "."}/.playwright-cli/ssf-charts-crashed-run.json`;
     if (!exists(from)) {
       console.error("  a crashed run was offered but its file never arrived");
       return null;

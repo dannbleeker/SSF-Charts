@@ -2799,6 +2799,45 @@ What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
 
+### The first thing the unblocked gate reported is a divergence that is not one — 2026-09-08
+
+Signing round 428's death let `rounds:gate` finish for the first time since that
+round, and the first thing it surfaced was:
+
+    1 scenario(s) DIVERGED between slide sizes on the same build:
+      stop a run mid-draw — passed at 16:9, failed at 4:3 (31d358f)
+
+The 4:3 detail is *"the slide this drew on could not be deleted, so the aborted
+draw is still in the deck"* — a slide-level version of the shape-delete refusal
+that has occupied this file all week, which makes it look like a lead.
+
+**It is not a profile difference.** Counted across every round that ran the
+scenario and did not skip it:
+
+              ran   any failure   this failure ("could not be deleted")
+    16:9       39     10 (26%)                  9 (23%)
+    4:3        38     12 (32%)                 10 (26%)
+
+Three points apart on the specific failure, six on any failure, over ~38 runs
+each — and it has not happened since **round 383**, 49 rounds ago, on both arms.
+So this is one flaky failure landing on the 4:3 side of one build pair, which is
+the case `docs/ROUNDS.md` names outright:
+*"Sending someone to investigate 4:3 for a scenario that is merely flaky is how
+a useful report teaches people to ignore it."*
+
+**What that says about the check rather than the scenario, and it is FIXED.**
+`profileDivergence` compared one pair of rounds on one build and knew nothing
+about the scenario's own history, so it could not tell "fails only at 4:3" from
+"fails at both, and this time the coin landed 4:3". It now carries each
+profile's lifetime record with the finding, and the gate prints it underneath:
+
+    stop a run mid-draw — passed at 16:9, failed at 4:3 (31d358f)
+      lifetime, this scenario: 16:9 10/39 (26%) · 4:3 12/38 (32%)
+
+Same rule as the check above it — a skipped scenario does not enter the
+denominator, because it measured nothing. A reader who sees those two rates
+closes the question in a second.
+
 ### The sweep deleted nothing seven times, and that is what killed the tab — 2026-09-08
 
 **NOT FIXED — the fix was built, measured against a real host, and removed.**
@@ -2915,22 +2954,43 @@ strays stop accumulating in the owner's deck, and the occupancy climb that
 preceded a tab death goes away. Not "the sweep is broken for users" — and, as
 of round 431, not yet worth anything, because there is no working fix.
 
-**AND THE STRAYS ARE STILL THERE — this needs the owner, because it is his
-deck.** The 16:9 deck as each round found it, median top-level shapes:
+**AND WHERE THE STRAYS GO — I got this wrong twice before plotting it, so the
+correction is below.** The 16:9 deck as each round found it, median top-level shapes:
 
     rounds   1-200   14        rounds 353-400   16
     rounds 201-300   14        rounds 401-430   22
     rounds 301-352   14
 
 The step is 8, which is one per specimen, and it arrives exactly where the
-failed sweeps do. Round 430's inventory names them: slide index 6 (the seventh) holds **nine**
-`PowerChart` shapes — one probe chart and eight specimens that were reported
-swept and were not. Every round since 423 reads 22.
+failed sweeps do. Round 430's inventory names them: slide index 6 (the seventh)
+holds **nine** `PowerChart` shapes — one probe chart and eight specimens that
+were reported swept and were not.
 
-Today's fix stops more arriving. It does not remove the eight already sitting
-there, and nothing else will: the pane's "Clean up" deletes only slides a round
-added, which these are not. Removing them is a deck edit on the owner's own
-file.
+> **"AND NOTHING ELSE WILL REMOVE THEM" STOOD HERE AND IS WRONG**, corrected
+> 2026-09-08 after I had told the owner twice that eight strays were permanently
+> in his deck. **The deck is not accumulating.** As each round found it:
+>
+>     420  45   421  19   422  17   423  22   424  21   425  22   426  22
+>     427  22   428  22   429  22   430  22   431  37   432  20   433  21
+>
+> It sits at about 21, and the fullest slide at 7-9, for thirty rounds. If the
+> strays were permanent it would be climbing by eight a round and would now be
+> in the thousands. What the deck carries is roughly ONE round's worth at a
+> time.
+>
+> **WHAT CLEARS THEM IS NOT ESTABLISHED, and the tempting answer is already in
+> trouble.** The obvious story is the recency defect — unresolvable by id while
+> fresh, resolvable once settled, so a later sweep takes them. Round 434's
+> entire trace carries three deletion events (`deleted the chart being replaced`
+> twice, `swept` once), nowhere near the eight that would need removing. So
+> either something outside the trace does it — the driver's `deck-dirty`
+> recovery is the candidate, and it has fired 43 times — or the specimens are
+> not what the inventory is counting. Named and left open rather than guessed,
+> because guessing it is how the sentence above got written in the first place.
+>
+> The litter is real and transient, not real and permanent. Nothing about the
+> owner's deck needs doing, and the "this needs the owner" heading above was the
+> wrong call on a number I never plotted.
 
 **RETRACTED — a kill band that was the length of the script.** I reported that
 75% of deaths land in 420-900s and read it as a hazard window. It has no control

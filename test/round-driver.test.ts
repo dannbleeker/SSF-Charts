@@ -50,6 +50,7 @@ const {
   endOrphanCommand,
   endOrphanedBrowser,
   describePane,
+  paneAnsweredNothing,
   browserDiedMidRound,
   onlyDirtyDeck,
   DEAD_BROWSER_POLLS,
@@ -1116,6 +1117,32 @@ describe("talking to the browser at all", () => {
     // accessibility dump would bury the message it is attached to.
     const many = Array.from({ length: 40 }, (_, i) => `- button "B${i}" [ref=f${i}]`).join("\n");
     expect(describePane(many).split("\n"), "an uncapped dump buries the stop").toHaveLength(13);
+  });
+
+  it("calls a pane with no tabs and no buttons CLOSED, which recovery can reopen", () => {
+    /**
+     * THE ANSWER THE DIAGNOSTIC WAS BUILT FOR, and it arrived on 2026-09-08.
+     * `no-run-button` had ended five cycles, every one after a successful
+     * recovery and a printed `ready`. When the pane was finally described it
+     * was not on the wrong tab — it answered NOTHING, seconds after `host
+     * answered in 3ms · slide 1 resolved`.
+     *
+     * A pane with no tabs and no buttons is a closed pane, and `pane-closed` is
+     * already in `RECOVERABLE_STOPS`. Reading it as a missing BUTTON is what
+     * made the stop terminal, and it cost the 4:3 leg on attempt 3 of 7.
+     */
+    expect(paneAnsweredNothing(""), "an empty answer is not a pane").toBe(true);
+    expect(paneAnsweredNothing(undefined)).toBe(true);
+    // Prose, headings and refs are not controls — the same parse `describePane`
+    // uses, so the two can never disagree about what "nothing" means.
+    expect(paneAnsweredNothing("### Chart\n- generic: some text\n  - img [ref=f1]")).toBe(true);
+
+    // A pane on the WRONG TAB still has tabs, and must stay `no-run-button`.
+    // That one really does want a person, and promoting it to a recoverable
+    // stop would spend all seven attempts on a pane that was never going to
+    // grow the button.
+    expect(paneAnsweredNothing('- tab "Chart" [selected] [ref=f1]'), "a tab list is an answer").toBe(false);
+    expect(paneAnsweredNothing('  - button "Insert into slide" [ref=f2]'), "indented controls still count").toBe(false);
   });
 
   it("keeps what a failed CLI call said, and nothing from one that worked", () => {
