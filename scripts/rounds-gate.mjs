@@ -173,7 +173,20 @@ export const POISONED_BUILDS = new Set(["b5c534a", "3eaab20", "2934204", "6421ba
  *
  * @type {{record: string, scenario: string, seen: string, why: string}[]}
  */
-export const DEATHS_ACKNOWLEDGED = [];
+export const DEATHS_ACKNOWLEDGED = [
+  {
+    record: "2026-09-07T22-13-42-crashed-run.json",
+    scenario: "what a chart kind costs",
+    seen: "2026-09-08",
+    why:
+      "docs/BACKLOG.md, 'The sweep deleted nothing seven times, and that is what killed the tab'. " +
+      "The scenario's own cleanup was refused seven times (`unresolved=1 swept=0`), so all eight " +
+      "specimens stayed on the slide and its occupancy climbed 0, 7, 15, 24, 34, 44, 53, 61 before " +
+      "the tab died on the eighth. All four routes to sweeping a fresh shape are measured and closed " +
+      "in that section. The record's last step ends 5 of 99 kept records against 2.3 expected, so it " +
+      "carries no signature — this is a death understood, not a death explained away.",
+  },
+];
 
 /**
  * The last step of one crash record, by filename — the line the host died on.
