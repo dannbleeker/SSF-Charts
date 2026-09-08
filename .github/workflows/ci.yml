@@ -24,7 +24,17 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      # FULL HISTORY, because a test in this suite reasons about ancestry.
+      # `backlog-health-table.test.ts` re-derives §0's table only for builds that
+      # contain the two-master fix, and it asks git which those are:
+      # `git log 6dfaa4b..HEAD`. The default checkout is shallow (fetch-depth 1),
+      # so that commit is not in the clone and the command fails with "ambiguous
+      # argument '6dfaa4b..HEAD'". The test passed locally and could never pass
+      # here, and CI stayed red for 26 hours and twenty commits before anyone
+      # read the log.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22

@@ -28,9 +28,48 @@ import { execFileSync } from "child_process";
  */
 const FIX = "6dfaa4b";
 
-/** Builds that contain the two-master fix, by ancestry rather than by date. */
+/**
+ * Builds that contain the two-master fix, by ancestry rather than by date.
+ *
+ * NEEDS FULL GIT HISTORY, and now says so when it does not have it. A shallow
+ * clone — the default for `actions/checkout` — has no `6dfaa4b`, so git answers
+ * "ambiguous argument '6dfaa4b..HEAD': unknown revision or path not in the
+ * working tree", which names neither the cause nor the cure. This test passed
+ * on every developer machine and could never pass in CI: it went red the hour
+ * it was added and stayed red for 26 hours and twenty commits, while the local
+ * gate — which does not run coverage, and prints a list saying so — kept
+ * reporting green.
+ *
+ * Fixed at the source: `ci.yml` checks out with `fetch-depth: 0`. Translated
+ * here as well, because the next environment without history should be told
+ * what this needs rather than what git said.
+ */
 function postFixBuilds(): Set<string> {
-  const out = execFileSync("git", ["log", "--format=%h", `${FIX}..HEAD`], { encoding: "utf8" });
+  let out: string;
+  try {
+    out = execFileSync("git", ["log", "--format=%h", `${FIX}..HEAD`], { encoding: "utf8" });
+  } catch (err) {
+    let reachable = true;
+    try {
+      execFileSync("git", ["cat-file", "-e", `${FIX}^{commit}`], { stdio: "ignore" });
+    } catch {
+      reachable = false;
+    }
+    // The original is carried in the MESSAGE rather than as `cause`, which is
+    // what `preserve-caught-error` would rather see. `Error.cause` is ES2022 and
+    // this project compiles to ES2020, so the typed form does not exist here —
+    // and raising the whole repo's target to satisfy one throw is a bigger
+    // change than the thing it fixes. Nothing is lost: git's own words are in
+    // the text.
+    // eslint-disable-next-line preserve-caught-error -- ES2020 target has no Error.cause; the original is in the message
+    throw new Error(
+      reachable
+        ? `git could not list ${FIX}..HEAD although ${FIX} is present — ${String(err)}`
+        : `this test needs full git history — ${FIX} (the two-master fix) is not in this clone, ` +
+            `so nothing can say which builds contain it. A shallow checkout cannot answer it; ` +
+            `CI uses fetch-depth: 0 for exactly this reason. git said: ${String(err)}`,
+    );
+  }
   const set = new Set(
     out
       .split("\n")
