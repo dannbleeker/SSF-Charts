@@ -517,17 +517,34 @@ if (isMain(import.meta.url, process.argv[1])) {
         );
       } else {
         // TWO OR MORE: not signable, deliberately. The only green path is a
-        // ceiling, and the number is printed because seeding one at the point
-        // estimate is the hair trigger `fatalDeathsAllowed`'s docstring warns
-        // about — `same scale across the deck` seeded that way went red again
-        // on its sixth death, and its ninth.
+        // ceiling, and the smallest one that holds is printed so nobody has to
+        // solve `p*n + 2*sqrt(p(1-p)n) >= count` in their head.
+        //
+        // "THE POINT ESTIMATE IS NOT HIGH ENOUGH" WAS PRINTED HERE FOR HALF A
+        // DAY AND IS NOT A TRUE SENTENCE. Setting the ceiling to the current
+        // rate makes the allowance `count + 2*sqrt(p(1-p)n)`, which exceeds
+        // `count` by the whole noise bound — so the point estimate always holds
+        // today. Its first live outing said 2 of 45 needed more than 44.4 when
+        // the floor is 12 and 44.4 allows 4.73.
+        //
+        // The only case where the floor really does exceed the rate is integer
+        // rounding at the bottom of the scale: 1 death in 4,000 runs is 0.25
+        // per 1000 and the smallest integer ceiling is 1. That is arithmetic
+        // about the units, not a statistical warning, so it is not worth a
+        // branch.
+        //
+        // What IS true is forward-looking, and is the table's whole design: a
+        // ceiling seeded at today's rate stays silent while the scenario stays
+        // exactly as bad as it is, and fires when it gets worse.
         let c = 1;
         while (c < 1000 && fatalDeathsAllowed(c, b.runs) < b.count) c++;
         console.error(
           `\n    \`${b.name}\` has ${b.count} deaths and CANNOT be acknowledged — two deaths is the archive's\n` +
-            `    own signal that the first was not a one-off. Its only green path is a ceiling, and the\n` +
-            `    smallest that holds ${b.count} of ${b.runs} is ${c} per 1000. Seeding below that re-fires on the\n` +
-            `    next death; the point estimate ${((1000 * b.count) / b.runs).toFixed(1)} is not high enough.`,
+            `    own signal that the first was not a one-off. Its only green path is a ceiling: the smallest\n` +
+            `    integer that holds ${b.count} of ${b.runs} is ${c} per 1000, and the current rate of ` +
+            `${((1000 * b.count) / b.runs).toFixed(1)} holds too.\n` +
+            `    A ceiling seeded at the current rate goes quiet while this stays as bad as it is, and fires\n` +
+            `    when it gets worse — which is what this table is for.`,
         );
       }
     }

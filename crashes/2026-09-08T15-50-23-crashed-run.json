@@ -1,0 +1,2533 @@
+{
+  "kind": "ssf-charts-crash-log",
+  "build": "97f9443 · 2026-09-08 14:29Z",
+  "host": "PowerPoint · OfficeOnline · 0.0.0.0",
+  "label": "the whole round",
+  "seq": 3,
+  "startedAt": "2026-09-08T15:24:35.776Z",
+  "dropped": 0,
+  "steps": [
+    "  57.9s  deck-style  the deck-style read answered  parts=0 at=counting the deck's style parts observedBeforeTheRound=true",
+    "  57.9s  host  environment  build=97f9443 · 2026-09-08 14:29Z host=PowerPoint platform=OfficeOnline version=0.0.0.0 extendedErrors=true requirementSets=[\"1.1\",\"1.2\",\"1.3\",\"1.4\",\"1.5\",\"1.6\",\"1.7\",\"1.8\",\"1.9\",\"1.10\"] canInsertSlidesFromBase64=true canInsertPicture=true",
+    "    58s  selftest  round starting  deckSlides=1 env={\"requirementSets\":[\"1.1\",\"1.2\",\"1.3\",\"1.4\",\"1.5\",\"1.6\",\"1.7\",\"1.8\",\"1.9\",\"1.10\"],\"host\":\"PowerPoint\",\"platform\":\"OfficeOnline\",\"officeVers…",
+    "    58s  host  answered before the first question  ms=31 slides=1",
+    "  58.2s  probe  asking  id=load-isnullobject-populates",
+    "  58.2s  probe  answered  id=load-isnullobject-populates answer=yes ms=30 pass=1",
+    "  58.2s  probe  asking  id=load-id-populates-isnullobject",
+    "  58.3s  probe  answered  id=load-id-populates-isnullobject answer=yes ms=59 pass=1",
+    "  58.3s  probe  asking  id=getitemornullobject-missing",
+    "  58.3s  probe  answered  id=getitemornullobject-missing answer=null-object ms=15 pass=1",
+    "  58.3s  probe  asking  id=shape-add-fresh-slide-proxy",
+    "  58.8s  probe  answered  id=shape-add-fresh-slide-proxy answer=yes ms=511 pass=1",
+    "  58.8s  probe  asking  id=shape-add-held-slide-proxy",
+    "  59.2s  probe  re-acquired the scratch slide by position instead of adding one  id=shape-add-held-slide-proxy was=4123571114#123571113 now=257#3493840128 answer=yes worked=true",
+    "  59.2s  probe  answered  id=shape-add-held-slide-proxy answer=yes ms=418 pass=1",
+    "  59.2s  probe  giving up the scratch slide this question wrecked  id=shape-add-held-slide-proxy scratchId=257#3493840128",
+    "  59.2s  probe  asking the partner question  after=shape-add-held-slide-proxy id=shape-add-held-slide-proxy-again was=yes",
+    "  59.5s  host  gave up waiting  what=reading the slide size afterMs=1500 afterAnswering=listing the deck's slides afterAnsweringMs=46 idleMs=-1344 shape=THIS CALL ALONE is stuck — the host answered something else 1344ms AFTER this call was issued, while it was still waiting",
+    "  59.5s  host  slide size  width=960 height=540 source=documentFile",
+    "  74.3s  host  gave up waiting  what=adding a scratch slide afterMs=15000 afterAnswering=listing the deck's slides afterAnsweringMs=46 idleMs=0 shape=issued immediately after the previous answer — an ordinary sequential gap, says little",
+    "  74.3s  host  no answer — asking the document what actually happened  what=adding a scratch slide waitedMs=15000",
+    "  74.3s  host  scratch slide did not land  before=2 after=2 fresh=0 landed=0",
+    "  74.3s  probe  partner answered  id=shape-add-held-slide-proxy-again answer=no-scratch-slide",
+    "  74.3s  probe  asking  id=binding-names-shape-later",
+    "  74.6s  host  no blank layout on any master — the add will inherit  masters=1",
+    "  74.7s  probe  took another scratch slide after giving up on the last  id=binding-names-shape-later",
+    "  75.4s  probe  answered  id=binding-names-shape-later answer=commit-threw ms=1084 pass=1",
+    "  75.4s  probe  giving up the scratch slide this question wrecked  id=binding-names-shape-later scratchId=4123571115#123571113",
+    "  75.4s  probe  asking  id=shape-resolve-held-slide-proxy",
+    "  75.6s  host  no blank layout on any master — the add will inherit  masters=1",
+    "  75.8s  probe  took another scratch slide after giving up on the last  id=shape-resolve-held-slide-proxy",
+    "  76.2s  probe  did not re-acquire — the slide resolved and the shape is what failed  id=shape-resolve-held-slide-proxy answer=no-scratch-shape",
+    "  76.6s  host  no blank layout on any master — the add will inherit  masters=1",
+    "  76.7s  probe  replaced the scratch slide  id=shape-resolve-held-slide-proxy scratchId=4123571117#123571113 after=no-scratch-shape why=shape-refused",
+    "    77s  probe  the replacement slide answered  id=shape-resolve-held-slide-proxy after=no-scratch-shape answer=no-scratch-shape rescued=false",
+    "    77s  probe  answered  id=shape-resolve-held-slide-proxy answer=no-scratch-shape ms=1648 pass=1",
+    "    77s  probe  asking  id=shape-add-fresh-getitem-slide",
+    "  77.7s  probe  answered  id=shape-add-fresh-getitem-slide answer=threw ms=632 pass=1",
+    "  77.7s  probe  asking the partner question  after=shape-add-fresh-getitem-slide id=getitem-durable-slide was=threw",
+    "  78.2s  host  no blank layout on any master — the add will inherit  masters=1",
+    "  78.2s  probe  replaced the scratch slide for a partner question  id=getitem-durable-slide scratchId=4123571118#123571113 after=no-scratch-slide why=gone",
+    "  78.3s  probe  the replacement slide answered  id=getitem-durable-slide after=no-scratch-slide answer=yes rescued=true partner=true",
+    "  78.3s  probe  partner answered  id=getitem-durable-slide answer=yes",
+    "  78.3s  probe  asking  id=shape-add-positional-slide-proxy",
+    "  79.3s  probe  answered  id=shape-add-positional-slide-proxy answer=yes ms=959 pass=1",
+    "  79.3s  probe  asking  id=shape-proxy-survives-one-sync",
+    "  79.9s  probe  re-acquired the scratch slide by position instead of adding one  id=shape-proxy-survives-one-sync was=4123571118#123571113 now=261#876174894 answer=threw worked=true",
+    "  79.9s  probe  answered  id=shape-proxy-survives-one-sync answer=threw ms=654 pass=1",
+    "  79.9s  probe  asking  id=shapes-items-count-honest",
+    "  80.6s  probe  answered  id=shapes-items-count-honest answer=short-2 ms=686 pass=1",
+    "  80.6s  probe  asking  id=shapes-items-via-positional-slide",
+    "  81.2s  probe  answered  id=shapes-items-via-positional-slide answer=at-least-5 ms=600 pass=1",
+    "  81.2s  probe  giving up the scratch slide this question wrecked  id=shapes-items-via-positional-slide scratchId=261#876174894",
+    "  81.2s  probe  asking  id=getcount-populates-same-sync",
+    "  81.7s  host  no blank layout on any master — the add will inherit  masters=1",
+    "  81.8s  probe  took another scratch slide after giving up on the last  id=getcount-populates-same-sync",
+    "  81.8s  probe  answered  id=getcount-populates-same-sync answer=yes ms=639 pass=1",
+    "  81.8s  probe  asking  id=tags-add-same-key-twice",
+    "  82.6s  probe  answered  id=tags-add-same-key-twice answer=other ms=749 pass=1",
+    "  82.6s  probe  asking  id=tags-on-fresh-shape",
+    "    83s  probe  re-acquired the scratch slide by position instead of adding one  id=tags-on-fresh-shape was=4123571119#123571113 now=262#2069101929 answer=threw worked=true",
+    "    83s  probe  answered  id=tags-on-fresh-shape answer=threw ms=375 pass=1",
+    "    83s  probe  asking  id=tag-through-refetched-shape",
+    "  83.5s  probe  did not re-acquire — the slide resolved and the shape is what failed  id=tag-through-refetched-shape answer=no-scratch-shape",
+    "  84.1s  host  no blank layout on any master — the add will inherit  masters=1",
+    "  84.2s  probe  replaced the scratch slide  id=tag-through-refetched-shape scratchId=4123571120#123571113 after=no-scratch-shape why=shape-refused",
+    "  84.6s  probe  the replacement slide answered  id=tag-through-refetched-shape after=no-scratch-shape answer=no-id rescued=true",
+    "  84.6s  probe  answered  id=tag-through-refetched-shape answer=no-id ms=1623 pass=1",
+    "  84.6s  probe  asking the partner question  after=tag-through-refetched-shape id=tag-the-creation-proxy-a-sync-later was=no-id",
+    "    85s  host  no blank layout on any master — the add will inherit  masters=1",
+    "  85.1s  probe  replaced the scratch slide for a partner question  id=tag-the-creation-proxy-a-sync-later scratchId=4123571121#123571113 after=no-scratch-slide why=gone",
+    "  85.7s  probe  the replacement slide answered  id=tag-the-creation-proxy-a-sync-later after=no-scratch-slide answer=yes rescued=true partner=true",
+    "  85.7s  probe  partner answered  id=tag-the-creation-proxy-a-sync-later answer=yes",
+    "  85.7s  probe  asking  id=how-many-syncs-a-creation-handle-survives",
+    "  86.3s  probe  re-acquired the scratch slide by position instead of adding one  id=how-many-syncs-a-creation-handle-survives was=4123571121#123571113 now=264#2102159481 answer=refused-after-1 worked=true",
+    "  86.3s  probe  answered  id=how-many-syncs-a-creation-handle-survives answer=refused-after-1 ms=619 pass=1",
+    "  86.3s  probe  asking  id=how-many-collection-reads-a-context-survives",
+    "  86.8s  probe  answered  id=how-many-collection-reads-a-context-survives answer=short-at-1 ms=545 pass=1",
+    "  86.8s  probe  asking  id=collection-read-poisons-the-creation-handle",
+    "  87.6s  probe  answered  id=collection-read-poisons-the-creation-handle answer=refused ms=778 pass=1",
+    "  87.6s  probe  asking  id=does-a-failed-group-poison-the-tag",
+    "  88.2s  probe  answered  id=does-a-failed-group-poison-the-tag answer=tags-gone ms=594 pass=1",
+    "  88.2s  probe  asking  id=which-end-a-short-read-drops",
+    "  91.9s  probe  answered  id=which-end-a-short-read-drops answer=not-a-short-read ms=3686 pass=1",
+    "  91.9s  probe  asking  id=delete-then-lookup",
+    "  92.4s  probe  did not re-acquire — the slide resolved and the shape is what failed  id=delete-then-lookup answer=no-scratch-shape",
+    "  92.9s  host  no blank layout on any master — the add will inherit  masters=1",
+    "    93s  probe  replaced the scratch slide  id=delete-then-lookup scratchId=4123571122#123571113 after=no-scratch-shape why=shape-refused",
+    "  93.4s  probe  the replacement slide answered  id=delete-then-lookup after=no-scratch-shape answer=reports-gone rescued=true",
+    "  93.4s  probe  answered  id=delete-then-lookup answer=reports-gone ms=1498 pass=1",
+    "  93.4s  probe  asking  id=addgroup-returns-usable",
+    "  94.5s  probe  re-acquired the scratch slide by position instead of adding one  id=addgroup-returns-usable was=4123571122#123571113 now=265#1068332264 answer=threw worked=true",
+    "  94.5s  probe  answered  id=addgroup-returns-usable answer=threw ms=1065 pass=1",
+    "  94.5s  probe  asking  id=group-children-via-getcount",
+    "  96.3s  probe  answered  id=group-children-via-getcount answer=threw ms=1808 pass=1",
+    "  96.3s  probe  asking  id=group-reports-its-children",
+    "  97.7s  probe  answered  id=group-reports-its-children answer=threw ms=1401 pass=1",
+    "  97.7s  probe  giving up the scratch slide this question wrecked  id=group-reports-its-children scratchId=265#1068332264",
+    "  97.7s  probe  asking  id=getitemat-past-end",
+    "  98.1s  host  no blank layout on any master — the add will inherit  masters=1",
+    "  98.3s  probe  took another scratch slide after giving up on the last  id=getitemat-past-end",
+    "  98.3s  probe  answered  id=getitemat-past-end answer=threw ms=648 pass=1",
+    "  98.3s  probe  asking  id=picture-then-shape-read",
+    "  98.8s  probe  answered  id=picture-then-shape-read answer=unreadable ms=456 pass=1",
+    "  98.8s  probe  asking  id=group-of-existing-shape-readable",
+    "  99.6s  probe  re-acquired the scratch slide by position instead of adding one  id=group-of-existing-shape-readable was=4123571123#123571113 now=266#2471742707 answer=threw worked=true",
+    "  99.6s  probe  answered  id=group-of-existing-shape-readable answer=threw ms=873 pass=1",
+    "  99.6s  probe  asking  id=slide-layout-readable",
+    "   100s  probe  answered  id=slide-layout-readable answer=yes ms=383 pass=1",
+    "   100s  probe  asking  id=layouts-readable",
+    " 100.3s  probe  answered  id=layouts-readable answer=yes ms=249 pass=1",
+    " 100.3s  probe  asking  id=untrack-available",
+    " 100.3s  probe  answered  id=untrack-available answer=no ms=9 pass=1",
+    " 100.3s  probe  asking the partner question  after=untrack-available id=untrack-available-on-shape was=no",
+    " 100.8s  probe  partner answered  id=untrack-available-on-shape answer=no",
+    " 100.8s  probe  asking  id=shapes-by-index-vs-items",
+    " 101.3s  probe  answered  id=shapes-by-index-vs-items answer=index-unreadable ms=538 pass=1",
+    " 101.3s  probe  asking  id=creationid-on-fresh-shape",
+    "   102s  probe  did not re-acquire — the slide resolved and the shape is what failed  id=creationid-on-fresh-shape answer=no-scratch-shape",
+    " 102.6s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 102.7s  probe  replaced the scratch slide  id=creationid-on-fresh-shape scratchId=4123571124#123571113 after=no-scratch-shape why=shape-refused",
+    "   103s  probe  the replacement slide answered  id=creationid-on-fresh-shape after=no-scratch-shape answer=absent rescued=true",
+    "   103s  probe  answered  id=creationid-on-fresh-shape answer=absent ms=1725 pass=1",
+    "   103s  probe  asking  id=creationid-survives-a-sync",
+    " 103.6s  probe  re-acquired the scratch slide by position instead of adding one  id=creationid-survives-a-sync was=4123571124#123571113 now=267#4134784633 answer=no-scratch-shape worked=false",
+    "   104s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 104.1s  probe  replaced the scratch slide  id=creationid-survives-a-sync scratchId=4123571125#123571113 after=no-scratch-slide why=gone",
+    " 104.9s  probe  the replacement slide answered  id=creationid-survives-a-sync after=no-scratch-slide answer=no-creation-id rescued=true",
+    " 104.9s  probe  answered  id=creationid-survives-a-sync answer=no-creation-id ms=1829 pass=1",
+    " 104.9s  probe  asking  id=creationid-survives-grouping",
+    " 105.2s  probe  re-acquired the scratch slide by position instead of adding one  id=creationid-survives-grouping was=4123571125#123571113 now=268#2988912792 answer=no-scratch-shape worked=false",
+    " 105.8s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 106.1s  probe  replaced the scratch slide  id=creationid-survives-grouping scratchId=4123571126#123571113 after=no-scratch-slide why=gone",
+    " 107.2s  probe  the replacement slide answered  id=creationid-survives-grouping after=no-scratch-slide answer=no-creation-id rescued=true",
+    " 107.2s  probe  answered  id=creationid-survives-grouping answer=no-creation-id ms=2289 pass=1",
+    " 107.2s  probe  giving up the scratch slide this question wrecked  id=creationid-survives-grouping scratchId=4123571126#123571113",
+    " 107.2s  probe  asking  id=rotation-keeps-the-unrotated-box",
+    " 107.6s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 107.8s  probe  took another scratch slide after giving up on the last  id=rotation-keeps-the-unrotated-box",
+    " 108.2s  probe  answered  id=rotation-keeps-the-unrotated-box answer=unreadable ms=1009 pass=1",
+    " 108.2s  probe  asking  id=named-preset-resolves",
+    " 110.4s  probe  re-acquired the scratch slide by position instead of adding one  id=named-preset-resolves was=4123571127#123571113 now=270#3317204974 answer=draws worked=true",
+    " 110.4s  probe  answered  id=named-preset-resolves answer=draws ms=2236 pass=1",
+    " 110.4s  probe  starting another pass over the questions  pass=2 asking=37 of=37 why=full list",
+    " 110.4s  probe  asking  id=load-isnullobject-populates",
+    " 110.4s  probe  answered  id=load-isnullobject-populates answer=yes ms=39 pass=2",
+    " 110.4s  probe  asking  id=load-id-populates-isnullobject",
+    " 110.5s  probe  answered  id=load-id-populates-isnullobject answer=yes ms=64 pass=2",
+    " 110.5s  probe  asking  id=getitemornullobject-missing",
+    " 110.5s  probe  answered  id=getitemornullobject-missing answer=null-object ms=22 pass=2",
+    " 110.5s  probe  asking  id=shape-add-fresh-slide-proxy",
+    " 110.8s  probe  answered  id=shape-add-fresh-slide-proxy answer=yes ms=314 pass=2",
+    " 110.8s  probe  asking  id=shape-add-held-slide-proxy",
+    " 111.5s  probe  answered  id=shape-add-held-slide-proxy answer=yes ms=610 pass=2",
+    " 111.5s  probe  giving up the scratch slide this question wrecked  id=shape-add-held-slide-proxy scratchId=270#3317204974",
+    " 111.5s  probe  asking the partner question  after=shape-add-held-slide-proxy id=shape-add-held-slide-proxy-again was=yes",
+    " 111.9s  host  no blank layout on any master — the add will inherit  masters=1",
+    "   112s  probe  replaced the scratch slide for a partner question  id=shape-add-held-slide-proxy-again scratchId=4123571128#123571113 after=no-scratch-slide why=unrecorded",
+    " 112.4s  probe  the replacement slide answered  id=shape-add-held-slide-proxy-again after=no-scratch-slide answer=threw rescued=true partner=true",
+    " 112.4s  probe  partner answered  id=shape-add-held-slide-proxy-again answer=threw",
+    " 112.4s  probe  asking  id=binding-names-shape-later",
+    "   114s  probe  re-acquired the scratch slide by position instead of adding one  id=binding-names-shape-later was=4123571128#123571113 now=271#3545962539 answer=yes worked=true",
+    "   114s  probe  answered  id=binding-names-shape-later answer=yes ms=1638 pass=2",
+    "   114s  probe  giving up the scratch slide this question wrecked  id=binding-names-shape-later scratchId=271#3545962539",
+    "   114s  probe  asking  id=shape-resolve-held-slide-proxy",
+    " 114.5s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 114.6s  probe  took another scratch slide after giving up on the last  id=shape-resolve-held-slide-proxy",
+    " 114.9s  probe  did not re-acquire — the slide resolved and the shape is what failed  id=shape-resolve-held-slide-proxy answer=no-scratch-shape",
+    " 115.4s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 115.5s  host  claimed the appended slide though the id list churned  before=17 after=18 fresh=2",
+    " 115.5s  probe  replaced the scratch slide  id=shape-resolve-held-slide-proxy scratchId=4123571130#123571113 after=no-scratch-shape why=shape-refused",
+    " 115.8s  probe  the replacement slide answered  id=shape-resolve-held-slide-proxy after=no-scratch-shape answer=no-scratch-shape rescued=false",
+    " 115.8s  probe  answered  id=shape-resolve-held-slide-proxy answer=no-scratch-shape ms=1749 pass=2",
+    " 115.8s  probe  asking  id=shape-add-fresh-getitem-slide",
+    " 116.2s  probe  answered  id=shape-add-fresh-getitem-slide answer=threw ms=459 pass=2",
+    " 116.2s  probe  asking the partner question  after=shape-add-fresh-getitem-slide id=getitem-durable-slide was=threw",
+    " 116.6s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 116.8s  probe  replaced the scratch slide for a partner question  id=getitem-durable-slide scratchId=4123571131#123571113 after=no-scratch-slide why=gone",
+    " 116.8s  probe  the replacement slide answered  id=getitem-durable-slide after=no-scratch-slide answer=yes rescued=true partner=true",
+    " 116.8s  probe  partner answered  id=getitem-durable-slide answer=yes",
+    " 116.8s  probe  asking  id=shape-add-positional-slide-proxy",
+    " 117.2s  probe  answered  id=shape-add-positional-slide-proxy answer=yes ms=342 pass=2",
+    " 117.2s  probe  asking  id=shape-proxy-survives-one-sync",
+    " 117.7s  probe  re-acquired the scratch slide by position instead of adding one  id=shape-proxy-survives-one-sync was=4123571131#123571113 now=274#1134527518 answer=threw worked=true",
+    " 117.7s  probe  answered  id=shape-proxy-survives-one-sync answer=threw ms=564 pass=2",
+    " 117.7s  probe  asking  id=shapes-items-count-honest",
+    " 118.3s  probe  answered  id=shapes-items-count-honest answer=short-0 ms=607 pass=2",
+    " 118.3s  probe  asking  id=shapes-items-via-positional-slide",
+    "   119s  probe  answered  id=shapes-items-via-positional-slide answer=short-0 ms=645 pass=2",
+    "   119s  probe  giving up the scratch slide this question wrecked  id=shapes-items-via-positional-slide scratchId=274#1134527518",
+    "   119s  probe  asking  id=getcount-populates-same-sync",
+    " 119.5s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 119.6s  probe  took another scratch slide after giving up on the last  id=getcount-populates-same-sync",
+    " 119.7s  probe  answered  id=getcount-populates-same-sync answer=yes ms=683 pass=2",
+    " 119.7s  probe  asking  id=tags-add-same-key-twice",
+    " 120.3s  probe  answered  id=tags-add-same-key-twice answer=other ms=604 pass=2",
+    " 120.3s  probe  asking  id=tags-on-fresh-shape",
+    " 120.7s  probe  re-acquired the scratch slide by position instead of adding one  id=tags-on-fresh-shape was=4123571132#123571113 now=275#2555559440 answer=threw worked=true",
+    " 120.7s  probe  answered  id=tags-on-fresh-shape answer=threw ms=428 pass=2",
+    " 120.7s  probe  asking  id=tag-through-refetched-shape",
+    " 121.2s  probe  did not re-acquire — the slide resolved and the shape is what failed  id=tag-through-refetched-shape answer=no-scratch-shape",
+    " 121.8s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 121.9s  probe  replaced the scratch slide  id=tag-through-refetched-shape scratchId=4123571133#123571113 after=no-scratch-shape why=shape-refused",
+    " 122.2s  probe  the replacement slide answered  id=tag-through-refetched-shape after=no-scratch-shape answer=no-id rescued=true",
+    " 122.2s  probe  answered  id=tag-through-refetched-shape answer=no-id ms=1478 pass=2",
+    " 122.2s  probe  asking the partner question  after=tag-through-refetched-shape id=tag-the-creation-proxy-a-sync-later was=no-id",
+    " 122.6s  probe  partner answered  id=tag-the-creation-proxy-a-sync-later answer=yes",
+    " 122.6s  probe  asking  id=how-many-syncs-a-creation-handle-survives",
+    " 123.9s  probe  re-acquired the scratch slide by position instead of adding one  id=how-many-syncs-a-creation-handle-survives was=4123571133#123571113 now=276#1289140635 answer=refused-after-1 worked=true",
+    " 123.9s  probe  answered  id=how-many-syncs-a-creation-handle-survives answer=refused-after-1 ms=1268 pass=2",
+    " 123.9s  probe  asking  id=how-many-collection-reads-a-context-survives",
+    " 124.5s  probe  answered  id=how-many-collection-reads-a-context-survives answer=short-at-1 ms=602 pass=2",
+    " 124.5s  probe  asking  id=collection-read-poisons-the-creation-handle",
+    " 125.1s  probe  answered  id=collection-read-poisons-the-creation-handle answer=refused ms=567 pass=2",
+    " 125.1s  probe  asking  id=does-a-failed-group-poison-the-tag",
+    " 125.7s  probe  answered  id=does-a-failed-group-poison-the-tag answer=tags-gone ms=631 pass=2",
+    " 125.7s  probe  asking  id=which-end-a-short-read-drops",
+    " 126.4s  probe  answered  id=which-end-a-short-read-drops answer=none-of-ours ms=734 pass=2",
+    " 126.4s  probe  asking  id=delete-then-lookup",
+    " 127.1s  probe  did not re-acquire — the slide resolved and the shape is what failed  id=delete-then-lookup answer=no-scratch-shape",
+    " 127.6s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 127.7s  probe  replaced the scratch slide  id=delete-then-lookup scratchId=4123571134#123571113 after=no-scratch-shape why=shape-refused",
+    " 128.3s  probe  the replacement slide answered  id=delete-then-lookup after=no-scratch-shape answer=reports-gone rescued=true",
+    " 128.3s  probe  answered  id=delete-then-lookup answer=reports-gone ms=1898 pass=2",
+    " 128.3s  probe  asking  id=addgroup-returns-usable",
+    " 129.5s  probe  re-acquired the scratch slide by position instead of adding one  id=addgroup-returns-usable was=4123571134#123571113 now=277#4036967114 answer=threw worked=true",
+    " 129.5s  probe  answered  id=addgroup-returns-usable answer=threw ms=1117 pass=2",
+    " 129.5s  probe  asking  id=group-children-via-getcount",
+    " 130.9s  probe  answered  id=group-children-via-getcount answer=threw ms=1438 pass=2",
+    " 130.9s  probe  asking  id=group-reports-its-children",
+    " 132.5s  probe  answered  id=group-reports-its-children answer=threw ms=1642 pass=2",
+    " 132.5s  probe  giving up the scratch slide this question wrecked  id=group-reports-its-children scratchId=277#4036967114",
+    " 132.5s  probe  asking  id=getitemat-past-end",
+    "   133s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 133.2s  probe  took another scratch slide after giving up on the last  id=getitemat-past-end",
+    " 133.2s  probe  answered  id=getitemat-past-end answer=threw ms=685 pass=2",
+    " 133.2s  probe  asking  id=picture-then-shape-read",
+    " 133.7s  probe  answered  id=picture-then-shape-read answer=unreadable ms=447 pass=2",
+    " 133.7s  probe  asking  id=group-of-existing-shape-readable",
+    "   135s  probe  re-acquired the scratch slide by position instead of adding one  id=group-of-existing-shape-readable was=4123571135#123571113 now=278#1444348093 answer=threw worked=true",
+    "   135s  probe  answered  id=group-of-existing-shape-readable answer=threw ms=1304 pass=2",
+    "   135s  probe  asking  id=slide-layout-readable",
+    " 135.6s  probe  answered  id=slide-layout-readable answer=yes ms=675 pass=2",
+    " 135.6s  probe  asking  id=layouts-readable",
+    "   136s  probe  answered  id=layouts-readable answer=yes ms=402 pass=2",
+    "   136s  probe  asking  id=untrack-available",
+    " 136.2s  probe  answered  id=untrack-available answer=no ms=132 pass=2",
+    " 136.2s  probe  asking the partner question  after=untrack-available id=untrack-available-on-shape was=no",
+    " 136.7s  probe  partner answered  id=untrack-available-on-shape answer=no",
+    " 136.7s  probe  asking  id=shapes-by-index-vs-items",
+    " 137.3s  probe  answered  id=shapes-by-index-vs-items answer=index-unreadable ms=659 pass=2",
+    " 137.3s  probe  asking  id=creationid-on-fresh-shape",
+    " 137.9s  probe  did not re-acquire — the slide resolved and the shape is what failed  id=creationid-on-fresh-shape answer=no-scratch-shape",
+    " 138.5s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 138.8s  probe  replaced the scratch slide  id=creationid-on-fresh-shape scratchId=4123571136#123571113 after=no-scratch-shape why=shape-refused",
+    " 139.1s  probe  the replacement slide answered  id=creationid-on-fresh-shape after=no-scratch-shape answer=absent rescued=true",
+    " 139.1s  probe  answered  id=creationid-on-fresh-shape answer=absent ms=1818 pass=2",
+    " 139.1s  probe  asking  id=creationid-survives-a-sync",
+    " 139.7s  probe  re-acquired the scratch slide by position instead of adding one  id=creationid-survives-a-sync was=4123571136#123571113 now=279#3479387417 answer=no-scratch-shape worked=false",
+    " 140.2s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 140.4s  probe  replaced the scratch slide  id=creationid-survives-a-sync scratchId=4123571137#123571113 after=no-scratch-slide why=gone",
+    " 141.3s  probe  the replacement slide answered  id=creationid-survives-a-sync after=no-scratch-slide answer=no-creation-id rescued=true",
+    " 141.3s  probe  answered  id=creationid-survives-a-sync answer=no-creation-id ms=2181 pass=2",
+    " 141.3s  probe  asking  id=creationid-survives-grouping",
+    " 141.8s  probe  re-acquired the scratch slide by position instead of adding one  id=creationid-survives-grouping was=4123571137#123571113 now=280#3090827456 answer=no-scratch-shape worked=false",
+    " 142.4s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 142.6s  probe  replaced the scratch slide  id=creationid-survives-grouping scratchId=4123571138#123571113 after=no-scratch-slide why=gone",
+    " 142.8s  probe  the replacement slide answered  id=creationid-survives-grouping after=no-scratch-slide answer=no-creation-id rescued=true",
+    " 142.8s  probe  answered  id=creationid-survives-grouping answer=no-creation-id ms=1497 pass=2",
+    " 142.8s  probe  giving up the scratch slide this question wrecked  id=creationid-survives-grouping scratchId=4123571138#123571113",
+    " 142.8s  probe  asking  id=rotation-keeps-the-unrotated-box",
+    " 143.4s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 143.6s  probe  took another scratch slide after giving up on the last  id=rotation-keeps-the-unrotated-box",
+    " 144.8s  probe  answered  id=rotation-keeps-the-unrotated-box answer=unreadable ms=2024 pass=2",
+    " 144.8s  probe  asking  id=named-preset-resolves",
+    " 145.8s  probe  re-acquired the scratch slide by position instead of adding one  id=named-preset-resolves was=4123571139#123571113 now=282#390142138 answer=draws worked=true",
+    " 145.8s  probe  answered  id=named-preset-resolves answer=draws ms=989 pass=2",
+    " 145.8s  probe  starting another pass over the questions  pass=3 asking=37 of=37 why=full list",
+    " 145.8s  probe  asking  id=load-isnullobject-populates",
+    " 145.9s  probe  answered  id=load-isnullobject-populates answer=yes ms=93 pass=3",
+    " 145.9s  probe  asking  id=load-id-populates-isnullobject",
+    "   146s  probe  answered  id=load-id-populates-isnullobject answer=yes ms=114 pass=3",
+    "   146s  probe  asking  id=getitemornullobject-missing",
+    " 146.1s  probe  answered  id=getitemornullobject-missing answer=null-object ms=54 pass=3",
+    " 146.1s  probe  asking  id=shape-add-fresh-slide-proxy",
+    " 146.4s  probe  answered  id=shape-add-fresh-slide-proxy answer=yes ms=326 pass=3",
+    " 146.4s  probe  asking  id=shape-add-held-slide-proxy",
+    "   147s  probe  answered  id=shape-add-held-slide-proxy answer=yes ms=597 pass=3",
+    "   147s  probe  giving up the scratch slide this question wrecked  id=shape-add-held-slide-proxy scratchId=282#390142138",
+    "   147s  probe  asking the partner question  after=shape-add-held-slide-proxy id=shape-add-held-slide-proxy-again was=yes",
+    " 147.7s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 147.9s  probe  replaced the scratch slide for a partner question  id=shape-add-held-slide-proxy-again scratchId=4123571140#123571113 after=no-scratch-slide why=unrecorded",
+    " 149.4s  probe  the replacement slide answered  id=shape-add-held-slide-proxy-again after=no-scratch-slide answer=threw rescued=true partner=true",
+    " 149.4s  probe  partner answered  id=shape-add-held-slide-proxy-again answer=threw",
+    " 149.4s  probe  asking  id=binding-names-shape-later",
+    "   151s  probe  re-acquired the scratch slide by position instead of adding one  id=binding-names-shape-later was=4123571140#123571113 now=283#624876843 answer=yes worked=true",
+    "   151s  probe  answered  id=binding-names-shape-later answer=yes ms=1610 pass=3",
+    "   151s  probe  giving up the scratch slide this question wrecked  id=binding-names-shape-later scratchId=283#624876843",
+    "   151s  probe  asking  id=shape-resolve-held-slide-proxy",
+    " 151.7s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 151.9s  probe  took another scratch slide after giving up on the last  id=shape-resolve-held-slide-proxy",
+    " 152.6s  probe  re-acquired the scratch slide by position instead of adding one  id=shape-resolve-held-slide-proxy was=4123571141#123571113 now=284#3262604793 answer=no-scratch-shape worked=false",
+    " 153.4s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 153.6s  probe  replaced the scratch slide  id=shape-resolve-held-slide-proxy scratchId=4123571142#123571113 after=no-scratch-slide why=gone",
+    "   154s  probe  the replacement slide answered  id=shape-resolve-held-slide-proxy after=no-scratch-slide answer=no-scratch-shape rescued=false",
+    "   154s  probe  answered  id=shape-resolve-held-slide-proxy answer=no-scratch-slide ms=2932 pass=3",
+    "   154s  probe  asking  id=shape-add-fresh-getitem-slide",
+    " 154.5s  probe  re-acquired the scratch slide by position instead of adding one  id=shape-add-fresh-getitem-slide was=4123571142#123571113 now=285#791453438 answer=yes worked=true",
+    " 154.5s  probe  answered  id=shape-add-fresh-getitem-slide answer=yes ms=566 pass=3",
+    " 154.5s  probe  asking  id=shape-add-positional-slide-proxy",
+    " 155.1s  probe  answered  id=shape-add-positional-slide-proxy answer=yes ms=558 pass=3",
+    " 155.1s  probe  asking  id=shape-proxy-survives-one-sync",
+    " 155.7s  probe  answered  id=shape-proxy-survives-one-sync answer=threw ms=669 pass=3",
+    " 155.7s  probe  asking  id=shapes-items-count-honest",
+    " 156.4s  probe  answered  id=shapes-items-count-honest answer=short-0 ms=634 pass=3",
+    " 156.4s  probe  asking  id=shapes-items-via-positional-slide",
+    " 157.1s  probe  answered  id=shapes-items-via-positional-slide answer=short-0 ms=749 pass=3",
+    " 157.1s  probe  giving up the scratch slide this question wrecked  id=shapes-items-via-positional-slide scratchId=285#791453438",
+    " 157.1s  probe  asking  id=getcount-populates-same-sync",
+    " 157.7s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 157.8s  probe  took another scratch slide after giving up on the last  id=getcount-populates-same-sync",
+    " 157.9s  probe  answered  id=getcount-populates-same-sync answer=yes ms=809 pass=3",
+    " 157.9s  probe  asking  id=tags-add-same-key-twice",
+    " 159.4s  probe  re-acquired the scratch slide by position instead of adding one  id=tags-add-same-key-twice was=4123571143#123571113 now=286#3877636957 answer=overwrites worked=true",
+    " 159.4s  probe  answered  id=tags-add-same-key-twice answer=overwrites ms=1450 pass=3",
+    " 159.4s  probe  asking  id=tags-on-fresh-shape",
+    " 160.1s  probe  answered  id=tags-on-fresh-shape answer=threw ms=700 pass=3",
+    " 160.1s  probe  asking  id=tag-through-refetched-shape",
+    "   161s  probe  did not re-acquire — the slide resolved and the shape is what failed  id=tag-through-refetched-shape answer=no-scratch-shape",
+    " 161.6s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 161.8s  probe  replaced the scratch slide  id=tag-through-refetched-shape scratchId=4123571144#123571113 after=no-scratch-shape why=shape-refused",
+    " 162.5s  probe  the replacement slide answered  id=tag-through-refetched-shape after=no-scratch-shape answer=no-id rescued=true",
+    " 162.5s  probe  answered  id=tag-through-refetched-shape answer=no-id ms=2453 pass=3",
+    " 162.5s  probe  asking the partner question  after=tag-through-refetched-shape id=tag-the-creation-proxy-a-sync-later was=no-id",
+    " 164.2s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 164.5s  probe  replaced the scratch slide for a partner question  id=tag-the-creation-proxy-a-sync-later scratchId=4123571145#123571113 after=no-scratch-slide why=gone",
+    " 164.6s  probe  the replacement slide answered  id=tag-the-creation-proxy-a-sync-later after=no-scratch-slide answer=no-scratch-slide rescued=false partner=true",
+    " 164.6s  probe  partner answered  id=tag-the-creation-proxy-a-sync-later answer=no-scratch-slide",
+    " 164.6s  probe  asking  id=how-many-syncs-a-creation-handle-survives",
+    " 165.2s  probe  re-acquired the scratch slide by position instead of adding one  id=how-many-syncs-a-creation-handle-survives was=4123571145#123571113 now=288#776230494 answer=refused-after-1 worked=true",
+    " 165.2s  probe  answered  id=how-many-syncs-a-creation-handle-survives answer=refused-after-1 ms=580 pass=3",
+    " 165.2s  probe  asking  id=how-many-collection-reads-a-context-survives",
+    " 167.1s  probe  answered  id=how-many-collection-reads-a-context-survives answer=short-at-1 ms=1876 pass=3",
+    " 167.1s  probe  asking  id=collection-read-poisons-the-creation-handle",
+    " 167.7s  probe  answered  id=collection-read-poisons-the-creation-handle answer=refused ms=648 pass=3",
+    " 167.7s  probe  asking  id=does-a-failed-group-poison-the-tag",
+    " 168.4s  probe  answered  id=does-a-failed-group-poison-the-tag answer=tags-gone ms=644 pass=3",
+    " 168.4s  probe  asking  id=which-end-a-short-read-drops",
+    " 169.2s  probe  answered  id=which-end-a-short-read-drops answer=none-of-ours ms=865 pass=3",
+    " 169.2s  probe  asking  id=delete-then-lookup",
+    " 169.8s  probe  did not re-acquire — the slide resolved and the shape is what failed  id=delete-then-lookup answer=no-scratch-shape",
+    " 170.4s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 170.7s  probe  replaced the scratch slide  id=delete-then-lookup scratchId=4123571146#123571113 after=no-scratch-shape why=shape-refused",
+    " 171.5s  probe  the replacement slide answered  id=delete-then-lookup after=no-scratch-shape answer=reports-gone rescued=true",
+    " 171.5s  probe  answered  id=delete-then-lookup answer=reports-gone ms=2243 pass=3",
+    " 171.5s  probe  asking  id=addgroup-returns-usable",
+    " 173.2s  probe  re-acquired the scratch slide by position instead of adding one  id=addgroup-returns-usable was=4123571146#123571113 now=289#760859155 answer=threw worked=true",
+    " 173.2s  probe  answered  id=addgroup-returns-usable answer=threw ms=1768 pass=3",
+    " 173.2s  probe  asking  id=group-children-via-getcount",
+    " 175.4s  probe  answered  id=group-children-via-getcount answer=threw ms=2149 pass=3",
+    " 175.4s  probe  asking  id=group-reports-its-children",
+    " 176.5s  probe  answered  id=group-reports-its-children answer=threw ms=1127 pass=3",
+    " 176.5s  probe  giving up the scratch slide this question wrecked  id=group-reports-its-children scratchId=289#760859155",
+    " 176.5s  probe  asking  id=getitemat-past-end",
+    " 177.2s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 177.6s  probe  took another scratch slide after giving up on the last  id=getitemat-past-end",
+    " 177.7s  probe  answered  id=getitemat-past-end answer=threw ms=1147 pass=3",
+    " 177.7s  probe  asking  id=picture-then-shape-read",
+    " 178.2s  probe  re-acquired the scratch slide by position instead of adding one  id=picture-then-shape-read was=4123571147#123571113 now=290#2024903897 answer=threw worked=true",
+    " 178.2s  probe  answered  id=picture-then-shape-read answer=threw ms=521 pass=3",
+    " 178.2s  probe  asking  id=group-of-existing-shape-readable",
+    " 179.4s  probe  answered  id=group-of-existing-shape-readable answer=threw ms=1241 pass=3",
+    " 179.4s  probe  asking  id=slide-layout-readable",
+    " 179.8s  probe  answered  id=slide-layout-readable answer=yes ms=413 pass=3",
+    " 179.8s  probe  asking  id=layouts-readable",
+    " 180.3s  probe  answered  id=layouts-readable answer=yes ms=439 pass=3",
+    " 180.3s  probe  asking  id=untrack-available",
+    " 180.3s  probe  answered  id=untrack-available answer=no ms=60 pass=3",
+    " 180.3s  probe  asking the partner question  after=untrack-available id=untrack-available-on-shape was=no",
+    " 181.5s  probe  partner answered  id=untrack-available-on-shape answer=no",
+    " 181.5s  probe  asking  id=shapes-by-index-vs-items",
+    " 182.1s  probe  answered  id=shapes-by-index-vs-items answer=index-unreadable ms=648 pass=3",
+    " 182.1s  probe  asking  id=creationid-on-fresh-shape",
+    " 182.8s  probe  did not re-acquire — the slide resolved and the shape is what failed  id=creationid-on-fresh-shape answer=no-scratch-shape",
+    " 183.3s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 183.6s  probe  replaced the scratch slide  id=creationid-on-fresh-shape scratchId=4123571148#123571113 after=no-scratch-shape why=shape-refused",
+    " 184.2s  probe  the replacement slide answered  id=creationid-on-fresh-shape after=no-scratch-shape answer=absent rescued=true",
+    " 184.2s  probe  answered  id=creationid-on-fresh-shape answer=absent ms=2056 pass=3",
+    " 184.2s  probe  asking  id=creationid-survives-a-sync",
+    " 184.8s  probe  re-acquired the scratch slide by position instead of adding one  id=creationid-survives-a-sync was=4123571148#123571113 now=291#84559278 answer=no-scratch-shape worked=false",
+    " 185.3s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 185.6s  probe  replaced the scratch slide  id=creationid-survives-a-sync scratchId=4123571149#123571113 after=no-scratch-slide why=gone",
+    " 185.7s  probe  the replacement slide answered  id=creationid-survives-a-sync after=no-scratch-slide answer=no-creation-id rescued=true",
+    " 185.7s  probe  answered  id=creationid-survives-a-sync answer=no-creation-id ms=1554 pass=3",
+    " 185.7s  probe  asking  id=creationid-survives-grouping",
+    " 187.1s  probe  re-acquired the scratch slide by position instead of adding one  id=creationid-survives-grouping was=4123571149#123571113 now=292#799355000 answer=no-scratch-shape worked=false",
+    " 187.7s  host  no blank layout on any master — the add will inherit  masters=1",
+    "   188s  probe  replaced the scratch slide  id=creationid-survives-grouping scratchId=4123571150#123571113 after=no-scratch-slide why=gone",
+    " 188.2s  probe  the replacement slide answered  id=creationid-survives-grouping after=no-scratch-slide answer=no-creation-id rescued=true",
+    " 188.2s  probe  answered  id=creationid-survives-grouping answer=no-creation-id ms=2477 pass=3",
+    " 188.2s  probe  giving up the scratch slide this question wrecked  id=creationid-survives-grouping scratchId=4123571150#123571113",
+    " 188.2s  probe  asking  id=rotation-keeps-the-unrotated-box",
+    " 188.7s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 189.1s  probe  took another scratch slide after giving up on the last  id=rotation-keeps-the-unrotated-box",
+    " 190.4s  probe  re-acquired the scratch slide by position instead of adding one  id=rotation-keeps-the-unrotated-box was=4123571151#123571113 now=294#3498926670 answer=unrotated-box worked=true",
+    " 190.4s  probe  answered  id=rotation-keeps-the-unrotated-box answer=unrotated-box ms=2205 pass=3",
+    " 190.4s  probe  asking  id=named-preset-resolves",
+    " 191.7s  probe  answered  id=named-preset-resolves answer=draws ms=1266 pass=3",
+    " 191.7s  probe  second pass over the questions that were never put  count=1",
+    " 192.2s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 193.2s  probe  second pass finished  of=1 rescued=0",
+    " 202.1s  probe  sweeping the run's own slides by position  from=1 count=18 deckAtStart=1 deckNow=19 why=delete-by-id left slides behind and this host does not list the ids they were added under",
+    " 202.4s  probe  swept  swept=18 deckNow=1",
+    " 202.4s  probe  gave the scratch slides back  returned=21 swept=18 left=21 deckBefore=40 deckAfter=1 shrankBy=39 stillListed=21 heldIds=[\"4123571114#123571113\",\"257#3493840128\",\"4123571115#123571113\"] deckIds=[\"256#2587447327\",\"257#3493840128\",\"258#3405772691\"]",
+    " 202.4s  selftest  scenario starting  name=insert on top of an earlier run deckSlides=1 atMs=202406",
+    "   203s  host  slide size read  width=960 height=540 source=pageSetup ms=551",
+    " 203.8s  insert  handed the host a generated deck  expectedSlides=2 landed=2 base64Bytes=112848 formatting=KeepSourceFormatting mastersAfter=1",
+    " 204.8s  insert  handed the host a generated deck  expectedSlides=2 landed=2 base64Bytes=112848 formatting=KeepSourceFormatting mastersAfter=1",
+    " 204.8s  pane  deck scan — asking how many slides  withInventory=false syncs=1362",
+    " 204.8s  pane  deck scan — settling a page of slides  from=0 to=4 slides=5 withInventory=false syncs=1364",
+    " 205.2s  pane  deck scan — settling chart tags  from=0 to=4 shapes=4 syncs=1365",
+    " 205.7s  pane  deck scan — a page came back  from=0 to=4 charts=4 unread=0 short=0 tagsUnread=0 chartsSoFar=4",
+    " 205.7s  pane  scanned the deck for charts  ms=906 slides=5 charts=4 unread=0 short=0 tagsUnread=0 complete=true",
+    " 205.7s  selftest  scenario passed  name=insert on top of an earlier run detail=deck grew by 4 (want 4); 4 of 4 charts re-editable ms=3307 deckSlides=5 deckGrew=4 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 205.7s  selftest  scenario starting  name=two slides claiming one slot deckSlides=5 atMs=205736",
+    " 207.1s  insert  handed the host a generated deck  expectedSlides=2 landed=2 base64Bytes=112832 formatting=KeepSourceFormatting mastersAfter=1",
+    " 208.1s  insert  handed the host a generated deck  expectedSlides=2 landed=2 base64Bytes=112832 formatting=KeepSourceFormatting mastersAfter=1",
+    " 208.9s  repair  tag pass over a page  attempt=0 from=5 to=8 slides=4 shapesExpected=4 shapesSeen=4 tagsFound=4 undetermined=0 withoutTag=[]",
+    "   210s  repair  read the deck back  range=[5,9] read=4 unread=0 withSlotTag=4",
+    "   210s  repair  applying delete  index=8 slot=1 reason=duplicate of slide 7 (selftest mtstovi6-d0khcv dup B)",
+    " 210.4s  repair  applying delete  index=7 slot=0 reason=duplicate of slide 6 (selftest mtstovi6-d0khcv dup A)",
+    " 210.9s  pane  deck scan — asking how many slides  withInventory=false syncs=1409",
+    " 210.9s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1411",
+    " 211.3s  pane  deck scan — settling chart tags  from=0 to=6 shapes=6 syncs=1412",
+    " 211.9s  pane  deck scan — a page came back  from=0 to=6 charts=6 unread=0 short=0 tagsUnread=0 chartsSoFar=6",
+    " 211.9s  pane  scanned the deck for charts  ms=983 slides=7 charts=6 unread=0 short=0 tagsUnread=0 complete=true",
+    " 211.9s  selftest  scenario passed  name=two slides claiming one slot detail=4 slides inserted, 2 kept, 2 of 2 still re-editable; 2 queued as duplicates ms=6165 deckSlides=7 deckGrew=2 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 211.9s  selftest  scenario starting  name=edit a chart on the visible slide deckSlides=7 atMs=211924",
+    " 211.9s  pane  deck scan — asking how many slides  withInventory=false syncs=1418",
+    " 211.9s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1420",
+    " 212.4s  pane  deck scan — settling chart tags  from=0 to=6 shapes=6 syncs=1421",
+    " 212.9s  pane  deck scan — a page came back  from=0 to=6 charts=6 unread=0 short=0 tagsUnread=0 chartsSoFar=6",
+    " 212.9s  pane  scanned the deck for charts  ms=971 slides=7 charts=6 unread=0 short=0 tagsUnread=0 complete=true",
+    " 213.7s  update  parts lists at the update  chart=draw-1 charts=1 withParts=0 queuedGroup=1",
+    " 215.5s  draw  updated only the shapes that changed  chart=draw-1 changed=1 of=24 ms=1563 slideId=257#1435600420 syncs=2 contextSyncs=2 syncMs=[833,728]",
+    " 215.5s  pane  deck scan — asking how many slides  withInventory=false syncs=1432",
+    " 215.5s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1434",
+    "   216s  pane  deck scan — settling chart tags  from=0 to=6 shapes=6 syncs=1435",
+    " 216.7s  pane  deck scan — a page came back  from=0 to=6 charts=6 unread=0 short=0 tagsUnread=0 chartsSoFar=6",
+    " 216.7s  pane  scanned the deck for charts  ms=1183 slides=7 charts=6 unread=0 short=0 tagsUnread=0 complete=true",
+    " 216.7s  selftest  scenario passed  name=edit a chart on the visible slide detail=redrawn on the visible slide and the config round-tripped ms=4793 deckSlides=7 deckGrew=0 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 216.8s  selftest  scenario starting  name=insert onto a slide that already has content deckSlides=7 atMs=216781",
+    " 216.8s  pane  deck scan — asking how many slides  withInventory=false syncs=1441",
+    " 216.8s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1443",
+    " 217.5s  pane  deck scan — settling chart tags  from=0 to=6 shapes=6 syncs=1444",
+    " 218.2s  pane  deck scan — a page came back  from=0 to=6 charts=6 unread=0 short=0 tagsUnread=0 chartsSoFar=6",
+    " 218.2s  pane  scanned the deck for charts  ms=1399 slides=7 charts=6 unread=0 short=0 tagsUnread=0 complete=true",
+    " 218.7s  draw  batch issued  chart=draw-2 upTo=10 total=16 onSlide=0 onSlideKey=(visible) idleMs=3 afterAnswering=counting the deck's slides afterAnsweringMs=13",
+    " 233.2s  draw  moved this draw's shape count onto the slide the host finally named  chart=draw-2 from=(visible) to=257#1435600420 shapes=10",
+    " 233.2s  draw  batch issued  chart=draw-2 upTo=16 total=16 onSlide=10 onSlideKey=257#1435600420 prevBatchMs=14471",
+    " 240.9s  draw  last batch settled  chart=draw-2 batchNo=2 total=16 drew=6 onSlideAfter=16 onSlideKey=257#1435600420 ms=7742",
+    "   243s  group  grouped the chart's shapes  chart=draw-2 charts=1 partial=0 by=ids",
+    "   243s  draw  parts list outcome  chart=draw-2 where=no loose chart had siblings charts=1 slides=257#1435600420 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 243.8s  group  config tags written, by target route  chart=draw-2 charts=1 from={\"group\":1}",
+    " 244.4s  draw  batch issued  chart=draw-3 upTo=10 total=16 onSlide=0 onSlideKey=(visible) idleMs=1 afterAnswering=writing the chart's origin tag afterAnsweringMs=600",
+    " 264.9s  draw  moved this draw's shape count onto the slide the host finally named  chart=draw-3 from=(visible) to=257#1435600420 shapes=10",
+    " 264.9s  draw  batch issued  chart=draw-3 upTo=16 total=16 onSlide=26 onSlideKey=257#1435600420 prevBatchMs=20518",
+    "   275s  draw  last batch settled  chart=draw-3 batchNo=2 total=16 drew=6 onSlideAfter=32 onSlideKey=257#1435600420 ms=10156",
+    " 276.8s  group  grouped the chart's shapes  chart=draw-3 charts=1 partial=0 by=ids",
+    " 276.8s  draw  parts list outcome  chart=draw-3 where=no loose chart had siblings charts=1 slides=257#1435600420 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 277.6s  group  config tags written, by target route  chart=draw-3 charts=1 from={\"group\":1}",
+    " 278.2s  pane  deck scan — asking how many slides  withInventory=false syncs=1466",
+    " 278.2s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1468",
+    "   279s  pane  deck scan — settling chart tags  from=0 to=6 shapes=8 syncs=1469",
+    " 279.8s  pane  deck scan — a page came back  from=0 to=6 charts=8 unread=0 short=0 tagsUnread=0 chartsSoFar=8",
+    " 279.8s  pane  scanned the deck for charts  ms=1569 slides=7 charts=8 unread=0 short=0 tagsUnread=0 complete=true",
+    " 279.8s  pane  deck scan — asking how many slides  withInventory=false syncs=1471",
+    " 279.8s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1473",
+    " 280.6s  pane  deck scan — settling chart tags  from=0 to=6 shapes=8 syncs=1474",
+    " 281.2s  pane  deck scan — a page came back  from=0 to=6 charts=8 unread=0 short=0 tagsUnread=0 chartsSoFar=8",
+    " 281.2s  pane  scanned the deck for charts  ms=1469 slides=7 charts=8 unread=0 short=0 tagsUnread=0 complete=true",
+    " 281.2s  selftest  scenario passed  name=insert onto a slide that already has content detail=2 charts drawn onto the visible slide, all re-editable, the one already there untouched ms=64446 deckSlides=7 deckGrew=0 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 281.3s  selftest  scenario starting  name=same scale across the deck deckSlides=7 atMs=281264",
+    " 281.3s  pane  deck scan — asking how many slides  withInventory=false syncs=1480",
+    " 281.3s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1482",
+    " 281.9s  pane  deck scan — settling chart tags  from=0 to=6 shapes=8 syncs=1483",
+    " 282.6s  pane  deck scan — a page came back  from=0 to=6 charts=8 unread=0 short=0 tagsUnread=0 chartsSoFar=8",
+    " 282.6s  pane  scanned the deck for charts  ms=1333 slides=7 charts=8 unread=0 short=0 tagsUnread=0 complete=true",
+    " 283.3s  selftest  what each slide held before the rescale  charts=8 slides=[{\"slide\":\"257#1435600420\",\"shapes\":3},{\"slide\":\"257#1435600420\",\"shapes\":3},{\"slide\":\"257#1435600420\",\"shapes\":3},{\"slide\":\"258#1239912303…",
+    " 283.3s  selftest  settling before the first chart of the run  settleMs=0 charts=8",
+    " 283.4s  update  parts lists at the update  chart=1/8 charts=1 withParts=0 queuedGroup=1",
+    " 320.9s  draw  updated only the shapes that changed  chart=1/8 changed=18 of=24 ms=36927 slideId=257#1435600420 syncs=4 contextSyncs=2 syncMs=[11219,11705,13196,804]",
+    " 320.9s  update  parts lists at the update  chart=2/8 charts=1 withParts=0 queuedGroup=1",
+    " 327.9s  draw  updated only the shapes that changed  chart=2/8 changed=9 of=16 ms=6380 slideId=257#1435600420 syncs=3 contextSyncs=2 syncMs=[805,4532,1043]",
+    "   328s  update  parts lists at the update  chart=3/8 charts=1 withParts=0 queuedGroup=1",
+    " 335.7s  draw  updated only the shapes that changed  chart=3/8 changed=9 of=16 ms=7071 slideId=257#1435600420 syncs=3 contextSyncs=2 syncMs=[896,5135,1039]",
+    " 335.8s  update  parts lists at the update  chart=4/8 charts=1 withParts=0 queuedGroup=1",
+    " 358.8s  draw  updated only the shapes that changed  chart=4/8 changed=18 of=24 ms=22435 slideId=258#1239912303 syncs=4 contextSyncs=2 syncMs=[6990,8468,6377,599]",
+    " 358.8s  update  parts lists at the update  chart=5/8 charts=1 withParts=0 queuedGroup=1",
+    " 376.8s  draw  updated only the shapes that changed  chart=5/8 changed=18 of=24 ms=17326 slideId=259#646717238 syncs=4 contextSyncs=2 syncMs=[6024,5038,5712,549]",
+    " 376.8s  update  parts lists at the update  chart=6/8 charts=1 withParts=0 queuedGroup=1",
+    " 393.8s  draw  updated only the shapes that changed  chart=6/8 changed=18 of=24 ms=16338 slideId=260#734760553 syncs=4 contextSyncs=2 syncMs=[5325,4877,5341,794]",
+    " 393.8s  update  parts lists at the update  chart=7/8 charts=1 withParts=0 queuedGroup=1",
+    " 412.4s  draw  updated only the shapes that changed  chart=7/8 changed=18 of=24 ms=18013 slideId=261#3148821331 syncs=4 contextSyncs=2 syncMs=[5655,5618,5994,745]",
+    " 412.5s  update  parts lists at the update  chart=8/8 charts=1 withParts=0 queuedGroup=1",
+    " 436.2s  draw  updated only the shapes that changed  chart=8/8 changed=18 of=24 ms=23218 slideId=262#4293478301 syncs=4 contextSyncs=2 syncMs=[7315,7674,7502,724]",
+    " 436.2s  pane  deck scan — asking how many slides  withInventory=false syncs=1559",
+    " 436.2s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1561",
+    " 436.9s  pane  deck scan — settling chart tags  from=0 to=6 shapes=8 syncs=1562",
+    " 437.8s  pane  deck scan — a page came back  from=0 to=6 charts=8 unread=0 short=0 tagsUnread=0 chartsSoFar=8",
+    " 437.8s  pane  scanned the deck for charts  ms=1559 slides=7 charts=8 unread=0 short=0 tagsUnread=0 complete=true",
+    " 437.8s  selftest  scenario passed  name=same scale across the deck detail=8 of 8 charts carry the shared scale (max=105, bars redraw at 76% of their height); 8 still re-editable ms=156519 deckSlides=7 deckGrew=0 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 437.8s  selftest  scenario starting  name=one chart alone on a warm deck deckSlides=7 atMs=437813",
+    " 437.8s  pane  deck scan — asking how many slides  withInventory=false syncs=1568",
+    " 437.8s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1570",
+    " 438.4s  pane  deck scan — settling chart tags  from=0 to=6 shapes=8 syncs=1571",
+    " 439.1s  pane  deck scan — a page came back  from=0 to=6 charts=8 unread=0 short=0 tagsUnread=0 chartsSoFar=8",
+    " 439.1s  pane  scanned the deck for charts  ms=1264 slides=7 charts=8 unread=0 short=0 tagsUnread=0 complete=true",
+    " 439.1s  selftest  the lone chart's arm  arm=clear slide pick=7",
+    " 440.3s  update  parts lists at the update  chart=1/1 charts=1 withParts=0 queuedGroup=1",
+    " 458.3s  draw  updated only the shapes that changed  chart=1/1 changed=18 of=24 ms=17117 slideId=262#4293478301 syncs=4 contextSyncs=2 syncMs=[5257,5881,5480,499]",
+    " 458.3s  selftest  scenario passed  name=one chart alone on a warm deck detail=updated alone in its own run on a warm deck, config intact — see `chart 1/1` for the cost ms=20466 deckSlides=7 deckGrew=0 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 458.3s  selftest  scenario starting  name=an update follows a moved chart deckSlides=7 atMs=458332",
+    " 458.3s  pane  deck scan — asking how many slides  withInventory=false syncs=1588",
+    " 458.4s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1590",
+    " 458.9s  pane  deck scan — settling chart tags  from=0 to=6 shapes=8 syncs=1591",
+    " 459.5s  pane  deck scan — a page came back  from=0 to=6 charts=8 unread=0 short=0 tagsUnread=0 chartsSoFar=8",
+    " 459.5s  pane  scanned the deck for charts  ms=1169 slides=7 charts=8 unread=0 short=0 tagsUnread=0 complete=true",
+    " 460.7s  pane  deck scan — asking how many slides  withInventory=false syncs=1596",
+    " 460.7s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1598",
+    " 461.3s  pane  deck scan — settling chart tags  from=0 to=6 shapes=8 syncs=1599",
+    "   462s  pane  deck scan — a page came back  from=0 to=6 charts=8 unread=0 short=0 tagsUnread=0 chartsSoFar=8",
+    "   462s  pane  scanned the deck for charts  ms=1294 slides=7 charts=8 unread=0 short=0 tagsUnread=0 complete=true",
+    " 462.1s  update  parts lists at the update  chart=draw-4 charts=1 withParts=0 queuedGroup=1",
+    " 463.8s  draw  updated only the shapes that changed  chart=draw-4 changed=1 of=24 ms=1234 slideId=258#1239912303 syncs=2 contextSyncs=2 syncMs=[617,616]",
+    " 463.8s  pane  deck scan — asking how many slides  withInventory=false syncs=1608",
+    " 463.8s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1610",
+    " 464.5s  pane  deck scan — settling chart tags  from=0 to=6 shapes=8 syncs=1611",
+    " 465.1s  pane  deck scan — a page came back  from=0 to=6 charts=8 unread=0 short=0 tagsUnread=0 chartsSoFar=8",
+    " 465.1s  pane  scanned the deck for charts  ms=1243 slides=7 charts=8 unread=0 short=0 tagsUnread=0 complete=true",
+    " 465.1s  selftest  scenario passed  name=an update follows a moved chart detail=moved 60x40pt and the update redrew it there, so the origin round trip held ms=6744 deckSlides=7 deckGrew=0 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 465.1s  selftest  scenario starting  name=explode a degraded picture deckSlides=7 atMs=465117",
+    " 465.1s  pane  deck scan — asking how many slides  withInventory=false syncs=1617",
+    " 465.1s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1619",
+    " 467.2s  pane  deck scan — settling chart tags  from=0 to=6 shapes=8 syncs=1620",
+    " 467.8s  pane  deck scan — a page came back  from=0 to=6 charts=8 unread=0 short=0 tagsUnread=0 chartsSoFar=8",
+    " 467.8s  pane  scanned the deck for charts  ms=2709 slides=7 charts=8 unread=0 short=0 tagsUnread=0 complete=true",
+    " 468.5s  update  parts lists at the update  chart=draw-5 charts=1 withParts=0 queuedGroup=1",
+    " 469.1s  draw  not updating in place — redrawing instead  chart=draw-5 why=this update draws a picture, which is not in the scene the differ compares",
+    " 469.2s  draw  deleted the chart being replaced  chart=draw-5 ms=42 removed=1 drawing=24 slideId=258#1239912303",
+    " 470.3s  draw  drew the chart as one picture  chart=draw-5 ms=1108 nodes=24 shapes=24",
+    " 470.3s  error  reading back an ungrouped chart's shape ids  chart=draw-5 error=InvalidParam passed to GetItem(id) | at=reading back an ungrouped chart's shape ids | code=5010 | debugInfo={\"code\":\"5010\",\"message\":\"InvalidParam passed to GetItem(id)\",\"errorLocation\":\"ShapeCollection.getItem\",\"statement\":\"var shape = shapes.getItem(...) /* originally addGeometricShape(...) */;\",\"surroundingStatements\":[\"var root = context.root;\",\"var slides = root.slides;\",\"var slide = slides.getItem(...) /* originally getItemOrNullObject(...) */;\",\"var shapes = slide.shapes;\",\"// >>>>>\",\"var shape = shapes.getItem(...) /* originally addGeometricShape(...) */;\",\"// <<<<<\",\"shape.altTextDescription = ...;\",\"shape.altTextTitle = ...;\"],\"fullStatements\":[\"var root = context.root;\",\"var slides = root.slides;\",\"var slide = slides.getItem(\\\"258#1239912303\\\") /* originally getItemOrNullObject(\\\"258#1239912303\\\") */;\",\"var shapes = slide.shapes;\",\"var shape = shapes.getItem(\\\"27\\\") /* originally addGeometricShape(\\\"Rectangle\\\", {\\\"left\\\":300,\\\"top\\\":160,\\\"width\\\":480,\\\"height\\\":300}) */;\",\"shape.altTextDescription = \\\"clustered column chart. 2 data series: 2024, 2025. 4 categories: Q1, Q2, Q3, Q4.\\\";\",\"shape.altTextTitle = \\\"selftest mtstovi6-d0khcv twice B (moved)\\\";\"]}",
+    " 470.3s  draw  parts list outcome  chart=draw-5 where=the id read-back threw charts=1 slides=258#1239912303 groupedSoNotLoose=0 noTagTarget=0 looseWithNoSiblings=1 gotPartsList=0",
+    "   471s  group  config tags written, by target route  chart=draw-5 charts=1 from={\"created\":1}",
+    " 475.7s  update  a slide's shape count would not settle — taking the second read  chart=draw-5 slideId=258#1239912303 first=0 second=1",
+    " 475.7s  update  shapes left on the slide after an in-place update  chart=draw-5 slideId=258#1239912303 before=1 after=1 growth=0 settled=false charts=1 withParts=0 atRisk=0 removedCalls=1 drewInner=24",
+    " 476.2s  update  parts lists at the update  chart=draw-6 charts=1 withParts=0 queuedGroup=1",
+    " 477.1s  error  resolving the charts' shapes  chart=draw-6 error=GeneralException | at=resolving the charts' shapes | code=GeneralException | debugInfo={\"code\":\"GeneralException\",\"message\":\"GeneralException\",\"errorLocation\":\"Shape.group\",\"statement\":\"var group = itemOrNullObject1.group;\",\"surroundingStatements\":[\"...\",\"var tags = itemOrNullObject1.tags;\",\"var itemOrNullObject2 = tags.getItemOrNullObject(...);\",\"itemOrNullObject2.load([\\\"value\\\"]);\",\"var itemOrNullObject3 = tags.getItemOrNullObject(...);\",\"itemOrNullObject3.load([\\\"value\\\"]);\",\"// >>>>>\",\"var group = itemOrNullObject1.group;\",\"// <<<<<\",\"var shapes1 = group.shapes;\",\"shapes1.load([\\\"id\\\"]);\"],\"fullStatements\":[\"var root = context.root;\",\"var slides = root.slides;\",\"var itemOrNullObject = slides.getItemOrNullObject(\\\"258#1239912303\\\");\",\"var shapes = itemOrNullObject.shapes;\",\"var itemOrNullObject1 = shapes.getItemOrNullObject(\\\"27\\\");\",\"itemOrNullObject1.load([\\\"left\\\",\\\"top\\\",\\\"type\\\"]);\",\"var tags = itemOrNullObject1.tags;\",\"var itemOrNullObject2 = tags.getItemOrNullObject(\\\"POWERCHART_CONFIG\\\");\",\"itemOrNullObject2.load([\\\"value\\\"]);\",\"var itemOrNullObject3 = tags.getItemOrNullObject(\\\"POWERCHART_SCENE\\\");\",\"itemOrNullObject3.load([\\\"value\\\"]);\",\"var group = itemOrNullObject1.group;\",\"var shapes1 = group.shapes;\",\"shapes1.load([\\\"id\\\"]);\"]}",
+    " 477.1s  update  a by-id lookup refused the whole resolve — re-reading the slides instead  chart=draw-6 charts=1 error=GeneralException | at=resolving the charts' shapes | code=GeneralException | debugInfo={\"code\":\"GeneralException\",\"message\":\"GeneralException\",\"errorLocation\":\"Shape.group\",\"statement\":\"var group = itemOrNullObject1.group;\",\"surroundingStatements\":[\"...\",\"var tags = itemOrNullObject1.tags;\",\"var itemOrNullObject2 = tags.getItemOrNullObject(...);\",\"itemOrNullObject2.load([\\\"value\\\"]);\",\"var itemOrNullObject3 = tags.getItemOrNullObject(...);\",\"itemOrNullObject3.load([\\\"value\\\"]);\",\"// >>>>>\",\"var group = itemOrNullObject1.group;\",\"// <<<<<\",\"var shapes1 = group.shapes;\",\"shapes1.load([\\\"id\\\"]);\"],\"fullStatements\":[\"var root = context.root;\",\"var slides = root.slides;\",\"var itemOrNullObject = slides.getItemOrNullObject(\\\"258#1239912303\\\");\",\"var shapes = itemOrNullObject.shapes;\",\"var itemOrNullObject1 = shapes.getItemOrNullObject(\\\"27\\\");\",\"itemOrNullObject1.load([\\\"left\\\",\\\"top\\\",\\\"type\\\"]);\",\"var tags = itemOrNullObject1.tags;\",\"var itemOrNullObject2 = tags.getItemOrNullObject(\\\"POWERCHART_CONFIG\\\");\",\"itemOrNullObject2.load([\\\"value\\\"]);\",\"var itemOrNullObject3 = tags.getItemOrNullObject(\\\"POWERCHART_SCENE\\\");\",\"itemOrNullObject3.load([\\\"value\\\"]);\",\"var group = itemOrNullObject1.group;\",\"var shapes1 = group.shapes;\",\"shapes1.load([\\\"id\\\"]);\"]}",
+    " 477.1s  update  a by-id lookup went unanswered — re-reading the slide instead  chart=draw-6 charts=1 slides=1",
+    " 478.1s  update  re-read recovered shapes a by-id lookup had refused  chart=draw-6 asked=1 recovered=1",
+    " 478.1s  draw  not updating in place — redrawing instead  chart=draw-6 why=the chart has no parts list and no readable group members, so its nodes cannot be mapped to shapes collection=queued members=null nodes=24 slideId=258#1239912303 shapeId=27",
+    " 478.2s  draw  deleted the chart being replaced  chart=draw-6 ms=26 removed=1 drawing=24 slideId=258#1239912303",
+    " 478.2s  draw  batch issued  chart=draw-6 upTo=10 total=24 onSlide=0 onSlideKey=258#1239912303 idleMs=1 afterAnswering=deleting the chart being replaced afterAnsweringMs=26",
+    " 485.8s  draw  batch issued  chart=draw-6 upTo=20 total=24 onSlide=10 onSlideKey=258#1239912303 prevBatchMs=7583",
+    " 499.9s  draw  batch issued  chart=draw-6 upTo=24 total=24 onSlide=20 onSlideKey=258#1239912303 prevBatchMs=14190",
+    " 507.7s  draw  last batch settled  chart=draw-6 batchNo=3 total=24 drew=4 onSlideAfter=24 onSlideKey=258#1239912303 ms=7765",
+    " 507.7s  group  the cold re-read fell short — asking again after the settle  chart=draw-6 kind=empty index=0 drew=24 listed=0",
+    " 507.7s  group  re-reading the slide's shapes again after a settle delay  chart=draw-6 attempt=1 charts=1 waitedMs=1500 slides=258#1239912303×1",
+    "   510s  group  grouped the chart's shapes  chart=draw-6 charts=1 partial=0 by=ids",
+    "   510s  draw  parts list outcome  chart=draw-6 where=no loose chart had siblings charts=1 slides=258#1239912303 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    "   511s  group  config tags written, by target route  chart=draw-6 charts=1 from={\"group\":1}",
+    " 515.7s  update  a slide's shape count would not settle — taking the second read  chart=draw-6 slideId=258#1239912303 first=24 second=1",
+    " 515.7s  update  shapes left on the slide after an in-place update  chart=draw-6 slideId=258#1239912303 before=1 after=1 growth=0 settled=false charts=1 withParts=0 atRisk=0 removedCalls=1 drewInner=24",
+    " 515.7s  pane  deck scan — asking how many slides  withInventory=false syncs=1661",
+    " 515.7s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1663",
+    " 520.9s  pane  deck scan — settling chart tags  from=0 to=6 shapes=8 syncs=1664",
+    " 521.8s  pane  deck scan — a page came back  from=0 to=6 charts=8 unread=0 short=0 tagsUnread=0 chartsSoFar=8",
+    " 521.8s  pane  scanned the deck for charts  ms=6055 slides=7 charts=8 unread=0 short=0 tagsUnread=0 complete=true",
+    " 521.8s  selftest  scenario passed  name=explode a degraded picture detail=collapsed to a picture and exploded back, config intact ms=56664 deckSlides=7 deckGrew=0 friction={\"errors\":2,\"idRefusals\":1,\"generalExceptions\":1,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":1}",
+    " 521.9s  selftest  scenario starting  name=which selection call wedges the host deckSlides=7 atMs=521852",
+    " 521.9s  pane  deck scan — asking how many slides  withInventory=false syncs=1670",
+    " 521.9s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1672",
+    " 522.8s  pane  deck scan — settling chart tags  from=0 to=6 shapes=8 syncs=1673",
+    " 523.4s  pane  deck scan — a page came back  from=0 to=6 charts=8 unread=0 short=0 tagsUnread=0 chartsSoFar=8",
+    " 523.4s  pane  scanned the deck for charts  ms=1573 slides=7 charts=8 unread=0 short=0 tagsUnread=0 complete=true",
+    " 530.3s  selftest  ladder rung  step=read the selection before anything touches it outcome=ok ms=651",
+    " 530.3s  selftest  ladder rung  step=setSelectedSlides (the pane's own call) outcome=ok ms=880",
+    " 530.3s  selftest  ladder rung  step=read the selection after selecting the slide outcome=ok ms=1327",
+    " 530.3s  selftest  ladder rung  step=setSelectedShapes([id]) outcome=ok ms=739",
+    " 530.3s  selftest  ladder rung  step=read the selection after selecting a shape outcome=ok ms=1144",
+    " 530.3s  selftest  ladder rung  step=setSelectedShapes([]) outcome=ok ms=777",
+    " 530.3s  selftest  ladder rung  step=read the selection after clearing the selection outcome=ok ms=1405",
+    " 530.4s  selftest  scenario passed  name=which selection call wedges the host detail=the host answered all 7 rung(s) — nothing wedged ms=8496 deckSlides=7 deckGrew=0 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 530.4s  selftest  scenario starting  name=a selected shape survives an insert deckSlides=7 atMs=530372",
+    " 530.4s  pane  deck scan — asking how many slides  withInventory=false syncs=1695",
+    " 530.4s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1697",
+    " 531.1s  pane  deck scan — settling chart tags  from=0 to=6 shapes=8 syncs=1698",
+    "   532s  pane  deck scan — a page came back  from=0 to=6 charts=8 unread=0 short=0 tagsUnread=0 chartsSoFar=8",
+    "   532s  pane  scanned the deck for charts  ms=1577 slides=7 charts=8 unread=0 short=0 tagsUnread=0 complete=true",
+    "   532s  pane  deck scan — asking how many slides  withInventory=true syncs=1700",
+    "   532s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=true syncs=1702",
+    " 532.5s  pane  deck scan — settling chart tags  from=0 to=6 shapes=8 syncs=1703",
+    " 533.1s  pane  deck scan — a page came back  from=0 to=6 charts=8 unread=0 short=0 tagsUnread=0 chartsSoFar=8",
+    " 533.1s  pane  scanned the deck for charts  ms=1188 slides=7 charts=8 unread=0 short=0 tagsUnread=0 complete=true",
+    " 534.9s  insert  resolved the target slide to an index  chart=draw-7 slideId=257#1435600420 index=1",
+    " 534.9s  draw  batch issued  chart=draw-7 upTo=10 total=16 onSlide=32 onSlideKey=257#1435600420 idleMs=132 afterAnswering=selecting a shape afterAnsweringMs=915",
+    " 557.2s  draw  batch issued  chart=draw-7 upTo=16 total=16 onSlide=42 onSlideKey=257#1435600420 prevBatchMs=22308",
+    "   572s  draw  last batch settled  chart=draw-7 batchNo=2 total=16 drew=6 onSlideAfter=48 onSlideKey=257#1435600420 ms=14774",
+    " 574.6s  group  grouped the chart's shapes  chart=draw-7 charts=1 partial=0 by=ids",
+    " 574.6s  draw  parts list outcome  chart=draw-7 where=no loose chart had siblings charts=1 slides=257#1435600420 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 576.1s  group  config tags written, by target route  chart=draw-7 charts=1 from={\"group\":1}",
+    "   579s  pane  deck scan — asking how many slides  withInventory=true syncs=1720",
+    " 579.1s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=true syncs=1722",
+    " 580.1s  pane  deck scan — settling chart tags  from=0 to=6 shapes=9 syncs=1723",
+    " 581.3s  pane  deck scan — a page came back  from=0 to=6 charts=9 unread=0 short=0 tagsUnread=0 chartsSoFar=9",
+    " 581.3s  pane  scanned the deck for charts  ms=2241 slides=7 charts=9 unread=0 short=0 tagsUnread=0 complete=true",
+    " 581.3s  selftest  scenario passed  name=a selected shape survives an insert detail=all 3 shape(s) already on the slide survived an insert made while one was selected ms=50902 deckSlides=7 deckGrew=0 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 581.3s  selftest  scenario starting  name=edit the chart the user selected deckSlides=7 atMs=581316",
+    " 581.3s  pane  deck scan — asking how many slides  withInventory=false syncs=1729",
+    " 581.3s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1731",
+    " 582.5s  pane  deck scan — settling chart tags  from=0 to=6 shapes=9 syncs=1732",
+    " 585.3s  pane  deck scan — a page came back  from=0 to=6 charts=9 unread=0 short=0 tagsUnread=0 chartsSoFar=9",
+    " 585.3s  pane  scanned the deck for charts  ms=3977 slides=7 charts=9 unread=0 short=0 tagsUnread=0 complete=true",
+    " 589.5s  update  parts lists at the update  chart=draw-8 charts=1 withParts=0 queuedGroup=1",
+    " 593.4s  draw  updated only the shapes that changed  chart=draw-8 changed=1 of=24 ms=3353 slideId=259#646717238 syncs=2 contextSyncs=2 syncMs=[904,2448]",
+    " 593.4s  pane  deck scan — asking how many slides  withInventory=false syncs=1749",
+    " 593.4s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1751",
+    "   594s  pane  deck scan — settling chart tags  from=0 to=6 shapes=9 syncs=1752",
+    " 594.7s  pane  deck scan — a page came back  from=0 to=6 charts=9 unread=0 short=0 tagsUnread=0 chartsSoFar=9",
+    " 594.7s  pane  scanned the deck for charts  ms=1353 slides=7 charts=9 unread=0 short=0 tagsUnread=0 complete=true",
+    " 595.4s  selftest  scenario passed  name=edit the chart the user selected detail=selected, read back, edited through the selection's own target, still re-editable ms=14054 deckSlides=7 deckGrew=0 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 595.4s  selftest  scenario starting  name=stop a run part-way deckSlides=7 atMs=595423",
+    " 595.4s  pane  stop requested",
+    " 595.5s  error  drawing the chart's shapes  chart=draw-9 error=Stopped. | at=drawing the chart's shapes",
+    " 595.5s  insert  the draw failed — deciding whether it can be re-run  chart=draw-9 reading=unreadable recoverable=false",
+    " 595.5s  pane  deck scan — asking how many slides  withInventory=false syncs=1764",
+    " 595.5s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1766",
+    " 596.5s  pane  deck scan — settling chart tags  from=0 to=6 shapes=9 syncs=1767",
+    " 597.3s  pane  deck scan — a page came back  from=0 to=6 charts=9 unread=0 short=0 tagsUnread=0 chartsSoFar=9",
+    " 597.3s  pane  scanned the deck for charts  ms=1863 slides=7 charts=9 unread=0 short=0 tagsUnread=0 complete=true",
+    " 597.3s  selftest  scenario passed  name=stop a run part-way detail=stopped before the first batch — no shape was ever queued, nothing added, nothing left claiming to be a chart ms=1905 deckSlides=7 deckGrew=0 friction={\"errors\":1,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 597.4s  selftest  scenario starting  name=a big chart on a slide of its own deckSlides=7 atMs=597393",
+    " 597.4s  draw  batch issued  chart=draw-10 upTo=10 total=16 onSlide=0 onSlideKey=(visible) idleMs=1 afterAnswering=listing the deck's slides afterAnsweringMs=58",
+    " 610.1s  draw  moved this draw's shape count onto the slide the host finally named  chart=draw-10 from=(visible) to=259#646717238 shapes=10",
+    " 610.1s  draw  batch issued  chart=draw-10 upTo=16 total=16 onSlide=10 onSlideKey=259#646717238 prevBatchMs=12729",
+    " 618.3s  draw  last batch settled  chart=draw-10 batchNo=2 total=16 drew=6 onSlideAfter=16 onSlideKey=259#646717238 ms=8202",
+    " 621.4s  group  grouped the chart's shapes  chart=draw-10 charts=1 partial=0 by=ids",
+    " 621.4s  draw  parts list outcome  chart=draw-10 where=no loose chart had siblings charts=1 slides=259#646717238 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 622.2s  group  config tags written, by target route  chart=draw-10 charts=1 from={\"group\":1}",
+    " 623.9s  insert  resolved a shape by id through a slide handle a sync old  slideId=259#646717238 resolved=1",
+    "   625s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 625.1s  host  slides added  requested=1 landed=1 from=7",
+    " 625.1s  insert  resolved the target slide to an index  chart=draw-11 slideId=4123571153#123571113 index=7",
+    " 625.1s  draw  batch issued  chart=draw-11 upTo=10 total=103 onSlide=0 onSlideKey=4123571153#123571113 idleMs=40 afterAnswering=listing the deck's slides afterAnsweringMs=8",
+    " 627.3s  draw  batch issued  chart=draw-11 upTo=20 total=103 onSlide=10 onSlideKey=4123571153#123571113 prevBatchMs=2133",
+    " 630.4s  draw  batch issued  chart=draw-11 upTo=30 total=103 onSlide=20 onSlideKey=4123571153#123571113 prevBatchMs=3133",
+    " 634.4s  draw  batch issued  chart=draw-11 upTo=40 total=103 onSlide=30 onSlideKey=4123571153#123571113 prevBatchMs=3984",
+    " 639.4s  draw  batch issued  chart=draw-11 upTo=50 total=103 onSlide=40 onSlideKey=4123571153#123571113 prevBatchMs=4979",
+    " 646.5s  draw  batch issued  chart=draw-11 upTo=60 total=103 onSlide=50 onSlideKey=4123571153#123571113 prevBatchMs=7110",
+    " 653.1s  draw  batch issued  chart=draw-11 upTo=70 total=103 onSlide=60 onSlideKey=4123571153#123571113 prevBatchMs=6656",
+    " 660.5s  draw  batch issued  chart=draw-11 upTo=80 total=103 onSlide=70 onSlideKey=4123571153#123571113 prevBatchMs=7330",
+    " 669.1s  draw  batch issued  chart=draw-11 upTo=90 total=103 onSlide=80 onSlideKey=4123571153#123571113 prevBatchMs=8639",
+    " 678.9s  draw  batch issued  chart=draw-11 upTo=100 total=103 onSlide=90 onSlideKey=4123571153#123571113 prevBatchMs=9782",
+    " 688.9s  draw  batch issued  chart=draw-11 upTo=103 total=103 onSlide=100 onSlideKey=4123571153#123571113 prevBatchMs=10005",
+    " 698.7s  draw  last batch settled  chart=draw-11 batchNo=11 total=103 drew=3 onSlideAfter=103 onSlideKey=4123571153#123571113 ms=9855",
+    " 698.8s  group  the cold re-read fell short — asking again after the settle  chart=draw-11 kind=short index=0 drew=103 matched=10",
+    " 698.8s  group  re-reading the slide's shapes again after a settle delay  chart=draw-11 attempt=1 charts=1 waitedMs=1500 slides=4123571153#123571113×1",
+    " 700.3s  group  the cold re-read fell short — asking again after the settle  chart=draw-11 kind=short index=0 drew=103 matched=10",
+    " 700.3s  group  re-reading the slide's shapes again after a settle delay  chart=draw-11 attempt=2 charts=1 waitedMs=1500 slides=4123571153#123571113×1",
+    " 707.2s  group  grouped the chart's shapes  chart=draw-11 charts=1 partial=0 by=ids",
+    " 707.2s  draw  parts list outcome  chart=draw-11 where=no loose chart had siblings charts=1 slides=4123571153#123571113 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 707.9s  group  config tags written, by target route  chart=draw-11 charts=1 from={\"group\":1}",
+    "   709s  selftest  scenario passed  name=a big chart on a slide of its own detail=11 batches onto a slide added moments before, undefined shapes, slide swept; control also drew ms=111635 deckSlides=7 deckGrew=0 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":1}",
+    " 709.1s  selftest  scenario starting  name=stop a run mid-draw deckSlides=7 atMs=709094",
+    " 709.1s  pane  deck scan — asking how many slides  withInventory=false syncs=1835",
+    " 709.1s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1837",
+    " 709.9s  pane  deck scan — settling chart tags  from=0 to=6 shapes=9 syncs=1838",
+    " 710.7s  pane  deck scan — a page came back  from=0 to=6 charts=9 unread=0 short=0 tagsUnread=0 chartsSoFar=9",
+    " 710.7s  pane  scanned the deck for charts  ms=1638 slides=7 charts=9 unread=0 short=0 tagsUnread=0 complete=true",
+    " 711.4s  host  no blank layout on any master — the add will inherit  masters=1",
+    " 711.5s  host  slides added  requested=1 landed=1 from=7",
+    " 711.6s  insert  resolved the target slide to an index  chart=draw-12 slideId=4123571154#123571113 index=7",
+    " 711.6s  pane  stop requested  chart=draw-12",
+    " 711.6s  draw  batch issued  chart=draw-12 upTo=10 total=103 onSlide=0 onSlideKey=4123571154#123571113 idleMs=19 afterAnswering=counting the deck's slides afterAnsweringMs=6",
+    " 713.7s  error  drawing the chart's shapes  chart=draw-12 error=Stopped. | at=drawing the chart's shapes",
+    " 713.7s  insert  the draw failed — asking the deck what it still holds  chart=draw-12 slideId=4123571154#123571113 index=7 deckSlides=8 indexInRange=true stillListedUnderTheSameId=false reading=there, but re-keyed under a name we do not hold",
+    " 713.7s  insert  the draw failed — deciding whether it can be re-run  chart=draw-12 reading=re-keyed recoverable=false",
+    " 713.9s  pane  deck scan — asking how many slides  withInventory=false syncs=1872",
+    " 713.9s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1874",
+    " 715.1s  pane  deck scan — settling chart tags  from=0 to=6 shapes=9 syncs=1875",
+    " 716.1s  pane  deck scan — a page came back  from=0 to=6 charts=9 unread=0 short=0 tagsUnread=0 chartsSoFar=9",
+    " 716.1s  pane  scanned the deck for charts  ms=2232 slides=7 charts=9 unread=0 short=0 tagsUnread=0 complete=true",
+    " 716.2s  selftest  scenario passed  name=stop a run mid-draw detail=stopped inside the draw after 1 batch(es) with ? shape(s) down; the slide went with them, nothing left claiming to be a chart ms=7045 deckSlides=7 deckGrew=0 friction={\"errors\":1,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 716.2s  selftest  scenario starting  name=the chart is actually visible deckSlides=7 atMs=716187",
+    " 716.2s  pane  deck scan — asking how many slides  withInventory=false syncs=1881",
+    " 716.2s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1883",
+    " 716.7s  pane  deck scan — settling chart tags  from=0 to=6 shapes=9 syncs=1884",
+    " 717.4s  pane  deck scan — a page came back  from=0 to=6 charts=9 unread=0 short=0 tagsUnread=0 chartsSoFar=9",
+    " 717.4s  pane  scanned the deck for charts  ms=1237 slides=7 charts=9 unread=0 short=0 tagsUnread=0 complete=true",
+    " 717.4s  selftest  visibility step  what=rasterising a slide that already existed",
+    " 718.1s  host  rasterised a slide  slideId=260#734760553 label=the visibility BEFORE render op=rasterise ms=569 bytes=8900 width=640",
+    " 721.1s  selftest  visibility step  what=rasterising the same slide a second time",
+    " 727.6s  host  rasterised a slide  slideId=260#734760553 label=the visibility CONTROL render (same slide, back to back) op=rasterise ms=6478 bytes=8900 width=640",
+    " 727.6s  selftest  visibility step  what=drawing the chart",
+    " 727.6s  insert  resolved the target slide to an index  chart=draw-13 slideId=260#734760553 index=4",
+    " 727.6s  draw  batch issued  chart=draw-13 upTo=9 total=9 onSlide=0 onSlideKey=260#734760553 idleMs=29 afterAnswering=the visibility CONTROL render (same slide, back to back) afterAnsweringMs=6477",
+    " 741.2s  draw  last batch settled  chart=draw-13 batchNo=1 total=9 drew=9 onSlideAfter=9 onSlideKey=260#734760553 ms=13576",
+    " 741.2s  group  the cold re-read fell short — asking again after the settle  chart=draw-13 kind=zero-match index=0 drew=9 listed=1",
+    " 741.2s  group  re-reading the slide's shapes again after a settle delay  chart=draw-13 attempt=1 charts=1 waitedMs=1500 slides=260#734760553×1",
+    " 743.7s  group  grouped the chart's shapes  chart=draw-13 charts=1 partial=0 by=ids",
+    " 743.7s  draw  parts list outcome  chart=draw-13 where=no loose chart had siblings charts=1 slides=260#734760553 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 744.3s  group  config tags written, by target route  chart=draw-13 charts=1 from={\"group\":1}",
+    "   745s  selftest  visibility step  what=rasterising the slide with the chart",
+    " 746.1s  host  rasterised a slide  slideId=260#734760553 label=the visibility AFTER render op=rasterise ms=1035 bytes=10444 width=640",
+    " 746.1s  selftest  scenario passed  name=the chart is actually visible detail=drawing the chart changed PowerPoint's own render of the slide (8900 → 10444 bytes, +1544, 17.3%, first differ at 1% in, 10093 byte(s) differing) ms=29893 deckSlides=7 deckGrew=0 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":1}",
+    " 746.1s  selftest  scenario starting  name=does a rasterise poison the next draw deckSlides=7 atMs=746137",
+    " 746.1s  pane  deck scan — asking how many slides  withInventory=false syncs=1907",
+    " 746.1s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1909",
+    "   747s  pane  deck scan — settling chart tags  from=0 to=6 shapes=10 syncs=1910",
+    " 747.7s  pane  deck scan — a page came back  from=0 to=6 charts=10 unread=0 short=0 tagsUnread=0 chartsSoFar=10",
+    " 747.7s  pane  scanned the deck for charts  ms=1565 slides=7 charts=10 unread=0 short=0 tagsUnread=0 complete=true",
+    " 747.7s  selftest  rasterise-draw step  what=after a rasterise #0: the call before the draw",
+    " 748.5s  host  rasterised a slide  slideId=261#3148821331 label=the rasterise-poisons-the-next-draw arm op=rasterise ms=759 bytes=8872 width=640",
+    " 748.5s  selftest  rasterise-draw step  what=after a rasterise #0: drawing",
+    " 748.5s  insert  resolved the target slide to an index  chart=draw-14 slideId=261#3148821331 index=5",
+    " 748.5s  draw  batch issued  chart=draw-14 upTo=7 total=7 onSlide=0 onSlideKey=261#3148821331 idleMs=8 afterAnswering=the rasterise-poisons-the-next-draw arm afterAnsweringMs=759",
+    "   756s  draw  last batch settled  chart=draw-14 batchNo=1 total=7 drew=7 onSlideAfter=7 onSlideKey=261#3148821331 ms=7474",
+    "   756s  group  the cold re-read fell short — asking again after the settle  chart=draw-14 kind=zero-match index=0 drew=7 listed=1",
+    "   756s  group  re-reading the slide's shapes again after a settle delay  chart=draw-14 attempt=1 charts=1 waitedMs=1500 slides=261#3148821331×1",
+    " 758.1s  group  grouped the chart's shapes  chart=draw-14 charts=1 partial=0 by=ids",
+    " 758.1s  draw  parts list outcome  chart=draw-14 where=no loose chart had siblings charts=1 slides=261#3148821331 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 758.9s  group  config tags written, by target route  chart=draw-14 charts=1 from={\"group\":1}",
+    " 759.6s  selftest  rasterise-draw step  what=after a cheap read #1: the call before the draw",
+    " 759.6s  selftest  rasterise-draw step  what=after a cheap read #1: drawing",
+    " 759.6s  insert  resolved the target slide to an index  chart=draw-15 slideId=261#3148821331 index=5",
+    " 759.6s  draw  batch issued  chart=draw-15 upTo=7 total=7 onSlide=7 onSlideKey=261#3148821331 idleMs=25 afterAnswering=counting the deck's slides afterAnsweringMs=4",
+    " 769.9s  draw  last batch settled  chart=draw-15 batchNo=1 total=7 drew=7 onSlideAfter=14 onSlideKey=261#3148821331 ms=10287",
+    " 769.9s  group  the cold re-read fell short — asking again after the settle  chart=draw-15 kind=zero-match index=0 drew=7 listed=2",
+    " 769.9s  group  re-reading the slide's shapes again after a settle delay  chart=draw-15 attempt=1 charts=1 waitedMs=1500 slides=261#3148821331×1",
+    "   772s  group  grouped the chart's shapes  chart=draw-15 charts=1 partial=0 by=ids",
+    "   772s  draw  parts list outcome  chart=draw-15 where=no loose chart had siblings charts=1 slides=261#3148821331 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 772.7s  group  config tags written, by target route  chart=draw-15 charts=1 from={\"group\":1}",
+    " 773.5s  selftest  rasterise-draw step  what=after a cheap read #2: the call before the draw",
+    " 773.5s  selftest  rasterise-draw step  what=after a cheap read #2: drawing",
+    " 773.5s  insert  resolved the target slide to an index  chart=draw-16 slideId=261#3148821331 index=5",
+    " 773.5s  draw  batch issued  chart=draw-16 upTo=7 total=7 onSlide=14 onSlideKey=261#3148821331 idleMs=31 afterAnswering=counting the deck's slides afterAnsweringMs=3",
+    " 783.1s  draw  last batch settled  chart=draw-16 batchNo=1 total=7 drew=7 onSlideAfter=21 onSlideKey=261#3148821331 ms=9579",
+    " 783.1s  group  the cold re-read fell short — asking again after the settle  chart=draw-16 kind=zero-match index=0 drew=7 listed=9",
+    " 783.1s  group  re-reading the slide's shapes again after a settle delay  chart=draw-16 attempt=1 charts=1 waitedMs=1500 slides=261#3148821331×1",
+    " 784.6s  group  the cold re-read fell short — asking again after the settle  chart=draw-16 kind=zero-match index=0 drew=7 listed=9",
+    " 784.6s  group  re-reading the slide's shapes again after a settle delay  chart=draw-16 attempt=2 charts=1 waitedMs=1500 slides=261#3148821331×1",
+    " 788.4s  group  grouped the chart's shapes  chart=draw-16 charts=1 partial=0 by=ids",
+    " 788.4s  draw  parts list outcome  chart=draw-16 where=no loose chart had siblings charts=1 slides=261#3148821331 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 789.1s  group  config tags written, by target route  chart=draw-16 charts=1 from={\"group\":1}",
+    " 789.9s  selftest  rasterise-draw step  what=after a rasterise #3: the call before the draw",
+    " 790.7s  host  rasterised a slide  slideId=261#3148821331 label=the rasterise-poisons-the-next-draw arm op=rasterise ms=795 bytes=9892 width=640",
+    " 790.7s  selftest  rasterise-draw step  what=after a rasterise #3: drawing",
+    " 790.7s  insert  resolved the target slide to an index  chart=draw-17 slideId=261#3148821331 index=5",
+    " 790.7s  draw  batch issued  chart=draw-17 upTo=7 total=7 onSlide=21 onSlideKey=261#3148821331 idleMs=6 afterAnswering=the rasterise-poisons-the-next-draw arm afterAnsweringMs=795",
+    " 803.8s  draw  last batch settled  chart=draw-17 batchNo=1 total=7 drew=7 onSlideAfter=28 onSlideKey=261#3148821331 ms=13045",
+    " 803.8s  group  the cold re-read fell short — asking again after the settle  chart=draw-17 kind=zero-match index=0 drew=7 listed=10",
+    " 803.8s  group  re-reading the slide's shapes again after a settle delay  chart=draw-17 attempt=1 charts=1 waitedMs=1500 slides=261#3148821331×1",
+    " 805.3s  group  the cold re-read fell short — asking again after the settle  chart=draw-17 kind=zero-match index=0 drew=7 listed=10",
+    " 805.3s  group  re-reading the slide's shapes again after a settle delay  chart=draw-17 attempt=2 charts=1 waitedMs=1500 slides=261#3148821331×1",
+    " 809.1s  group  grouped the chart's shapes  chart=draw-17 charts=1 partial=0 by=ids",
+    " 809.1s  draw  parts list outcome  chart=draw-17 where=no loose chart had siblings charts=1 slides=261#3148821331 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 809.9s  group  config tags written, by target route  chart=draw-17 charts=1 from={\"group\":1}",
+    " 810.6s  selftest  rasterise-draw arms  rasterise=[true,true] cheap=[true,true] order=raster, cheap, cheap, raster",
+    " 810.6s  selftest  scenario passed  name=does a rasterise poison the next draw detail=all four draws landed — a draw straight after a rasterise is no worse than one after a cheap read ms=64474 deckSlides=7 deckGrew=0 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":4}",
+    " 810.6s  selftest  scenario starting  name=a chart of rotated shapes deckSlides=7 atMs=810636",
+    " 810.6s  pane  deck scan — asking how many slides  withInventory=false syncs=1960",
+    " 810.7s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=1962",
+    " 811.3s  pane  deck scan — settling chart tags  from=0 to=6 shapes=14 syncs=1963",
+    " 812.2s  pane  deck scan — a page came back  from=0 to=6 charts=14 unread=0 short=0 tagsUnread=0 chartsSoFar=14",
+    " 812.2s  pane  scanned the deck for charts  ms=1574 slides=7 charts=14 unread=0 short=0 tagsUnread=0 complete=true",
+    " 812.8s  draw  batch issued  chart=draw-18 upTo=10 total=11 onSlide=0 onSlideKey=(visible) idleMs=2 afterAnswering=moving the view to a slide afterAnsweringMs=635",
+    "   838s  draw  moved this draw's shape count onto the slide the host finally named  chart=draw-18 from=(visible) to=257#1435600420 shapes=10",
+    "   838s  draw  batch issued  chart=draw-18 upTo=11 total=11 onSlide=58 onSlideKey=257#1435600420 prevBatchMs=25125",
+    " 844.2s  draw  last batch settled  chart=draw-18 batchNo=2 total=11 drew=1 onSlideAfter=59 onSlideKey=257#1435600420 ms=6205",
+    " 847.3s  group  grouped the chart's shapes  chart=draw-18 charts=1 partial=0 by=ids",
+    " 847.3s  draw  parts list outcome  chart=draw-18 where=no loose chart had siblings charts=1 slides=257#1435600420 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 848.5s  group  config tags written, by target route  chart=draw-18 charts=1 from={\"group\":1}",
+    " 850.9s  insert  resolved a shape by id through a slide handle a sync old  slideId=257#1435600420 resolved=1",
+    " 850.9s  selftest  scenario passed  name=a chart of rotated shapes detail=drew a 3-segment line chart without error; this host will not report a group's children, so where the segments landed is unmeasurable here — see the rotation-keeps-the-unrotated-box probe ms=40250 deckSlides=7 deckGrew=0 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 850.9s  selftest  scenario starting  name=a chart handed over as a file deckSlides=7 atMs=850923",
+    " 852.5s  insert  handed the host a generated deck  expectedSlides=1 landed=1 base64Bytes=107800 formatting=KeepSourceFormatting mastersAfter=1",
+    " 852.5s  pane  deck scan — asking how many slides  withInventory=false syncs=2000",
+    " 852.6s  pane  deck scan — settling a page of slides  from=0 to=7 slides=8 withInventory=false syncs=2002",
+    " 854.1s  pane  deck scan — settling chart tags  from=0 to=7 shapes=15 syncs=2003",
+    " 855.2s  pane  deck scan — a page came back  from=0 to=7 charts=15 unread=0 short=0 tagsUnread=0 chartsSoFar=15",
+    " 855.2s  pane  scanned the deck for charts  ms=2685 slides=8 charts=15 unread=0 short=0 tagsUnread=0 complete=true",
+    " 855.4s  selftest  scenario passed  name=a chart handed over as a file detail=one slide from a generated file, its chart re-editable, slide returned (deck 7 to 8 to 7) ms=4441 deckSlides=7 deckGrew=0 friction={\"errors\":0,\"idRefusals\":0,\"generalExceptions\":0,\"emptyReReads\":0,\"shortReReads\":0,\"unmatchedReReads\":0,\"reReadsRepaired\":0}",
+    " 855.4s  selftest  scenario starting  name=what a chart kind costs deckSlides=7 atMs=855400",
+    " 855.4s  pane  deck scan — asking how many slides  withInventory=false syncs=2018",
+    " 855.4s  pane  deck scan — settling a page of slides  from=0 to=6 slides=7 withInventory=false syncs=2020",
+    " 857.1s  pane  deck scan — settling chart tags  from=0 to=6 shapes=14 syncs=2021",
+    " 858.2s  pane  deck scan — a page came back  from=0 to=6 charts=14 unread=0 short=0 tagsUnread=0 chartsSoFar=14",
+    " 858.2s  pane  scanned the deck for charts  ms=2787 slides=7 charts=14 unread=0 short=0 tagsUnread=0 complete=true",
+    " 858.2s  selftest  kind cost step  what=clustered #0: drawing",
+    " 858.2s  insert  resolved the target slide to an index  chart=draw-19 slideId=262#4293478301 index=6",
+    " 858.2s  draw  batch issued  chart=draw-19 upTo=7 total=7 onSlide=0 onSlideKey=262#4293478301 idleMs=30 afterAnswering=reading chart tags on slides 0-6 afterAnsweringMs=1102",
+    " 868.9s  draw  last batch settled  chart=draw-19 batchNo=1 total=7 drew=7 onSlideAfter=7 onSlideKey=262#4293478301 ms=10687",
+    "   869s  group  the cold re-read fell short — asking again after the settle  chart=draw-19 kind=zero-match index=0 drew=7 listed=1",
+    "   869s  group  re-reading the slide's shapes again after a settle delay  chart=draw-19 attempt=1 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    " 870.5s  group  the cold re-read fell short — asking again after the settle  chart=draw-19 kind=zero-match index=0 drew=7 listed=1",
+    " 870.5s  group  re-reading the slide's shapes again after a settle delay  chart=draw-19 attempt=2 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    " 890.1s  group  grouped the chart's shapes  chart=draw-19 charts=1 partial=0 by=ids",
+    " 890.1s  draw  parts list outcome  chart=draw-19 where=no loose chart had siblings charts=1 slides=262#4293478301 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 893.1s  group  config tags written, by target route  chart=draw-19 charts=1 from={\"group\":1}",
+    " 894.6s  insert  resolved a shape by id through a slide handle a sync old  slideId=262#4293478301 resolved=1",
+    " 894.6s  selftest  kind cost step  what=funnel #1: drawing",
+    " 894.6s  insert  resolved the target slide to an index  chart=draw-20 slideId=262#4293478301 index=6",
+    " 894.6s  draw  batch issued  chart=draw-20 upTo=8 total=8 onSlide=6 onSlideKey=262#4293478301 idleMs=100 afterAnswering=writing the chart's origin tag afterAnsweringMs=1401",
+    " 907.3s  draw  last batch settled  chart=draw-20 batchNo=1 total=8 drew=8 onSlideAfter=14 onSlideKey=262#4293478301 ms=12674",
+    " 907.3s  group  the cold re-read fell short — asking again after the settle  chart=draw-20 kind=zero-match index=0 drew=8 listed=1",
+    " 907.3s  group  re-reading the slide's shapes again after a settle delay  chart=draw-20 attempt=1 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    " 908.8s  group  the cold re-read fell short — asking again after the settle  chart=draw-20 kind=zero-match index=0 drew=8 listed=1",
+    " 908.8s  group  re-reading the slide's shapes again after a settle delay  chart=draw-20 attempt=2 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    " 930.6s  group  grouped the chart's shapes  chart=draw-20 charts=1 partial=0 by=ids",
+    " 930.6s  draw  parts list outcome  chart=draw-20 where=no loose chart had siblings charts=1 slides=262#4293478301 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 931.5s  group  config tags written, by target route  chart=draw-20 charts=1 from={\"group\":1}",
+    " 932.4s  insert  wreckage the host would not resolve  slideId=262#4293478301 unresolved=1 swept=0",
+    " 932.4s  selftest  kind cost step  what=waterfall #2: drawing",
+    " 932.4s  insert  resolved the target slide to an index  chart=draw-21 slideId=262#4293478301 index=6",
+    " 932.4s  draw  batch issued  chart=draw-21 upTo=9 total=9 onSlide=14 onSlideKey=262#4293478301 idleMs=54 afterAnswering=writing the chart's origin tag afterAnsweringMs=854",
+    " 945.4s  draw  last batch settled  chart=draw-21 batchNo=1 total=9 drew=9 onSlideAfter=23 onSlideKey=262#4293478301 ms=13011",
+    " 945.4s  group  the cold re-read fell short — asking again after the settle  chart=draw-21 kind=zero-match index=0 drew=9 listed=9",
+    " 945.4s  group  re-reading the slide's shapes again after a settle delay  chart=draw-21 attempt=1 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    "   947s  group  the cold re-read fell short — asking again after the settle  chart=draw-21 kind=zero-match index=0 drew=9 listed=9",
+    "   947s  group  re-reading the slide's shapes again after a settle delay  chart=draw-21 attempt=2 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    " 951.3s  group  grouped the chart's shapes  chart=draw-21 charts=1 partial=0 by=ids",
+    " 951.3s  draw  parts list outcome  chart=draw-21 where=no loose chart had siblings charts=1 slides=262#4293478301 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 952.3s  group  config tags written, by target route  chart=draw-21 charts=1 from={\"group\":1}",
+    " 953.3s  insert  wreckage the host would not resolve  slideId=262#4293478301 unresolved=1 swept=0",
+    " 953.3s  selftest  kind cost step  what=line #3: drawing",
+    " 953.3s  insert  resolved the target slide to an index  chart=draw-22 slideId=262#4293478301 index=6",
+    " 953.3s  draw  batch issued  chart=draw-22 upTo=10 total=10 onSlide=23 onSlideKey=262#4293478301 idleMs=63 afterAnswering=writing the chart's origin tag afterAnsweringMs=971",
+    " 972.5s  draw  last batch settled  chart=draw-22 batchNo=1 total=10 drew=10 onSlideAfter=33 onSlideKey=262#4293478301 ms=19198",
+    " 972.6s  group  the cold re-read fell short — asking again after the settle  chart=draw-22 kind=zero-match index=0 drew=10 listed=11",
+    " 972.6s  group  re-reading the slide's shapes again after a settle delay  chart=draw-22 attempt=1 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    " 974.1s  group  the cold re-read fell short — asking again after the settle  chart=draw-22 kind=zero-match index=0 drew=10 listed=11",
+    " 974.1s  group  re-reading the slide's shapes again after a settle delay  chart=draw-22 attempt=2 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    "   992s  group  grouped the chart's shapes  chart=draw-22 charts=1 partial=0 by=ids",
+    "   992s  draw  parts list outcome  chart=draw-22 where=no loose chart had siblings charts=1 slides=262#4293478301 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    " 992.9s  group  config tags written, by target route  chart=draw-22 charts=1 from={\"group\":1}",
+    " 993.7s  insert  wreckage the host would not resolve  slideId=262#4293478301 unresolved=1 swept=0",
+    " 993.7s  selftest  kind cost step  what=line #4: drawing",
+    " 993.7s  insert  resolved the target slide to an index  chart=draw-23 slideId=262#4293478301 index=6",
+    " 993.7s  draw  batch issued  chart=draw-23 upTo=10 total=10 onSlide=33 onSlideKey=262#4293478301 idleMs=68 afterAnswering=writing the chart's origin tag afterAnsweringMs=717",
+    "1016.6s  draw  last batch settled  chart=draw-23 batchNo=1 total=10 drew=10 onSlideAfter=43 onSlideKey=262#4293478301 ms=22881",
+    "1016.8s  group  the cold re-read fell short — asking again after the settle  chart=draw-23 kind=zero-match index=0 drew=10 listed=13",
+    "1016.8s  group  re-reading the slide's shapes again after a settle delay  chart=draw-23 attempt=1 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    "1018.4s  group  the cold re-read fell short — asking again after the settle  chart=draw-23 kind=zero-match index=0 drew=10 listed=13",
+    "1018.4s  group  re-reading the slide's shapes again after a settle delay  chart=draw-23 attempt=2 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    "1032.6s  group  grouped the chart's shapes  chart=draw-23 charts=1 partial=0 by=ids",
+    "1032.6s  draw  parts list outcome  chart=draw-23 where=no loose chart had siblings charts=1 slides=262#4293478301 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    "1033.8s  group  config tags written, by target route  chart=draw-23 charts=1 from={\"group\":1}",
+    "  1035s  insert  wreckage the host would not resolve  slideId=262#4293478301 unresolved=1 swept=0",
+    "  1035s  selftest  kind cost step  what=waterfall #5: drawing",
+    "  1035s  insert  resolved the target slide to an index  chart=draw-24 slideId=262#4293478301 index=6",
+    "  1035s  draw  batch issued  chart=draw-24 upTo=9 total=9 onSlide=43 onSlideKey=262#4293478301 idleMs=76 afterAnswering=writing the chart's origin tag afterAnsweringMs=1166",
+    "  1080s  host  gave up waiting  chart=draw-24 what=drawing shapes 1-9 of 9 afterMs=45000 afterAnswering=writing the chart's origin tag afterAnsweringMs=1166 idleMs=76 shape=issued immediately after the previous answer — an ordinary sequential gap, says little",
+    "  1080s  error  drawing the chart's shapes  chart=draw-24 error=PowerPoint did not respond while drawing shapes 1-9 of 9 (45s) | at=drawing the chart's shapes",
+    "1080.1s  insert  the draw failed — asking the deck what it still holds  chart=draw-24 slideId=262#4293478301 index=6 deckSlides=7 indexInRange=true stillListedUnderTheSameId=true reading=there, listed under the same id, and refused anyway",
+    "1080.1s  insert  the draw failed — deciding whether it can be re-run  chart=draw-24 reading=there recoverable=false",
+    "1080.1s  selftest  kind cost step  what=funnel #6: drawing",
+    "1080.1s  insert  resolved the target slide to an index  chart=draw-25 slideId=262#4293478301 index=6",
+    "1080.1s  draw  batch issued  chart=draw-25 upTo=8 total=8 onSlide=43 onSlideKey=262#4293478301 idleMs=36 afterAnswering=listing the deck's slides afterAnsweringMs=49",
+    "  1114s  draw  last batch settled  chart=draw-25 batchNo=1 total=8 drew=8 onSlideAfter=51 onSlideKey=262#4293478301 ms=33916",
+    "1114.1s  group  the cold re-read fell short — asking again after the settle  chart=draw-25 kind=zero-match index=0 drew=8 listed=5",
+    "1114.1s  group  re-reading the slide's shapes again after a settle delay  chart=draw-25 attempt=1 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    "1115.7s  group  the cold re-read fell short — asking again after the settle  chart=draw-25 kind=zero-match index=0 drew=8 listed=5",
+    "1115.7s  group  re-reading the slide's shapes again after a settle delay  chart=draw-25 attempt=2 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    "1134.2s  group  grouped the chart's shapes  chart=draw-25 charts=1 partial=0 by=ids",
+    "1134.2s  draw  parts list outcome  chart=draw-25 where=no loose chart had siblings charts=1 slides=262#4293478301 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    "1135.3s  group  config tags written, by target route  chart=draw-25 charts=1 from={\"group\":1}",
+    "1136.8s  insert  wreckage the host would not resolve  slideId=262#4293478301 unresolved=1 swept=0",
+    "1136.8s  selftest  kind cost step  what=clustered #7: drawing",
+    "1136.8s  insert  resolved the target slide to an index  chart=draw-26 slideId=262#4293478301 index=6",
+    "1136.8s  draw  batch issued  chart=draw-26 upTo=7 total=7 onSlide=51 onSlideKey=262#4293478301 idleMs=122 afterAnswering=writing the chart's origin tag afterAnsweringMs=1382",
+    "1154.2s  draw  last batch settled  chart=draw-26 batchNo=1 total=7 drew=7 onSlideAfter=58 onSlideKey=262#4293478301 ms=17393",
+    "1154.3s  group  the cold re-read fell short — asking again after the settle  chart=draw-26 kind=zero-match index=0 drew=7 listed=13",
+    "1154.3s  group  re-reading the slide's shapes again after a settle delay  chart=draw-26 attempt=1 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    "1155.9s  group  the cold re-read fell short — asking again after the settle  chart=draw-26 kind=zero-match index=0 drew=7 listed=13",
+    "1155.9s  group  re-reading the slide's shapes again after a settle delay  chart=draw-26 attempt=2 charts=1 waitedMs=1500 slides=262#4293478301×1",
+    "1174.8s  group  grouped the chart's shapes  chart=draw-26 charts=1 partial=0 by=ids",
+    "1174.8s  draw  parts list outcome  chart=draw-26 where=no loose chart had siblings charts=1 slides=262#4293478301 groupedSoNotLoose=1 noTagTarget=0 looseWithNoSiblings=0 gotPartsList=0",
+    "1175.6s  group  config tags written, by target route  chart=draw-26 charts=1 from={\"group\":1}"
+  ],
+  "findings": [
+    {
+      "key": "hostAnswers",
+      "value": {
+        "kind": "ssf-charts-host-answers",
+        "source": "PowerPoint · OfficeOnline · 0.0.0.0",
+        "build": "97f9443 · 2026-09-08 14:29Z",
+        "requirementSets": [
+          "1.1",
+          "1.2",
+          "1.3",
+          "1.4",
+          "1.5",
+          "1.6",
+          "1.7",
+          "1.8",
+          "1.9",
+          "1.10"
+        ],
+        "opened": {
+          "ms": 31,
+          "answered": true
+        },
+        "answers": [
+          {
+            "id": "load-isnullobject-populates",
+            "question": "Does load('isNullObject') make isNullObject readable after a sync?",
+            "ms": 30,
+            "answer": "yes",
+            "detail": "read false",
+            "samples": [
+              {
+                "answer": "yes",
+                "pass": 1,
+                "atMs": 58238,
+                "regime": "healthy",
+                "scratch": "first-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 2,
+                "atMs": 110447,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 3,
+                "atMs": 145921,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "load-id-populates-isnullobject",
+            "question": "Does loading a REAL property make isNullObject readable?",
+            "ms": 59,
+            "answer": "yes",
+            "detail": "read false",
+            "samples": [
+              {
+                "answer": "yes",
+                "pass": 1,
+                "atMs": 58298,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 2,
+                "atMs": 110512,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 3,
+                "atMs": 146035,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "getitemornullobject-missing",
+            "question": "What does getItemOrNullObject give for an id that does not exist?",
+            "ms": 15,
+            "answer": "null-object",
+            "samples": [
+              {
+                "answer": "null-object",
+                "pass": 1,
+                "atMs": 58313,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "null-object",
+                "pass": 2,
+                "atMs": 110535,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "null-object",
+                "pass": 3,
+                "atMs": 146089,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "shape-add-fresh-slide-proxy",
+            "question": "Can a shape be added through a slide proxy resolved in THIS sync?",
+            "ms": 511,
+            "answer": "yes",
+            "samples": [
+              {
+                "answer": "yes",
+                "pass": 1,
+                "atMs": 58825,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 2,
+                "atMs": 110849,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 3,
+                "atMs": 146415,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "shape-add-held-slide-proxy",
+            "question": "Can a shape be added through a slide proxy resolved a sync ago?",
+            "ms": 418,
+            "answer": "yes",
+            "samples": [
+              {
+                "answer": "yes",
+                "pass": 1,
+                "atMs": 59243,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 2,
+                "atMs": 111459,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 3,
+                "atMs": 147013,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "shape-add-held-slide-proxy-again",
+            "question": "Asked a second time moments later on another fresh slide, does it answer the same way?",
+            "ms": 927,
+            "answer": "threw",
+            "detail": "asked because shape-add-held-slide-proxy answered \"yes\" — asking the identical question a second time at the same instant is what tells a host state from a coin; GeneralException",
+            "samples": [
+              {
+                "answer": "no-scratch-slide",
+                "pass": 1,
+                "atMs": 74304,
+                "regime": "slide-trouble",
+                "scratch": "no-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 2,
+                "atMs": 112387,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 3,
+                "atMs": 149411,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              }
+            ],
+            "stable": true,
+            "support": {
+              "asked": 2,
+              "of": 3
+            }
+          },
+          {
+            "id": "binding-names-shape-later",
+            "question": "Can a binding made in a shape's CREATING sync still name that shape afterwards?",
+            "ms": 1084,
+            "answer": "commit-threw",
+            "detail": "the same batch without a binding committed seconds earlier: ErrorPointer",
+            "samples": [
+              {
+                "answer": "commit-threw",
+                "pass": 1,
+                "atMs": 75388,
+                "regime": "slide-trouble",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 2,
+                "atMs": 114025,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 3,
+                "atMs": 151021,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": false
+          },
+          {
+            "id": "shape-resolve-held-slide-proxy",
+            "question": "Can a shape be RESOLVED (not added) through a slide proxy resolved a sync ago?",
+            "ms": 1648,
+            "answer": "no-scratch-shape",
+            "detail": "the probe never got as far as its question: the host would not read back the shapes' ids",
+            "samples": [
+              {
+                "answer": "no-scratch-shape",
+                "pass": 1,
+                "atMs": 77036,
+                "regime": "slide-trouble",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "no-scratch-shape",
+                "pass": 2,
+                "atMs": 115774,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "no-scratch-slide",
+                "pass": 3,
+                "atMs": 153953,
+                "regime": "slide-trouble",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "no-scratch-shape",
+                "pass": 4,
+                "atMs": 193162,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              }
+            ]
+          },
+          {
+            "id": "shape-add-fresh-getitem-slide",
+            "question": "Can a shape be added through slides.getItem(id) on a freshly-added slide?",
+            "ms": 632,
+            "answer": "threw",
+            "detail": "GeneralException",
+            "samples": [
+              {
+                "answer": "threw",
+                "pass": 1,
+                "atMs": 77668,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 2,
+                "atMs": 116233,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 3,
+                "atMs": 154519,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": false
+          },
+          {
+            "id": "getitem-durable-slide",
+            "question": "Does slides.getItem(id) resolve a slide that was in the deck before this run?",
+            "ms": 626,
+            "answer": "yes",
+            "detail": "asked because shape-add-fresh-getitem-slide answered \"threw\" — getItem refused a freshly-added slide, which could be about getItem or about the slide's newness",
+            "samples": [
+              {
+                "answer": "yes",
+                "pass": 1,
+                "atMs": 78294,
+                "regime": "slide-trouble",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 2,
+                "atMs": 116836,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "shape-add-positional-slide-proxy",
+            "question": "Can a shape be added through slides.getItemAt(index) rather than by id?",
+            "ms": 959,
+            "answer": "yes",
+            "samples": [
+              {
+                "answer": "yes",
+                "pass": 1,
+                "atMs": 79253,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 2,
+                "atMs": 117178,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 3,
+                "atMs": 155077,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "shape-proxy-survives-one-sync",
+            "question": "Is a shape proxy still usable one sync after it was created?",
+            "ms": 654,
+            "answer": "threw",
+            "detail": "InvalidParam passed to GetItem(id)",
+            "samples": [
+              {
+                "answer": "threw",
+                "pass": 1,
+                "atMs": 79907,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 2,
+                "atMs": 117742,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 3,
+                "atMs": 155746,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "shapes-items-count-honest",
+            "question": "After adding 5 shapes, how many does the collection report?",
+            "ms": 686,
+            "answer": "short-2",
+            "detail": "items=2",
+            "samples": [
+              {
+                "answer": "short-2",
+                "pass": 1,
+                "atMs": 80593,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "short-0",
+                "pass": 2,
+                "atMs": 118349,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "short-0",
+                "pass": 3,
+                "atMs": 156380,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": false
+          },
+          {
+            "id": "shapes-items-via-positional-slide",
+            "question": "Same collection read, but through slides.getItemAt(index) — any different?",
+            "ms": 600,
+            "answer": "at-least-5",
+            "detail": "items=7",
+            "samples": [
+              {
+                "answer": "at-least-5",
+                "pass": 1,
+                "atMs": 81193,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "short-0",
+                "pass": 2,
+                "atMs": 118994,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "short-0",
+                "pass": 3,
+                "atMs": 157129,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": false
+          },
+          {
+            "id": "getcount-populates-same-sync",
+            "question": "Does getCount()'s value arrive on the sync that queued it?",
+            "ms": 639,
+            "answer": "yes",
+            "detail": "value=7",
+            "samples": [
+              {
+                "answer": "yes",
+                "pass": 1,
+                "atMs": 81832,
+                "regime": "slide-trouble",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 2,
+                "atMs": 119677,
+                "regime": "collection-refused",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 3,
+                "atMs": 157939,
+                "regime": "collection-refused",
+                "scratch": "fresh-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "tags-add-same-key-twice",
+            "question": "Does writing the same tag key twice overwrite, or duplicate?",
+            "ms": 1450,
+            "answer": "overwrites",
+            "detail": "value=second; the tag IS on the slide; slide named (286#3877636957)",
+            "samples": [
+              {
+                "answer": "other",
+                "pass": 1,
+                "atMs": 82581,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "other",
+                "pass": 2,
+                "atMs": 120281,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "overwrites",
+                "pass": 3,
+                "atMs": 159389,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": false
+          },
+          {
+            "id": "tags-on-fresh-shape",
+            "question": "Does a shape added THIS sync already have a .tags collection?",
+            "ms": 375,
+            "answer": "threw",
+            "detail": "InvalidParam passed to GetItem(id)",
+            "samples": [
+              {
+                "answer": "threw",
+                "pass": 1,
+                "atMs": 82956,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 2,
+                "atMs": 120709,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 3,
+                "atMs": 160089,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "tag-through-refetched-shape",
+            "question": "Can a fresh shape be tagged through a handle re-fetched by its own id?",
+            "ms": 1623,
+            "answer": "no-id",
+            "detail": "the fresh shape would not report an id",
+            "samples": [
+              {
+                "answer": "no-id",
+                "pass": 1,
+                "atMs": 84579,
+                "regime": "slide-trouble",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "no-id",
+                "pass": 2,
+                "atMs": 122187,
+                "regime": "collection-refused",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "no-id",
+                "pass": 3,
+                "atMs": 162543,
+                "regime": "collection-refused",
+                "scratch": "fresh-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "tag-the-creation-proxy-a-sync-later",
+            "question": "With no id to be had, can the shape still be tagged through the handle that created it?",
+            "ms": 1089,
+            "answer": "yes",
+            "detail": "asked because tag-through-refetched-shape answered \"no-id\" — an unreadable id is what production falls back FROM, so the fallback is the half still unmeasured",
+            "samples": [
+              {
+                "answer": "yes",
+                "pass": 1,
+                "atMs": 85669,
+                "regime": "slide-trouble",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 2,
+                "atMs": 122634,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "no-scratch-slide",
+                "pass": 3,
+                "atMs": 164620,
+                "regime": "collection-refused",
+                "scratch": "fresh-slide"
+              }
+            ],
+            "stable": true,
+            "support": {
+              "asked": 2,
+              "of": 3
+            }
+          },
+          {
+            "id": "how-many-syncs-a-creation-handle-survives",
+            "question": "How many syncs can a creation handle be carried before .tags goes?",
+            "ms": 619,
+            "answer": "refused-after-1",
+            "detail": "InvalidParam passed to GetItem(id)",
+            "samples": [
+              {
+                "answer": "refused-after-1",
+                "pass": 1,
+                "atMs": 86288,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "refused-after-1",
+                "pass": 2,
+                "atMs": 123902,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "refused-after-1",
+                "pass": 3,
+                "atMs": 165200,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "how-many-collection-reads-a-context-survives",
+            "question": "How many times can one context re-read a slide's shapes before the answer goes short?",
+            "ms": 545,
+            "answer": "short-at-1",
+            "detail": "read 1 listed 1 of 3 — the context degraded",
+            "samples": [
+              {
+                "answer": "short-at-1",
+                "pass": 1,
+                "atMs": 86833,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "short-at-1",
+                "pass": 2,
+                "atMs": 124504,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "short-at-1",
+                "pass": 3,
+                "atMs": 167076,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "collection-read-poisons-the-creation-handle",
+            "question": "After re-reading the slide's shapes, does the handle that CREATED a shape still take a tag?",
+            "ms": 778,
+            "answer": "refused",
+            "detail": "InvalidParam passed to GetItem(id)",
+            "samples": [
+              {
+                "answer": "refused",
+                "pass": 1,
+                "atMs": 87611,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "refused",
+                "pass": 2,
+                "atMs": 125071,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "refused",
+                "pass": 3,
+                "atMs": 167724,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "does-a-failed-group-poison-the-tag",
+            "question": "After addGroup is refused, can a tag still be written in that same context?",
+            "ms": 594,
+            "answer": "tags-gone",
+            "detail": ".tags was undefined after the refused group",
+            "samples": [
+              {
+                "answer": "tags-gone",
+                "pass": 1,
+                "atMs": 88205,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "tags-gone",
+                "pass": 2,
+                "atMs": 125702,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "tags-gone",
+                "pass": 3,
+                "atMs": 168368,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "which-end-a-short-read-drops",
+            "question": "When a shape collection reads short, which end of it survives?",
+            "ms": 3686,
+            "answer": "not-a-short-read",
+            "detail": "nothing was dropped — the question did not arise",
+            "samples": [
+              {
+                "answer": "not-a-short-read",
+                "pass": 1,
+                "atMs": 91891,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "none-of-ours",
+                "pass": 2,
+                "atMs": 126436,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "none-of-ours",
+                "pass": 3,
+                "atMs": 169233,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": false
+          },
+          {
+            "id": "delete-then-lookup",
+            "question": "Right after delete()+sync, does getItemOrNullObject report it gone?",
+            "ms": 1498,
+            "answer": "reports-gone",
+            "samples": [
+              {
+                "answer": "reports-gone",
+                "pass": 1,
+                "atMs": 93389,
+                "regime": "slide-trouble",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "reports-gone",
+                "pass": 2,
+                "atMs": 128335,
+                "regime": "collection-refused",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "reports-gone",
+                "pass": 3,
+                "atMs": 171476,
+                "regime": "collection-refused",
+                "scratch": "fresh-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "addgroup-returns-usable",
+            "question": "Is a group proxy usable in the same sync that created it?",
+            "ms": 1065,
+            "answer": "threw",
+            "detail": "members via same-batch",
+            "samples": [
+              {
+                "answer": "threw",
+                "pass": 1,
+                "atMs": 94454,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 2,
+                "atMs": 129452,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 3,
+                "atMs": 173244,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "group-children-via-getcount",
+            "question": "Does a group report its child COUNT, where it will not list them?",
+            "ms": 1808,
+            "answer": "threw",
+            "detail": "members via same-batch",
+            "samples": [
+              {
+                "answer": "threw",
+                "pass": 1,
+                "atMs": 96262,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 2,
+                "atMs": 130890,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 3,
+                "atMs": 175393,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "group-reports-its-children",
+            "question": "After grouping two shapes, does the group report two children?",
+            "ms": 1401,
+            "answer": "threw",
+            "detail": "InvalidParam passed to GetItem(id)",
+            "samples": [
+              {
+                "answer": "threw",
+                "pass": 1,
+                "atMs": 97663,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 2,
+                "atMs": 132532,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 3,
+                "atMs": 176520,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "getitemat-past-end",
+            "question": "What does slides.getItemAt() past the end of the deck do?",
+            "ms": 648,
+            "answer": "threw",
+            "detail": "InvalidParam passed to GetItemAt(index)",
+            "samples": [
+              {
+                "answer": "threw",
+                "pass": 1,
+                "atMs": 98311,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 2,
+                "atMs": 133217,
+                "regime": "collection-refused",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 3,
+                "atMs": 177667,
+                "regime": "slide-trouble",
+                "scratch": "fresh-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "picture-then-shape-read",
+            "question": "After a picture is added, does re-reading the slide's shapes still answer?",
+            "ms": 521,
+            "answer": "threw",
+            "samples": [
+              {
+                "answer": "unreadable",
+                "pass": 1,
+                "atMs": 98768,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "unreadable",
+                "pass": 2,
+                "atMs": 133664,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 3,
+                "atMs": 178188,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              }
+            ],
+            "detail": "InvalidParam passed to GetItem(id)",
+            "stable": false
+          },
+          {
+            "id": "group-of-existing-shape-readable",
+            "question": "Can a group found in a later batch report its children?",
+            "ms": 873,
+            "answer": "threw",
+            "detail": "members via same-batch",
+            "samples": [
+              {
+                "answer": "threw",
+                "pass": 1,
+                "atMs": 99641,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 2,
+                "atMs": 134968,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "threw",
+                "pass": 3,
+                "atMs": 179429,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "slide-layout-readable",
+            "question": "Can a slide's layout shapes be read?",
+            "ms": 383,
+            "answer": "yes",
+            "detail": "0 layout shape(s)",
+            "samples": [
+              {
+                "answer": "yes",
+                "pass": 1,
+                "atMs": 100024,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 2,
+                "atMs": 135643,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 3,
+                "atMs": 179843,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "layouts-readable",
+            "question": "Can the deck's slide masters and their layouts be read?",
+            "ms": 249,
+            "answer": "yes",
+            "detail": "1 master(s), 1 layout(s)",
+            "samples": [
+              {
+                "answer": "yes",
+                "pass": 1,
+                "atMs": 100273,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 2,
+                "atMs": 136046,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "yes",
+                "pass": 3,
+                "atMs": 180283,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "untrack-available",
+            "question": "Do proxies expose untrack()?",
+            "ms": 9,
+            "answer": "no",
+            "samples": [
+              {
+                "answer": "no",
+                "pass": 1,
+                "atMs": 100282,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "no",
+                "pass": 2,
+                "atMs": 136178,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "no",
+                "pass": 3,
+                "atMs": 180343,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "untrack-available-on-shape",
+            "question": "Does a SHAPE proxy — the kind a draw makes hundreds of — expose untrack()?",
+            "ms": 500,
+            "answer": "no",
+            "detail": "asked because untrack-available answered \"no\" — a null-object proxy is the one kind most likely to lack the method, so the no may be about the probe",
+            "samples": [
+              {
+                "answer": "no",
+                "pass": 1,
+                "atMs": 100782,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "no",
+                "pass": 2,
+                "atMs": 136659,
+                "regime": "collection-refused",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "no",
+                "pass": 3,
+                "atMs": 181486,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "shapes-by-index-vs-items",
+            "question": "Can the shapes be enumerated by getCount + getItemAt where `items` will not answer?",
+            "ms": 538,
+            "answer": "index-unreadable",
+            "detail": "count=0 listed=0 byIndex=0",
+            "samples": [
+              {
+                "answer": "index-unreadable",
+                "pass": 1,
+                "atMs": 101320,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "index-unreadable",
+                "pass": 2,
+                "atMs": 137318,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "index-unreadable",
+                "pass": 3,
+                "atMs": 182134,
+                "regime": "slide-trouble",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "creationid-on-fresh-shape",
+            "question": "Does a shape this run just added report a creationId, or null?",
+            "ms": 1725,
+            "answer": "absent",
+            "detail": "the property is not on the shape at all",
+            "samples": [
+              {
+                "answer": "absent",
+                "pass": 1,
+                "atMs": 103045,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "absent",
+                "pass": 2,
+                "atMs": 139136,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "absent",
+                "pass": 3,
+                "atMs": 184190,
+                "regime": "slide-trouble",
+                "scratch": "fresh-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "creationid-survives-a-sync",
+            "question": "Does a shape's creationId still read the same a sync later, when its id may not?",
+            "ms": 1829,
+            "answer": "no-creation-id",
+            "detail": "before=absent",
+            "samples": [
+              {
+                "answer": "no-creation-id",
+                "pass": 1,
+                "atMs": 104874,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "no-creation-id",
+                "pass": 2,
+                "atMs": 141317,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "no-creation-id",
+                "pass": 3,
+                "atMs": 185744,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "creationid-survives-grouping",
+            "question": "Does a shape keep its creationId after it is absorbed into a group?",
+            "ms": 2289,
+            "answer": "no-creation-id",
+            "detail": "before=[\"absent\",\"absent\"]",
+            "samples": [
+              {
+                "answer": "no-creation-id",
+                "pass": 1,
+                "atMs": 107163,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "no-creation-id",
+                "pass": 2,
+                "atMs": 142814,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "no-creation-id",
+                "pass": 3,
+                "atMs": 188221,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "rotation-keeps-the-unrotated-box",
+            "question": "After setting `rotation`, do left/top/width/height still describe the box BEFORE the turn?",
+            "ms": 2205,
+            "answer": "unrotated-box",
+            "detail": "set 80x10 at 45deg; host reports 80.0x10.0, rotation 45 (unrotated 80, rotated extent 63.6)",
+            "samples": [
+              {
+                "answer": "unreadable",
+                "pass": 1,
+                "atMs": 108172,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "unreadable",
+                "pass": 2,
+                "atMs": 144839,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              },
+              {
+                "answer": "unrotated-box",
+                "pass": 3,
+                "atMs": 190426,
+                "regime": "healthy",
+                "scratch": "fresh-slide"
+              }
+            ],
+            "stable": false
+          },
+          {
+            "id": "named-preset-resolves",
+            "question": "Does a GeometricShapeType named from our own table actually draw?",
+            "ms": 2236,
+            "answer": "draws",
+            "detail": "every name in the table is in the enum (diamond, hexagon, plus, triangle); hexagon drew 24x24",
+            "samples": [
+              {
+                "answer": "draws",
+                "pass": 1,
+                "atMs": 110408,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "draws",
+                "pass": 2,
+                "atMs": 145828,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              },
+              {
+                "answer": "draws",
+                "pass": 3,
+                "atMs": 191692,
+                "regime": "healthy",
+                "scratch": "reused-slide"
+              }
+            ],
+            "stable": true
+          },
+          {
+            "id": "scratch-slides-returned",
+            "question": "Does the host give back the scratch slides this probe added?",
+            "answer": "some",
+            "ms": 9227,
+            "detail": "39 of 60 scratch slide(s) deleted; 21 unaccounted for, and the deck ends at 1 slide(s) — they cannot all be in it, so this is a counting question and not a leak; the deck recognised 21 of 60 of these ids before the sweep; 18 removed by a positional sweep after delete-by-id took none"
+          }
+        ]
+      }
+    },
+    {
+      "key": "selftest:insert on top of an earlier run",
+      "value": {
+        "name": "insert on top of an earlier run",
+        "ok": true,
+        "detail": "deck grew by 4 (want 4); 4 of 4 charts re-editable",
+        "ms": 3307,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    },
+    {
+      "key": "selftest:two slides claiming one slot",
+      "value": {
+        "name": "two slides claiming one slot",
+        "ok": true,
+        "detail": "4 slides inserted, 2 kept, 2 of 2 still re-editable; 2 queued as duplicates",
+        "ms": 6165,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    },
+    {
+      "key": "selftest:edit a chart on the visible slide",
+      "value": {
+        "name": "edit a chart on the visible slide",
+        "ok": true,
+        "detail": "redrawn on the visible slide and the config round-tripped",
+        "ms": 4793,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    },
+    {
+      "key": "selftest:insert onto a slide that already has content",
+      "value": {
+        "name": "insert onto a slide that already has content",
+        "ok": true,
+        "detail": "2 charts drawn onto the visible slide, all re-editable, the one already there untouched",
+        "ms": 64446,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    },
+    {
+      "key": "selftest:same scale across the deck",
+      "value": {
+        "name": "same scale across the deck",
+        "ok": true,
+        "detail": "8 of 8 charts carry the shared scale (max=105, bars redraw at 76% of their height); 8 still re-editable",
+        "ms": 156519,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    },
+    {
+      "key": "selftest:one chart alone on a warm deck",
+      "value": {
+        "name": "one chart alone on a warm deck",
+        "ok": true,
+        "detail": "updated alone in its own run on a warm deck, config intact — see `chart 1/1` for the cost",
+        "ms": 20466,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    },
+    {
+      "key": "selftest:an update follows a moved chart",
+      "value": {
+        "name": "an update follows a moved chart",
+        "ok": true,
+        "detail": "moved 60x40pt and the update redrew it there, so the origin round trip held",
+        "ms": 6744,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    },
+    {
+      "key": "selftest:explode a degraded picture",
+      "value": {
+        "name": "explode a degraded picture",
+        "ok": true,
+        "detail": "collapsed to a picture and exploded back, config intact",
+        "ms": 56664,
+        "friction": {
+          "errors": 2,
+          "idRefusals": 1,
+          "generalExceptions": 1,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 1
+        }
+      }
+    },
+    {
+      "key": "selftest:which selection call wedges the host",
+      "value": {
+        "name": "which selection call wedges the host",
+        "ok": true,
+        "detail": "the host answered all 7 rung(s) — nothing wedged",
+        "ms": 8496,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    },
+    {
+      "key": "selftest:a selected shape survives an insert",
+      "value": {
+        "name": "a selected shape survives an insert",
+        "ok": true,
+        "detail": "all 3 shape(s) already on the slide survived an insert made while one was selected",
+        "ms": 50902,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    },
+    {
+      "key": "selftest:edit the chart the user selected",
+      "value": {
+        "name": "edit the chart the user selected",
+        "ok": true,
+        "detail": "selected, read back, edited through the selection's own target, still re-editable",
+        "ms": 14054,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    },
+    {
+      "key": "selftest:stop a run part-way",
+      "value": {
+        "name": "stop a run part-way",
+        "ok": true,
+        "detail": "stopped before the first batch — no shape was ever queued, nothing added, nothing left claiming to be a chart",
+        "ms": 1905,
+        "friction": {
+          "errors": 1,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    },
+    {
+      "key": "selftest:a big chart on a slide of its own",
+      "value": {
+        "name": "a big chart on a slide of its own",
+        "ok": true,
+        "detail": "11 batches onto a slide added moments before, undefined shapes, slide swept; control also drew",
+        "ms": 111635,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 1
+        }
+      }
+    },
+    {
+      "key": "selftest:stop a run mid-draw",
+      "value": {
+        "name": "stop a run mid-draw",
+        "ok": true,
+        "detail": "stopped inside the draw after 1 batch(es) with ? shape(s) down; the slide went with them, nothing left claiming to be a chart",
+        "ms": 7045,
+        "friction": {
+          "errors": 1,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    },
+    {
+      "key": "selftest:the chart is actually visible",
+      "value": {
+        "name": "the chart is actually visible",
+        "ok": true,
+        "detail": "drawing the chart changed PowerPoint's own render of the slide (8900 → 10444 bytes, +1544, 17.3%, first differ at 1% in, 10093 byte(s) differing)",
+        "ms": 29893,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 1
+        }
+      }
+    },
+    {
+      "key": "selftest:does a rasterise poison the next draw",
+      "value": {
+        "name": "does a rasterise poison the next draw",
+        "ok": true,
+        "detail": "all four draws landed — a draw straight after a rasterise is no worse than one after a cheap read",
+        "ms": 64474,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 4
+        }
+      }
+    },
+    {
+      "key": "selftest:a chart of rotated shapes",
+      "value": {
+        "name": "a chart of rotated shapes",
+        "ok": true,
+        "detail": "drew a 3-segment line chart without error; this host will not report a group's children, so where the segments landed is unmeasurable here — see the rotation-keeps-the-unrotated-box probe",
+        "ms": 40250,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    },
+    {
+      "key": "selftest:a chart handed over as a file",
+      "value": {
+        "name": "a chart handed over as a file",
+        "ok": true,
+        "detail": "one slide from a generated file, its chart re-editable, slide returned (deck 7 to 8 to 7)",
+        "ms": 4441,
+        "friction": {
+          "errors": 0,
+          "idRefusals": 0,
+          "generalExceptions": 0,
+          "emptyReReads": 0,
+          "shortReReads": 0,
+          "unmatchedReReads": 0,
+          "reReadsRepaired": 0
+        }
+      }
+    }
+  ],
+  "frontedWhenRescued": "Presentation64.pptx",
+  "deckAskedNextRound": "Presentation64"
+}
