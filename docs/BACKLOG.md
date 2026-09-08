@@ -2838,6 +2838,19 @@ Same rule as the check above it — a skipped scenario does not enter the
 denominator, because it measured nothing. A reader who sees those two rates
 closes the question in a second.
 
+> **THIS SHIPPED INSIDE A COMMIT THAT DOES NOT MENTION IT.** `c9c7c00` is
+> titled for two driver fixes — the pane-closed reclassification and the salvage
+> clearing its landing spot — and `git add -A` also swept in this divergence
+> work, the deck-accumulation correction above, rounds 433 and 434, and the
+> duplicate crash record that the salvage bug produced. The message describes
+> about half of what the commit contains, which in a repo whose commit messages
+> are the record is a real defect and not a tidy-up note. Said here because the
+> commit is pushed and cannot be amended.
+>
+> The duplicate `crashes/2026-09-08T13-42-37-crashed-run.json` is left in place.
+> `loadCrashRecords` already drops it as an exact duplicate, and removing a file
+> from an append-only archive is the owner's call, not a cleanup.
+
 ### The sweep deleted nothing seven times, and that is what killed the tab — 2026-09-08
 
 **NOT FIXED — the fix was built, measured against a real host, and removed.**
