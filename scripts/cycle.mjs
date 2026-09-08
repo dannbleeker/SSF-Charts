@@ -149,6 +149,37 @@ function reasonFinished(receipt) {
 }
 
 export function nextStep({ exitCode, receipt, gateStatus }) {
+  /**
+   * A GATE VERDICT ON AN ARCHIVE THIS LEG DID NOT ADD TO IS OLD NEWS, and
+   * reporting it as the reason the night stopped is the same defect twice over.
+   *
+   * Cycle three on 2026-09-08 archived NOTHING: the round refused as
+   * `deep-session` — round 5 of a session, where scenarios start being skipped
+   * — with a stale pane alongside. The gate then ran on an unchanged archive,
+   * found round 435's standing regression, and the cycle announced "a scenario
+   * that WAS passing has stopped — it wants reading now". True of round 435,
+   * read yesterday, and nothing to do with why this cycle stopped. What the
+   * reader needed was "rest 45 minutes".
+   *
+   * This is the third time this file has misnamed its own stop — `d12dadb` for
+   * the two fatal checks sharing an exit code, and the host-death message
+   * before that. The pattern is always the same: a signal that is TRUE gets
+   * reported as the CAUSE.
+   *
+   * The gate is not suppressed. Its verdict rides along in the same sentence,
+   * because a standing regression still matters — it is simply not why nothing
+   * ran tonight.
+   */
+  if (receipt && !receipt.roundFile && !reasonFinished(receipt) && exitCode !== 0) {
+    const codes = receipt.codes?.length ? ` (${receipt.codes.join(", ")})` : "";
+    const stale = gateStatus !== 0 ? " — and the gate is red on the PREVIOUS round, which this leg did not change" : "";
+    return {
+      go: false,
+      why: receipt.recoverable
+        ? `nothing was archived: the driver retried and still could not clear ${receipt.reason}${codes}${stale}`
+        : `nothing was archived: ${receipt.reason}${codes} is not something recovery addresses — it needs a person${stale}`,
+    };
+  }
   // TWO WAYS FOR THE GATE TO EXIT NON-ZERO, and they are opposite findings. 1 is
   // the thing it exists to say: a scenario that was passing has stopped. 2 is
   // the gate reporting that it could not judge at all — an unreadable archive,

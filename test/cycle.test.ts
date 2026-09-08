@@ -57,6 +57,38 @@ describe("a night's cycle", () => {
     expect(step.why).toMatch(/WAS passing/);
   });
 
+  it("blames the refusal, not a gate verdict about a round this leg never ran", () => {
+    /**
+     * Cycle three on 2026-09-08 archived NOTHING — the round refused as
+     * `deep-session`, round 5 of a session, where scenarios start being
+     * skipped. The gate then ran on an unchanged archive, found round 435's
+     * standing regression, and the cycle announced "a scenario that WAS passing
+     * has stopped — it wants reading now". True of round 435 and nothing to do
+     * with why this cycle stopped; what the reader needed was "rest 45 minutes".
+     *
+     * Third time this file has misnamed its own stop. The pattern never varies:
+     * a signal that is TRUE gets reported as the CAUSE.
+     */
+    const refused = {
+      reason: "not-ready",
+      codes: ["pane-stale", "deep-session"],
+      roundFile: null,
+      recoverable: false,
+    };
+    const step = nextStep({ exitCode: 1, receipt: refused, gateStatus: 1 });
+    expect(step.go).toBe(false);
+    expect(step.why, "the stop did not name the reason nothing ran").toMatch(/deep-session/);
+    expect(step.why, "it did not say that nothing was archived").toMatch(/nothing was archived/);
+    // THE GATE IS NOT SUPPRESSED. A standing regression still matters — it is
+    // just not why tonight was lost, and a message that dropped it would trade
+    // one silence for another.
+    expect(step.why, "the standing regression was swallowed").toMatch(/PREVIOUS round/);
+
+    // AND WHEN THE ARCHIVE DID GROW, the gate's verdict IS the news.
+    const archived = nextStep({ exitCode: 0, receipt: receipt(), gateStatus: 1 });
+    expect(archived.why, "a fresh regression stopped naming itself").toMatch(/WAS passing/);
+  });
+
   it("names the host-death check by itself, instead of blaming a verdict that did not fall", () => {
     // Round 428: 19 of 19 scenarios green, the gate red because `what a chart
     // kind costs` had killed PowerPoint for the first time in 35 runs. Both
