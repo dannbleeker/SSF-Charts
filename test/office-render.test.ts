@@ -1532,16 +1532,67 @@ describe("looking away while a chart redraws", () => {
    * that could not tell "nothing to do" from "could not touch any of it".
    */
   it("sweeps the strays it can reach even when one of them will not answer", async () => {
+    /**
+     * THE QUIET ONE IS NOW SWEPT TOO, and the assertion that it survives has
+     * been deliberately inverted — 2026-09-08.
+     *
+     * It used to end `expect(a.deleted).toBe(false)` under "deleted a shape the
+     * host would not confirm", which encoded a real fear: deleting what we
+     * cannot see risks taking something that is not ours. The collection read
+     * removes that risk rather than accepting it. A shape that appears in its
+     * own slide's collection UNDER AN ID WE ASKED FOR is positively confirmed —
+     * a stronger warrant than a null check, which only ever reports what a
+     * by-id lookup thought. The same sentence is already in `powerpoint.ts`
+     * beside the update path's re-read.
+     *
+     * What it cost to leave alone is in the archive. `what a chart kind costs`
+     * swept seven times in the run that killed PowerPoint on 2026-09-07 and
+     * every one read `unresolved=1 swept=0`; all eight specimens stayed on the
+     * slide and occupancy climbed 0, 7, 15, 24, 34, 44, 53, 61.
+     *
+     * The safety property it was protecting is pinned by the case below, which
+     * is the one that actually tests it: a shape nobody asked about survives.
+     */
     const slide = makeSlide("s1");
     installHost([slide]);
     const a = slide.shapes.addGeometricShape("rectangle", { left: 0, top: 0, width: 5, height: 5 });
     const b = slide.shapes.addGeometricShape("rectangle", { left: 6, top: 0, width: 5, height: 5 });
     unansweredNullChecks.add(a.id); // this one the host will not describe
+    setTracing(true);
     try {
       const swept = await deleteShapesById("s1", [a.id, b.id]);
-      expect(swept, "one quiet stray took the whole sweep down").toBe(1);
+      expect(swept, "the sweep did not report both strays").toBe(2);
       expect(b.deleted, "the reachable stray was left on the slide").toBe(true);
-      expect(a.deleted, "deleted a shape the host would not confirm").toBe(false);
+      expect(a.deleted, "the stray the host would not name survived a collection read that found it").toBe(true);
+      // AND BY THE ROUTE CLAIMED. Both deleted with no fallback line would mean
+      // the fault stopped reproducing, not that the fallback worked.
+      const line = traceLog().entries.find((e) => e.message === "swept by collection read what a by-id lookup refused");
+      expect(line, "nothing recorded a collection-read sweep, so the by-id pass must have taken both").toBeTruthy();
+      expect((line as unknown as { data?: { asked?: number; recovered?: number } }).data).toMatchObject({
+        asked: 1,
+        recovered: 1,
+      });
+    } finally {
+      setTracing(false);
+      unansweredNullChecks.clear();
+    }
+  });
+
+  it("leaves a shape nobody asked about alone, even while sweeping by collection", async () => {
+    // THE SAFETY PROPERTY THE INVERTED ASSERTION ABOVE USED TO CARRY. The
+    // collection read lists the whole slide, so the thing that keeps this sweep
+    // honest is that it deletes only ids the caller named. A version that swept
+    // what it found would take the user's own shapes off the slide.
+    const slide = makeSlide("s1");
+    installHost([slide]);
+    const ours = slide.shapes.addGeometricShape("rectangle", { left: 0, top: 0, width: 5, height: 5 });
+    const theirs = slide.shapes.addGeometricShape("rectangle", { left: 6, top: 0, width: 5, height: 5 });
+    theirs.name = "not ours";
+    unansweredNullChecks.add(ours.id);
+    try {
+      expect(await deleteShapesById("s1", [ours.id])).toBe(1);
+      expect(ours.deleted, "the stray we named was not swept").toBe(true);
+      expect(theirs.deleted, "the collection sweep took a shape the caller never named").toBe(false);
     } finally {
       unansweredNullChecks.clear();
     }

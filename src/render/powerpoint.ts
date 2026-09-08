@@ -2664,6 +2664,70 @@ export async function deleteShapesById(slideId: string, ids: string[]): Promise<
         gone++;
       }
       await context.sync();
+      /**
+       * ASK THE SLIDE, when it would not answer for the ids.
+       *
+       * The by-id pass above is the one lookup this host reliably refuses, and
+       * a refusal here is not "the stray is gone" — the comment on `isLive`
+       * says so and then the sweep gave up anyway. What that costs is on the
+       * record. `what a chart kind costs` deletes each specimen before drawing
+       * the next, and its docstring promises "the slide this scenario leaves is
+       * the slide it found". In the run that killed the tab on 2026-09-07 the
+       * sweep fired seven times and every one read `unresolved=1 swept=0`:
+       * nothing was deleted, all eight specimens stayed, and the renderer's
+       * occupancy for that slide climbed 0, 7, 15, 24, 34, 44, 53, 61 before
+       * PowerPoint died on the eighth.
+       *
+       * The remedy is the asymmetry the rest of this file is built on — a by-id
+       * lookup is refused, a collection read is honoured — and it is not a new
+       * trick here: `reReadRefusedShapes` does exactly this on the update path
+       * and recovers what it asks for on this host, round after round.
+       *
+       * Only when something went unresolved, so a healthy sweep pays nothing.
+       * Its own try/catch because the outer one returns 0, which would throw
+       * away the shapes the by-id pass DID take.
+       */
+      if (unresolved) {
+        const asked = unresolved;
+        try {
+          const wanted = new Set(ids);
+          const again = slide.shapes;
+          again.load("items/id");
+          await context.sync();
+          // Deleted shapes are not in the collection any more, so this reads
+          // only what is still there — the by-id pass's successes cannot be
+          // counted twice.
+          const items = loadedValue(() => again.items) ?? [];
+          let recovered = 0;
+          for (const sh of items) {
+            const id = loadedValue(() => sh.id);
+            if (id && wanted.has(id)) {
+              sh.delete();
+              recovered++;
+            }
+          }
+          if (recovered) {
+            await context.sync();
+            gone += recovered;
+            unresolved = Math.max(0, unresolved - recovered);
+          }
+          trace("insert", "swept by collection read what a by-id lookup refused", {
+            slideId,
+            asked,
+            recovered,
+            listed: items.length,
+          });
+        } catch (err) {
+          // The collection read is the last thing this can try. Recorded rather
+          // than swallowed, because "the fallback ran and failed" and "there is
+          // no fallback" are the same silence otherwise.
+          trace("insert", "the collection read would not answer for the strays either", {
+            slideId,
+            asked,
+            error: errorText(err),
+          });
+        }
+      }
       // The strays were drawn by this run by construction, so the slide's count
       // owes back every one the sweep committed — and this is the sweep that
       // runs before `slideHoldsOnlyChart`, which now reads that count.
