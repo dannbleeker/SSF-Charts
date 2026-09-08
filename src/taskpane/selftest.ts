@@ -3136,10 +3136,34 @@ export function rasteriseArmVerdict(raster: DrawArm[], cheap: DrawArm[]): { ok: 
  *
  * EACH SPECIMEN IS DELETED BEFORE THE NEXT, so the slide this scenario leaves
  * is the slide it found and eight specimens do not pile up where later
- * scenarios read. Occupancy still climbs in the renderer's own counter, which
- * does not decrement on a plain delete — deliberate, not overlooked: `last
- * batch settled` records `onSlideAfter` and `drew`, so the true prior is exact
- * for every reading and the analysis conditions on it rather than assuming it.
+ * scenarios read.
+ *
+ * **THAT PROMISE IS NOT KEPT ON THIS HOST, measured 2026-09-07/08.**
+ * `deleteShapesById` resolves each stray by id through a slide handle a sync
+ * old, which this host refuses for a shape drawn seconds earlier. **28 of this
+ * scenario's 33 archived rounds swept all eight specimens and took none of
+ * them** (round 407 took all eight, four rounds took some — it is a coin). The
+ * owner's 16:9 deck stepped from 14 to 22 top-level shapes exactly when that
+ * began, and round 430's inventory shows slide index 6 holding nine `PowerChart`s
+ * where one belongs. In the run that killed the tab, this slide's occupancy
+ * climbed 0, 7, 15, 24, 34, 44, 53, 61 and PowerPoint died on the eighth
+ * specimen.
+ *
+ * All four routes out are measured and closed — by-id, collection read matched
+ * by id, binding retrieval, and name/positional matching. See "The sweep
+ * deleted nothing seven times" in `docs/BACKLOG.md` for the numbers. What is
+ * left is a choice about this scenario, not a fix: draw each specimen on a
+ * scratch slide that can be deleted whole, which changes the occupancy it
+ * measures at, or keep the measurement and stop claiming the deck is left as
+ * found. Both change what the instrument reports, so both are the owner's.
+ *
+ * The sentence below still holds, and the failed delete does not disturb it:
+ * occupancy climbs in the renderer's own counter, which does not decrement on a
+ * plain delete — deliberate, not overlooked: `last batch settled` records
+ * `onSlideAfter` and `drew`, so the true prior is exact for every reading and
+ * the analysis conditions on it rather than assuming it. When the sweep is
+ * refused the counter is not merely conservative, it is CORRECT: the shapes are
+ * still there.
  *
  * THE VERDICT IS NOT THE MEASUREMENT. This returns pass/fail on whether the
  * draws LANDED; the costs live in the trace and are read from the archive. A

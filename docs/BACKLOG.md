@@ -2923,7 +2923,7 @@ deck.** The 16:9 deck as each round found it, median top-level shapes:
     rounds 301-352   14
 
 The step is 8, which is one per specimen, and it arrives exactly where the
-failed sweeps do. Round 430's inventory names them: slide index 6 holds **nine**
+failed sweeps do. Round 430's inventory names them: slide index 6 (the seventh) holds **nine**
 `PowerChart` shapes — one probe chart and eight specimens that were reported
 swept and were not. Every round since 423 reads 22.
 
