@@ -2845,6 +2845,14 @@ export function scenarioRegressions(rounds, window = 3) {
     return out;
   };
   const all = rounds.map(scenariosOf);
+  // The DETAIL text alongside, read only for the report — see `sameDetailIn`
+  // below, which spells out why keying anything else on prose is forbidden.
+  const detailsOf = (r) => {
+    const out = new Map();
+    for (const sc of r?.selftest ?? []) if (sc?.name) out.set(sc.name, String(sc.detail ?? ""));
+    return out;
+  };
+  const details = rounds.map(detailsOf);
   const newest = all[all.length - 1];
   // The `window` rounds BEFORE the newest — the newest is what is being judged.
   const before = all.slice(-1 - window, -1);
@@ -2869,7 +2877,33 @@ export function scenarioRegressions(rounds, window = 3) {
       ran++;
       if (!v) failed++;
     }
-    out.push({ name, passedIn: window, ran, failed });
+    /**
+     * HAS THIS EXACT FAILURE HAPPENED BEFORE, and on which builds?
+     *
+     * "failed 8 times in 332 rounds" says the scenario is unreliable. It does
+     * not say whether TONIGHT's failure is one of the familiar ones or a new
+     * shape wearing an old name, and those want opposite responses.
+     *
+     * Round 435 is why this is here. `two slides claiming one slot` stopped
+     * passing with "4 slides inserted, 3 kept, 3 of 2 still re-editable; 2
+     * queued as duplicates" — which is character-for-character what rounds 060,
+     * 253 and 273 said. Round 273 is the round the bundle guard below was
+     * written for. Everything needed to recognise it was in the archive and
+     * nothing put it in front of the reader.
+     *
+     * A REPORT FIELD, NOT A GATE INPUT, and the difference is load-bearing.
+     * `scenariosOf` above reads the `skipped` FLAG and never the prose,
+     * precisely so that rewording a message cannot make the gate go quiet. This
+     * keeps that rule: the verdict is decided before this runs, and a reworded
+     * detail only makes this say "not seen before", which never suppresses
+     * anything.
+     */
+    const detail = details[details.length - 1].get(name) ?? "";
+    const sameDetailIn = [];
+    for (let i = 0; i < all.length - 1; i++)
+      if (all[i].get(name) === false && detail && details[i].get(name) === detail)
+        sameDetailIn.push(String(rounds[i]?.build ?? "").split(" ")[0]);
+    out.push({ name, passedIn: window, ran, failed, sameDetailIn });
   }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }

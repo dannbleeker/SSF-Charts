@@ -1088,10 +1088,22 @@ if (isMain(import.meta.url, process.argv[1])) {
     sameProfileRounds[sameProfileRounds.length - 2]?.build,
     rounds[rounds.length - 1]?.build,
   );
-  for (const g of gone)
+  for (const g of gone) {
     console.error(
       `    ${g.name} — ${g.failed === 1 ? "FIRST failure" : `failed ${g.failed} times`} in ${g.ran} round(s) at this profile`,
     );
+    // IS TONIGHT'S FAILURE ONE OF THE FAMILIAR ONES, or a new shape under an
+    // old name? Those want opposite responses, and the count above cannot tell
+    // them apart. Round 435 said character-for-character what rounds 060, 253
+    // and 273 had said — and 273 is the round the bundle guard below exists
+    // for. Everything needed to recognise it was already in the archive.
+    const seen = g.sameDetailIn ?? [];
+    console.error(
+      seen.length
+        ? `      this exact failure text has appeared ${seen.length} time(s) before — ${seen.slice(0, 6).join(", ")}`
+        : "      this failure text is NEW — no earlier round at this profile failed with these words",
+    );
+  }
   if (bundleMoved === false)
     console.error(
       "  THE SHIPPED BUNDLE IS UNCHANGED since the previous round at this profile — nothing under\n" +

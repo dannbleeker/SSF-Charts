@@ -785,6 +785,53 @@ describe("triage — logs that are not inserts", () => {
     });
   });
 
+  it("says whether tonight's failure TEXT has been seen before, or is new", () => {
+    /**
+     * "failed 8 times in 332 rounds" says the scenario is unreliable. It cannot
+     * say whether TONIGHT's failure is a familiar one or a new shape wearing an
+     * old name, and those want opposite responses.
+     *
+     * Round 435 is why this exists: `two slides claiming one slot` stopped
+     * passing with "4 slides inserted, 3 kept, 3 of 2 still re-editable; 2
+     * queued as duplicates", which is character-for-character what rounds 060,
+     * 253 and 273 had said — and 273 is the round the gate's bundle guard was
+     * written for. It was all in the archive and none of it was in front of the
+     * reader.
+     *
+     * A REPORT FIELD, NEVER A GATE INPUT. `scenariosOf` reads the `skipped`
+     * flag and never the prose, so that rewording a message cannot make the
+     * gate go quiet. This keeps that rule intact: the verdict is already
+     * decided when this is computed, and a reworded detail can only make it say
+     * "NEW", which suppresses nothing.
+     */
+    const r = (ok: boolean, detail: string) => ({
+      build: `b${detail.length}${ok ? "p" : "f"} · 2026-08-16`,
+      selftest: [{ name: "slot", ok, detail }],
+    });
+    const OLD = "4 slides inserted, 3 kept, 3 of 2 still re-editable";
+    const withHistory = scenarioRegressions([
+      { build: "aaaaaaa · 2026-08-16", selftest: [{ name: "slot", ok: false, detail: OLD }] },
+      r(true, "fine"),
+      r(true, "fine"),
+      r(true, "fine"),
+      { build: "zzzzzzz · 2026-08-16", selftest: [{ name: "slot", ok: false, detail: OLD }] },
+    ]);
+    expect(withHistory).toHaveLength(1);
+    expect(withHistory[0].sameDetailIn, "a repeat of a known failure was not recognised").toEqual(["aaaaaaa"]);
+
+    // A DIFFERENT failure text under the same name must read as new — that is
+    // the case worth chasing, and collapsing the two is what the count already
+    // does.
+    const novel = scenarioRegressions([
+      { build: "aaaaaaa · 2026-08-16", selftest: [{ name: "slot", ok: false, detail: OLD }] },
+      r(true, "fine"),
+      r(true, "fine"),
+      r(true, "fine"),
+      { build: "zzzzzzz · 2026-08-16", selftest: [{ name: "slot", ok: false, detail: "something else entirely" }] },
+    ]);
+    expect(novel[0].sameDetailIn, "a failure nobody has seen was reported as familiar").toEqual([]);
+  });
+
   it("does not call a scenario that DID NOT MEASURE a regression", () => {
     // THE GATE'S FIRST LIVE OUTING GOT THIS WRONG. Round 073 flagged `explode a
     // degraded picture` as having stopped passing, for a result whose own words
