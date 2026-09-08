@@ -2799,6 +2799,162 @@ What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
 
+### The sweep deleted nothing seven times, and that is what killed the tab — 2026-09-08
+
+**NOT FIXED — the fix was built, measured against a real host, and removed.**
+Three of my own claims about it are retracted further down, because two of them
+were in a report to the owner.
+
+Round 428 tripped the host-death gate: `what a chart kind costs`, first death in
+35 runs, ceiling 0. What actually happened is in the crash record, and it is not
+about time or density thresholds:
+
+    554.8s  wreckage the host would not resolve  unresolved=1 swept=0
+    566.8s  ...  unresolved=1 swept=0          (seven times, one per specimen)
+    onSlide: 0, 7, 15, 24, 34, 44, 53, 61
+
+`deleteShapesById` resolves each stray by id through a slide handle a sync old —
+the one lookup this host reliably refuses — and gave up when refused, though its
+own comment already said a refusal is not "the stray is gone". So
+`kindCostSpread` deleted none of its eight specimens, against a docstring
+promising "the slide this scenario leaves is the slide it found", occupancy
+climbed to 61, and PowerPoint died on the eighth.
+
+**THE REMEDY THAT LOOKED OBVIOUS DOES NOT WORK, AND ROUND 431 SAYS SO.** A
+collection-read fallback was added on the asymmetry the rest of the file is
+built on — by-id refused, collection honoured — and shipped to the host. It
+fired seven times, threw never, recovered **zero**:
+
+    asked  1  listed  8   recovered 0
+    asked  1  listed 12   recovered 0
+    asked 10  listed 14   recovered 0
+    asked  1  listed 31   recovered 0
+
+The shapes are there and the host lists them. It lists them under ids that are
+not the ones it returned at creation, so nothing we hold matches. **That is the
+defect this file already names two sections down** — "THE RE-READ NEVER MATCHES
+OUR IDS", `matched 0` against `listed 9, 10, 16, 17`, with its own note that a
+1.5-second settle does not change it. I did not read that section before
+building against it.
+
+`reReadRefusedShapes` works because the charts it re-reads were drawn in an
+EARLIER round and have settled. A shape drawn seconds ago is a different
+population, and my commit message generalised across it. The fallback is
+reverted: it cost one extra sync per refused sweep — eight a round, on a host
+where #6329 says every sync forces a save — and repaired nothing. Matching by
+name or by "the last N on the slide" is how the grouping fallback works and is
+not legal for a DELETE.
+
+What is left is the route already parked here: `bindings.add` takes the live
+Shape proxy inside the batch that created it, with no id round trip and no
+collection read — the two things that fail above.
+
+**SIZED ACROSS THE ARCHIVE, and scoped honestly.** Over 406 rounds:
+
+    sweeps that RESOLVED by id   173 event(s), 286 shape(s) taken
+    sweeps the host REFUSED      239 event(s), 248 shape(s) left, 0 taken alongside
+    rounds carrying a refusal     33, from round 353 to round 430
+
+So the sweep fails 58% of the time by event, and a failure has never once taken
+even a partial bite: 248 shapes stayed on slides the code reported clean.
+
+It is a coin rather than a wall, which is worth knowing before reading the fix
+as "the host always refuses". Per round, `what a chart kind costs`: 28 of its 33
+rounds refused all eight sweeps, four took some, and **round 407 took all
+eight**. Other scenarios sweep by id successfully all the time — `a chart of
+rotated shapes` 82 times, `a big chart on a slide of its own` 64. What the
+fallback buys is not doing the impossible; it is not depending on the coin.
+
+**But
+238 of the 239 refusals belong to `what a chart kind costs`** and one to `stop a
+run mid-draw`, so this is not a broad user-facing win. It is by far the heaviest
+caller — eight sweeps a round, each on a shape drawn seconds earlier, which is
+the recency family Draft D describes: the host will not name what it has just
+created.
+
+The two user-facing callers (`app.ts:2694` and `:3655`) both sweep debris from a
+redraw that STALLED, which is equally fresh — so they are exposed to the same
+refusal, and the single non-kind-cost refusal in the archive did come from
+`stop a run mid-draw`. Rare in the archive, and the case where it matters most
+when it happens, because the user is looking at the debris.
+
+What a working fix would be worth, then: the scenario keeps its own promise,
+strays stop accumulating in the owner's deck, and the occupancy climb that
+preceded a tab death goes away. Not "the sweep is broken for users" — and, as
+of round 431, not yet worth anything, because there is no working fix.
+
+**AND THE STRAYS ARE STILL THERE — this needs the owner, because it is his
+deck.** The 16:9 deck as each round found it, median top-level shapes:
+
+    rounds   1-200   14        rounds 353-400   16
+    rounds 201-300   14        rounds 401-430   22
+    rounds 301-352   14
+
+The step is 8, which is one per specimen, and it arrives exactly where the
+failed sweeps do. Round 430's inventory names them: slide index 6 holds **nine**
+`PowerChart` shapes — one probe chart and eight specimens that were reported
+swept and were not. Every round since 423 reads 22.
+
+Today's fix stops more arriving. It does not remove the eight already sitting
+there, and nothing else will: the pane's "Clean up" deletes only slides a round
+added, which these are not. Removing them is a deck edit on the owner's own
+file.
+
+**RETRACTED — a kill band that was the length of the script.** I reported that
+75% of deaths land in 420-900s and read it as a hazard window. It has no control
+arm. Rounds that SURVIVED end there just as often:
+
+    survivors (rounds that filed)   322 of 406 = 79.3%   in 420-900s
+    crashes                          80 of 106 = 75.5%   in 420-900s
+
+The band is when the battery finishes. Nothing about dying.
+
+And the clock I read it off is not the one I thought. A crash record's step
+prefix is `ms since setTracing(true)` — when the PANE was wired, not when the
+round started — so it spans attempts. The driver's own header disagrees loudly
+on the one pair that can be compared: `crashes/2026-09-07T21-39-03.md` says
+**"90s into a round"** while the record beside it ends at **838.7s**.
+`src/core/trace.ts` already documents this family of mistake, for probe samples
+against trace lines: *"Two time series in one file, on two origins, with nothing
+anywhere saying so."* I made the same one a level up. **Use the driver's
+`Ns into a round` header, or `last − roundStart` within a record; never the raw
+step prefix.**
+
+The distribution is also right-censored and any percentile off it inherits that:
+`scripts/round.mjs:2248` stops polling 30 minutes after the Run click, so no
+death can be recorded past that however long the host would have survived.
+
+**RETRACTED — "death credit tracks when a scenario runs".** Scenario order is
+fixed across every round, so elapsed time and scenario identity are one variable
+and no partition of the names is evidence about either. The universal I stated —
+"every entry in `FATAL_SCENARIO_RATE` runs after 490s" — is false on three of
+eight: `two slides claiming one slot` runs SECOND at 184s, `insert onto a slide
+that already has content` fourth at 215s, `same scale across the deck` at 300s.
+
+**AND THE ATTRIBUTION RULE IS NOT UNSTABLE — do not re-open it.** An adversarial
+pass reported that death counts swing wildly with the rule (0 vs 41 for `does a
+rasterise poison the next draw`) and called pinning it the owner's most urgent
+decision. It is already pinned. `fatalScenarios` credits a death only to a
+scenario whose `scenario starting` was never closed; the alternative — crediting
+whatever ran last — is refuted in that function's own comment, which records
+that it once invented three deaths and put two innocent scenarios into the
+budget table. Under the shipped rule the archive reads:
+
+    99 records kept · 36 attributed · 63 credited to nothing
+    12  a big chart on a slide of its own      9  same scale across the deck
+     8  stop a run mid-draw                    2  explode a degraded picture
+     1  each: insert onto a slide that already has content, one chart alone on a
+        warm deck, two slides claiming one slot, edit the chart the user
+        selected, what a chart kind costs
+
+**What does survive, and is worth a person's attention:** `what a chart kind
+costs` has run 33 times, reported green 33 times, and **six of those rounds say
+"the host stopped answering" in their own detail.** `kindCostVerdict` returns ok
+for a stall deliberately and well — a kind is only dead if the host REFUSED it,
+not if the host went quiet — but the consequence is that the verdict channel
+cannot see this scenario stressing the host. The crash-rate check was the only
+thing that could, and it is the one that fired. The gate was right.
+
 ### office-js#5022 was WITHDRAWN, and a 1-second cost was resting on it — 2026-09-07
 
 A 100-agent web pass over this project's upstream citations. Most of it
