@@ -2845,9 +2845,41 @@ where #6329 says every sync forces a save — and repaired nothing. Matching by
 name or by "the last N on the slide" is how the grouping fallback works and is
 not legal for a DELETE.
 
-What is left is the route already parked here: `bindings.add` takes the live
-Shape proxy inside the batch that created it, with no id round trip and no
-collection read — the two things that fail above.
+**AND THE ROUTE THIS FILE PARKS AS "WORTH REOPENING" IS ALSO CLOSED.** The
+obvious next move is a binding: `bindings.add` takes the live Shape proxy inside
+the batch that created it, with no id round trip and no collection read — the
+two things that fail above — and the plumbing exists (`bindTagTarget`,
+`bindingShape`, and a `bindingId` already minted per chart). It does not work
+here, and the archive is unambiguous. Config tags written, by route, across all
+430 rounds:
+
+    group    2696
+    created   284
+    binding     0   — the key never appears
+
+`settleByBinding` was removed for the same reason after rescuing 0 in 180
+rounds, and it used the identical `bindings.getItem(id).getShape()` that a
+delete-by-binding would need. What `bindings.add` is kept for is a SIDE EFFECT
+at draw time — binding a shape in the drawing batch stabilises its identity, and
+`cfg5010` went 8 per round to 0 — not for naming anything afterwards.
+
+**So every route is now measured, and all four are closed:**
+
+    by-id through an aged slide handle   refused; 239 of 412 sweeps, ~93% of the
+                                         fresh-shape ones
+    collection read, matched by id       lists them under other ids; 0 of 7 in
+                                         round 431, and a 1.5s settle does not
+                                         change it
+    binding retrieval                    0 successes in 430 rounds
+    name or "the last N on the slide"    legal for GROUPING, never for a delete —
+                                         it would take shapes the caller never
+                                         named
+
+There is no fifth idea in this repo. What that leaves is not a fix but a choice
+about the scenario: `kindCostSpread` could stop needing the sweep — draw each
+specimen on a scratch slide it deletes whole, or accept the litter and say so in
+its docstring instead of promising the deck is left as found. Both change what
+the instrument does, so they are the owner's.
 
 **SIZED ACROSS THE ARCHIVE, and scoped honestly.** Over 406 rounds:
 
