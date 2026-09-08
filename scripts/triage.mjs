@@ -3198,6 +3198,8 @@ export function crashStepKey(line) {
  */
 export function fatalScenarios(crashes) {
   const deaths = {};
+  /** Scenario name → the crash-record filenames that credited it. */
+  const credits = {};
   let attributed = 0;
   let unattributed = 0;
   for (const crash of crashes ?? []) {
@@ -3238,10 +3240,19 @@ export function fatalScenarios(crashes) {
     }
     if (open) {
       deaths[open] = (deaths[open] ?? 0) + 1;
+      // WHICH RECORD credited it, not just how many did. `deathsAcknowledged`
+      // keys a receipt to one crash file, so the pooled count alone cannot say
+      // whether the death a person read is the death now breaching.
+      //
+      // `loadCrashRecords` stamps `_file` on every record it parses. A record
+      // built by hand in a test has none, so it pushes `null` and can never be
+      // matched by a ledger entry — which is the property that keeps a test
+      // from acknowledging anything.
+      (credits[open] ??= []).push(crash._file ?? null);
       attributed++;
     } else unattributed++;
   }
-  return { deaths, attributed, unattributed };
+  return { deaths, attributed, unattributed, credits };
 }
 
 /**
@@ -3350,6 +3361,76 @@ export function fatalRateBreaches(deaths, runs, ceilings) {
     }
   }
   return over.sort((a, b) => b.rate - a.rate);
+}
+
+/**
+ * Which breaches a person has signed for, and which still want one.
+ *
+ * THE PROBLEM THIS EXISTS FOR. A scenario absent from `FATAL_SCENARIO_RATE` has
+ * a ceiling of 0, and `fatalDeathsAllowed` returns 0 at p=0 for every
+ * denominator. So its first host death breaches, and — because the crash record
+ * stays in `crashes/` — it breaches forever. The gate meanwhile prints "falls on
+ * its own as runs pile up… NOTHING NEEDS EDITING to make it green", which is
+ * true at every seeded ceiling and false at zero. The nightly cycle stopped
+ * after one round every night from round 428 on, and the 4:3 validation leg,
+ * which is leg three, stopped running at all.
+ *
+ * WHAT THIS CLEARS AND WHAT IT REFUSES TO. It clears the gate's EXIT, never the
+ * count. The breach still prints, the death still counts for ever, no ceiling
+ * moves, and `FATAL_SCENARIO_RATE` is not touched. The distinction is the whole
+ * design: a receipt says a person read one crash record, where a raised ceiling
+ * says every future death of that shape is pre-authorised.
+ *
+ *   allowed > 0            ALWAYS STANDING. A rate that can fall has a green
+ *                          path already and must never be signed away — that is
+ *                          the case the table exists for, and letting a receipt
+ *                          touch it would turn this into the ceiling edit its
+ *                          own docstring forbids.
+ *   allowed === 0, one     CLEARABLE, by naming the exact crash record. One
+ *                          death, one receipt.
+ *   allowed === 0, several NEVER CLEARABLE. A second death is the archive's own
+ *                          signal that the first was not a one-off: across nine
+ *                          scenarios that have died, every repeat death landed
+ *                          within 25 rounds of its predecessor, median 1.
+ *
+ * STALE IS FATAL, and it is the guard that keeps a ledger from becoming a
+ * silencer. An entry whose record no longer credits that scenario, or whose
+ * scenario has since been given a real ceiling, is not a receipt any more — it
+ * is a line nobody re-read. The gate exits 2 on it, which is the code for "the
+ * gate could not judge this", not the code for a regression.
+ */
+export function deathsAcknowledged(breaches, credits, acknowledged, ceilings) {
+  const standing = [];
+  const cleared = [];
+  const stale = [];
+  const ledger = acknowledged ?? [];
+  for (const b of breaches ?? []) {
+    const records = credits?.[b.name] ?? [];
+    if (b.allowed > 0 || b.count !== 1) {
+      standing.push(b);
+      continue;
+    }
+    // The one record that credited it. `records` and `count` agree by
+    // construction — both are written by the same loop in `fatalScenarios` —
+    // so a disagreement means the two were computed over different pools and
+    // the receipt must not be honoured.
+    const record = records.length === 1 ? records[0] : null;
+    const signed = record && ledger.find((e) => e.record === record && e.scenario === b.name);
+    if (signed) cleared.push({ ...b, receipt: signed });
+    else standing.push(b);
+  }
+  for (const e of ledger) {
+    const records = credits?.[e.scenario] ?? [];
+    const ceiling = ceilings?.[e.scenario] ?? 0;
+    if (!records.includes(e.record))
+      stale.push({ ...e, why: `no crash record named ${e.record} credits \`${e.scenario}\` any more` });
+    else if (ceiling > 0)
+      stale.push({
+        ...e,
+        why: `\`${e.scenario}\` now carries a ceiling of ${ceiling}, so it has a green path without this`,
+      });
+  }
+  return { standing, cleared, stale };
 }
 
 /**

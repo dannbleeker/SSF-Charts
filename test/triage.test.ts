@@ -5371,6 +5371,146 @@ describe("the scenario that killed the host", () => {
     expect(out[0].allowed).toBe(0);
   });
 
+  describe("a receipt for a death, which is not a licence for the scenario", () => {
+    /**
+     * `deathsAcknowledged` is the only green path a ceiling-0 breach has, so
+     * what it REFUSES matters more than what it clears. Each refusal below is
+     * the thing that keeps it from becoming the ceiling edit `FATAL_SCENARIO_RATE`
+     * forbids in its own docstring.
+     */
+    const load = async () =>
+      // @ts-expect-error - plain .mjs tool, no types.
+      (await import("../scripts/triage.mjs")).deathsAcknowledged;
+
+    const breach = (over: Record<string, unknown> = {}) => ({
+      name: "what a chart kind costs",
+      count: 1,
+      runs: 39,
+      rate: 25.6,
+      allowed: 0,
+      cap: 0,
+      ...over,
+    });
+    const receipt = (over: Record<string, unknown> = {}) => ({
+      record: "2026-09-07T22-13-42-crashed-run.json",
+      scenario: "what a chart kind costs",
+      seen: "2026-09-08",
+      why: "docs/BACKLOG.md — the sweep deleted nothing seven times",
+      ...over,
+    });
+    const credits = { "what a chart kind costs": ["2026-09-07T22-13-42-crashed-run.json"] };
+
+    it("clears the exit for one death whose record a person named", async () => {
+      const out = (await load())([breach()], credits, [receipt()], {});
+      expect(out.cleared, "a signed first death still stopped the night").toHaveLength(1);
+      expect(out.standing).toHaveLength(0);
+      expect(out.stale).toHaveLength(0);
+    });
+
+    it("will not sign away a scenario that already has a rate to fall", async () => {
+      // THE ONE THAT MATTERS MOST. A seeded ceiling has a green path already —
+      // the rate drops as clean runs accumulate — so letting a receipt clear it
+      // would silence "this scenario got WORSE", which is the question the
+      // table exists to ask.
+      const out = (await load())(
+        [breach({ name: "same scale across the deck", allowed: 30, count: 1 })],
+        { "same scale across the deck": ["2026-09-07T22-13-42-crashed-run.json"] },
+        [receipt({ scenario: "same scale across the deck" })],
+        { "same scale across the deck": 30 },
+      );
+      expect(out.cleared, "a receipt cleared a breach that had a ceiling").toHaveLength(0);
+      expect(out.standing).toHaveLength(1);
+    });
+
+    it("will not sign a SECOND death, however the ledger is written", async () => {
+      // Two deaths is the archive's own signal that the first was not a
+      // one-off: every repeat death in this archive landed within 25 rounds of
+      // its predecessor, median 1. So the second has no receipt path at all.
+      const out = (await load())(
+        [breach({ count: 2 })],
+        { "what a chart kind costs": ["a.json", "b.json"] },
+        [receipt({ record: "a.json" }), receipt({ record: "b.json" })],
+        {},
+      );
+      expect(out.cleared, "a second death was acknowledged").toHaveLength(0);
+      expect(out.standing).toHaveLength(1);
+    });
+
+    it("refuses a second death even when only ONE record credits it", async () => {
+      /**
+       * THE CASE THE TEST ABOVE DOES NOT REACH, found by mutation: with two
+       * credited records, `records.length === 1` already refuses, so deleting
+       * the `count !== 1` guard entirely leaves that test green. The guard only
+       * does work when the pools disagree the other way — a count of two from a
+       * single credited record, which is what a re-attribution or a deduped
+       * record produces.
+       *
+       * It has to refuse. `count` is what the breach was computed from, and a
+       * receipt honoured against a smaller credit list would sign for a death
+       * the ledger never named.
+       */
+      const out = (await load())([breach({ count: 2 })], credits, [receipt()], {});
+      expect(out.cleared, "a two-death breach was cleared by one receipt").toHaveLength(0);
+      expect(out.standing).toHaveLength(1);
+    });
+
+    it("will not let a receipt for one scenario clear another", async () => {
+      const out = (await load())([breach()], credits, [receipt({ scenario: "stop a run mid-draw" })], {});
+      expect(out.cleared).toHaveLength(0);
+      expect(out.standing).toHaveLength(1);
+    });
+
+    it("goes stale when the record stops crediting the scenario it signed for", async () => {
+      // The guard against a ledger nobody re-reads. Re-attribution, a deleted
+      // record, or a poisoned build all land here, and the gate exits 2 —
+      // "could not judge", not "regression".
+      const out = (await load())([], { "what a chart kind costs": ["something-else.json"] }, [receipt()], {});
+      expect(out.stale, "a receipt pointing at nothing was still honoured").toHaveLength(1);
+      expect(out.stale[0].why).toMatch(/no crash record named/);
+    });
+
+    it("goes stale when the scenario has since been given a ceiling", async () => {
+      const out = (await load())([], credits, [receipt()], { "what a chart kind costs": 30 });
+      expect(out.stale).toHaveLength(1);
+      expect(out.stale[0].why).toMatch(/now carries a ceiling/);
+    });
+
+    it("refuses a receipt when the credit list and the count disagree", async () => {
+      // `credits` and `count` are written by the same loop in `fatalScenarios`,
+      // so a disagreement means the two were computed over different pools —
+      // and a receipt honoured across that gap would be signing for a death
+      // nobody looked at.
+      const out = (await load())(
+        [breach({ count: 1 })],
+        { "what a chart kind costs": ["a.json", "b.json"] },
+        [receipt({ record: "a.json" })],
+        {},
+      );
+      expect(out.cleared).toHaveLength(0);
+      expect(out.standing).toHaveLength(1);
+    });
+  });
+
+  it("ships a ledger whose every entry says what it signed and why", async () => {
+    /**
+     * NOT an assertion that the ledger is empty — the owner is meant to write
+     * in it, and a test that forbade that would be a gate on his own decision.
+     * What is asserted is the shape: a receipt with no reason, or one whose
+     * reason is a placeholder, is the thing this mechanism must never become.
+     * `KNOWN_DIVERGENCES` sets the same bar in the same words.
+     */
+    // @ts-expect-error - plain .mjs tool, no types.
+    const { DEATHS_ACKNOWLEDGED } = await import("../scripts/rounds-gate.mjs");
+    expect(Array.isArray(DEATHS_ACKNOWLEDGED)).toBe(true);
+    for (const e of DEATHS_ACKNOWLEDGED as { record: string; scenario: string; seen: string; why: string }[]) {
+      expect(e.record, "a receipt with no crash record names nothing").toMatch(/-crashed-run\.json$/);
+      expect(e.scenario, "a receipt with no scenario cannot be matched").toBeTruthy();
+      expect(e.seen, "a receipt with no date says nobody read it on any day").toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(e.why?.length ?? 0, `receipt for ${e.record} has no reason`).toBeGreaterThan(20);
+      expect(e.why, "'we have not looked into it' is not a reason").not.toMatch(/^(TODO|TEMP|tbd|unknown)/i);
+    }
+  });
+
   it("does not invent a rate for a death it has no runs for", async () => {
     // A death with no recorded run is a gap in what this tool can read. Dividing
     // by zero would fail the gate on a parsing problem rather than on a host.
@@ -5396,18 +5536,38 @@ describe("the scenario that killed the host", () => {
      */
     const src = readFileSync(new URL("../scripts/rounds-gate.mjs", import.meta.url), "utf8");
     expect(src, "the gate no longer computes fatal scenarios").toMatch(/fatalScenarios\(crashes\)/);
-    // The window is generous because the guidance printed between the two keeps
-    // growing — 2000 when this became a rate, 4000 once the zero-ceiling warning
-    // was added. What is asserted is that a breach still reaches a fatal exit,
-    // not that the prose is any particular length. The regression exit is 32,000
-    // characters further on, so the window can grow a long way before it stops
-    // separating the two.
-    expect(src, "a breach no longer stops the gate").toMatch(/breaches\.length[\s\S]{0,4000}process\.exit\(3\)/);
+    /**
+     * PINNED ON THE GUARD, NOT ON A DISTANCE — rewritten 2026-09-08 because the
+     * distance version had started passing for the wrong reason.
+     *
+     * It was `/breaches\.length[\s\S]{0,4000}process\.exit\(3\)/`, with a window
+     * widened twice (2000 → 4000) as the printed guidance grew. When the receipt
+     * mechanism landed, the breach block's own `breaches.length` moved to 7,343
+     * characters from the exit — outside the window — and the regex went on
+     * matching because a SECOND `breaches.length` appears 818 characters before
+     * it. The assertion stayed green while the thing it names stopped being what
+     * it measured. That is the same defect this suite keeps finding elsewhere: a
+     * check satisfied by something other than the property it claims.
+     *
+     * So it pins the structure instead. The exit is guarded by what is still
+     * STANDING after receipts are applied — a breach a person has signed for
+     * prints and does not stop the night — and that guard sits immediately
+     * around the exit, where no amount of added prose can separate them.
+     */
+    expect(src, "the fatal exit is no longer guarded by what is still standing").toMatch(
+      /if \(receipts\.standing\.length\)[\s\S]{0,1500}process\.exit\(3\)/,
+    );
+    // AND THE BREACH BLOCK IS STILL WHAT COMPUTES IT. Without this the pin above
+    // would survive deleting the breach report entirely.
+    expect(src, "the gate no longer computes rate breaches").toMatch(/fatalRateBreaches\(fatal\.deaths, runs,/);
+    expect(src, "the gate no longer applies receipts to those breaches").toMatch(
+      /deathsAcknowledged\(breaches, fatal\.credits,/,
+    );
     // AND NOT BY FALLING THROUGH TO THE REGRESSION EXIT. `exit(1)` appears
     // later in this file for the check that judges verdicts; a breach that
     // reached THAT would be back to one code for two questions.
     expect(src, "the breach exits through the regression code").not.toMatch(
-      /breaches\.length[\s\S]{0,4000}process\.exit\(1\)/,
+      /if \(receipts\.standing\.length\)[\s\S]{0,1500}process\.exit\(1\)/,
     );
     // And it reads the CRASH records, not the salvaged rounds — a salvaged
     // round carries verdicts and a killed scenario has none.

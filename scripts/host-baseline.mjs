@@ -307,6 +307,22 @@ export const KNOWN_DIVERGENCES = {
  *     same scale across the deck           9 deaths / 421 runs =  21
  *     every other listed scenario          1 death  / ~420     =   2.4
  *
+ * THOSE ARE THE 2026-09-03 READINGS AND THE CEILINGS ARE STILL SEEDED FROM
+ * THEM. Re-derived 2026-09-08, and every one has fallen — not because anything
+ * was fixed, but because the denominators grew while the deaths did not:
+ *
+ *     a big chart on a slide of its own   12 deaths /  84 runs = 143  (ceiling 460)
+ *     stop a run mid-draw                  8 deaths /  93 runs =  86  (ceiling 330)
+ *     same scale across the deck           9 deaths / 495 runs =  18  (ceiling  30)
+ *
+ * So the two worst are now running at roughly a third of what they are allowed,
+ * and the gate would not notice either of them tripling. That is the cost of a
+ * ceiling seeded once from a point estimate, and it is the mirror of the zero
+ * problem below rather than a separate defect. Whether to re-seed is the
+ * owner's: lowering a ceiling is deciding a scenario may kill PowerPoint LESS
+ * often than it used to be allowed to, which is a claim about the product, not
+ * about the instrument.
+ *
  * The scenario that led on raw count is a nine-times-baseline one. The two that
  * kill the host on a THIRD to a HALF of their runs looked smaller only because
  * they are young — `a big chart on a slide of its own` was written on
@@ -332,11 +348,23 @@ export const KNOWN_DIVERGENCES = {
  * it is the one thing the count version got right. Do not add a name here to
  * quiet a gate: a new name is a new scenario killing PowerPoint.
  *
+ * AND SINCE 2026-09-08 THAT SENTENCE HAS A SECOND HALF. Absent now means never
+ * killed the host, OR killed it once with a receipt beside it in
+ * `DEATHS_ACKNOWLEDGED` (`scripts/rounds-gate.mjs`). The receipt names one
+ * crash record, clears the gate's exit and not the count, cannot touch a
+ * scenario that has a ceiling, and cannot cover a second death. It exists
+ * because the rule above had no green path at all: at p=0 the allowance is 0
+ * for every denominator, so a first death breached for ever and the nightly
+ * cycle stopped after one round from round 428 on. Adding the name here would
+ * have been the thing this paragraph forbids; a receipt is the thing it does
+ * not.
+ *
  * Attribution is narrow on purpose: a scenario counts only when its
- * `scenario starting` line was never closed. 26 of 83 sound crash records
- * attribute this way and the other 57 died in the probe phase or the deck
- * scan, credited to nothing. See `fatalScenarios` in `scripts/triage.mjs`, and
- * `scenarioRuns` for the denominator.
+ * `scenario starting` line was never closed. **36 of 99** sound crash records
+ * attribute this way and the other 63 died in the probe phase or the deck
+ * scan, credited to nothing (re-derived 2026-09-08; it read "26 of 83"). See
+ * `fatalScenarios` in `scripts/triage.mjs`, and `scenarioRuns` for the
+ * denominator.
  */
 export const FATAL_SCENARIO_RATE = {
   /**

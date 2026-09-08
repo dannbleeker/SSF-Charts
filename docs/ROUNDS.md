@@ -587,8 +587,24 @@ confused. **Two of them are fatal, and they now have different exit codes.**
 - **A HOST DEATH RATE** — a scenario is killing PowerPoint more often than it
   used to, against the ceilings in `FATAL_SCENARIO_RATE`. Fatal, **exit 3**. No
   verdict falls, so the scenario list says nothing about it; read the
-  deaths-per-1000 table the gate prints. Nothing needs editing to clear it — it
-  is a rate, and it falls on its own as clean runs accumulate.
+  deaths-per-1000 table the gate prints.
+
+  **Two different states, and they clear differently.** A scenario WITH a
+  ceiling needs nothing edited: it is a rate, and it falls on its own as clean
+  runs accumulate. A scenario WITHOUT one has a ceiling of zero, where the
+  allowance is zero for every denominator — so its first death breaches for
+  ever, and clean rounds will not help. That one clears by a receipt: read the
+  crash record, then add an entry to `DEATHS_ACKNOWLEDGED` in
+  `scripts/rounds-gate.mjs` naming it. The gate prints the line to paste,
+  including the record's last step and how many other crashes ended the same
+  way. A receipt clears the exit and never the count, cannot touch a scenario
+  that has a ceiling, and cannot cover a SECOND death — two deaths have no
+  green path but a ceiling, and the gate prints the smallest one that would
+  hold.
+
+  > "Nothing needs editing to clear it" stood here for both states and was true
+  > of only one. The cycle stopped after a single round every night from round
+  > 428 to 2026-09-08 because of the other, which cost the 4:3 leg entirely.
 - **A DIVERGENCE** — a scenario passed at one slide size and failed at another,
   on the same build. **Reported, never fatal.** The response is to run 4:3
   again, or as a pair, before treating the difference as a property of the slide

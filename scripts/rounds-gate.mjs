@@ -43,6 +43,9 @@ import {
   fatalScenarios,
   fatalRateBreaches,
   fatalDeathsAllowed,
+  deathsAcknowledged,
+  poolCrashLastSteps,
+  crashStepKey,
   scenarioRuns,
 } from "./triage.mjs";
 import { pendingAlreadyAnswered, UNSTABLE_ANSWERS, FATAL_SCENARIO_RATE } from "./host-baseline.mjs";
@@ -125,6 +128,66 @@ export function countCrashReports(dir = "crashes", list = readdirSync) {
  * range because a build is a fact and a date is an inference.
  */
 export const POISONED_BUILDS = new Set(["b5c534a", "3eaab20", "2934204", "6421ba2"]);
+
+/**
+ * Host deaths a person has read, one entry per CRASH RECORD.
+ *
+ * SHIPS EMPTY, AND THAT IS NOT AN OVERSIGHT. The mechanism is the owner's to
+ * use; writing the first entry is his signature and nobody else's.
+ *
+ * WHY IT EXISTS. A scenario absent from `FATAL_SCENARIO_RATE` has a ceiling of
+ * 0, and at p=0 the allowance is 0 for every denominator — so its first host
+ * death breaches, and the crash record being permanent means it breaches for
+ * ever. The nightly cycle stopped after one round from round 428 onward, which
+ * cost the 4:3 validation arm entirely, because it is leg three.
+ *
+ * WHY NOT JUST RAISE THE CEILING. Because that is a different statement.
+ * A ceiling says *every future death of this shape is expected*; a receipt says
+ * *I read this one*. The table's own docstring forbids the first — "Do not add
+ * a name here to quiet a gate" — and this is deliberately placed beside
+ * `POISONED_BUILDS`, the other read-time exclusion, rather than anywhere near
+ * the ceilings.
+ *
+ * WHAT A RECEIPT CANNOT DO, which is what stops it becoming a silencer:
+ *
+ *   - It clears the EXIT, never the count. The breach still prints, the death
+ *     still counts for ever, no rate moves.
+ *   - It cannot touch a scenario with a real ceiling. Those already have a
+ *     green path — the rate falls as clean runs accumulate — and signing one
+ *     away would be the ceiling edit under another name.
+ *   - It cannot cover a SECOND death. Two deaths is the archive's own signal
+ *     that the first was not a one-off: across the nine scenarios that have
+ *     ever killed the host, every repeat death landed within 25 rounds of its
+ *     predecessor, median 1. Five of the nine never died again — which is why
+ *     one death is signable and two are not.
+ *   - It cannot pre-authorise anything. The key is a specific file in
+ *     `crashes/`. A death that has not happened has no filename.
+ *   - It goes STALE and fatal if the record stops crediting that scenario, so
+ *     an entry nobody re-reads fails the gate rather than quietly holding.
+ *
+ * Each entry: `record` (the filename in `crashes/`), `scenario` (the name it
+ * credited, which must still match), `seen` (the date a person read it), and
+ * `why` — a reason of the kind `KNOWN_DIVERGENCES` demands, naming the section
+ * of `docs/BACKLOG.md` that carries the evidence. "We have not looked into it"
+ * is not a reason.
+ *
+ * @type {{record: string, scenario: string, seen: string, why: string}[]}
+ */
+export const DEATHS_ACKNOWLEDGED = [];
+
+/**
+ * The last step of one crash record, by filename — the line the host died on.
+ *
+ * Printed beside a signable death so the person signing sees WHAT they are
+ * signing rather than a scenario name. Returns "" when the record is not in the
+ * pool, which happens for a hand-built record in a test and for one dropped by
+ * `POISONED_BUILDS`.
+ */
+function lastStepOf(crashes, file) {
+  const rec = (crashes ?? []).find((c) => c?._file === file);
+  const steps = Array.isArray(rec?.steps) ? rec.steps : [];
+  return steps.length ? String(steps[steps.length - 1]) : "";
+}
 
 /**
  * Every crash record, parsed — the half of the evidence `loadRounds` cannot see.
@@ -358,12 +421,31 @@ if (isMain(import.meta.url, process.argv[1])) {
     }
   }
   const breaches = fatalRateBreaches(fatal.deaths, runs, FATAL_SCENARIO_RATE);
+  const receipts = deathsAcknowledged(breaches, fatal.credits, DEATHS_ACKNOWLEDGED, FATAL_SCENARIO_RATE);
+  const signedFor = new Map(receipts.cleared.map((c) => [c.name, c.receipt]));
+  /**
+   * The regression verdict, COMPUTED BEFORE the breach block can exit.
+   *
+   * It used to be computed after, so a round that tripped the host-death check
+   * never had its verdicts judged at all — and since round 428 that check has
+   * been permanently red, so `scenarioRegressions` has not run once. Two fatal
+   * questions, and the one that fires first was hiding the other.
+   *
+   * ONLY THIS CALL IS HOISTED, and only because it is pure: it reads `rounds`,
+   * which is already loaded and validated, and touches nothing else. The REPORT
+   * is deliberately left where it is — sixteen unguarded triage calls sit
+   * between here and the exit, and a throw in any of them would make node exit
+   * 1, which `cycle.mjs` reads as "a scenario that WAS passing has stopped".
+   * That is `d12dadb`'s bug, and moving the report would reintroduce it.
+   */
+  const gone = scenarioRegressions(rounds);
   if (breaches.length) {
     console.error("\n  A SCENARIO IS KILLING THE HOST MORE OFTEN THAN IT DID:");
     for (const b of breaches)
       console.error(
         `    ${b.name} — ${b.rate.toFixed(1)} per 1000 (${b.count} of ${b.runs}), ceiling ${b.allowed}` +
-          (b.allowed === 0 ? " (it had never killed the host before)" : ""),
+          (b.allowed === 0 ? " (it had never killed the host before)" : "") +
+          (signedFor.has(b.name) ? `   [acknowledged ${signedFor.get(b.name).seen}]` : ""),
       );
     console.error(
       "  A scenario that stops passing is exit 1 here; one that starts taking PowerPoint down is\n" +
@@ -389,13 +471,65 @@ if (isMain(import.meta.url, process.argv[1])) {
     // leave no green path. Said out loud here rather than resolved, because what
     // a first death should DO — stop the night once, or stop it until
     // acknowledged — is a decision about the instrument, not a bug in it.
-    if (breaches.some((b) => b.allowed === 0))
+    const unsignable = receipts.standing.filter((b) => b.allowed === 0);
+    if (unsignable.length)
       console.error(
-        "\n  ONE OF THESE HAS A CEILING OF ZERO, AND THAT LINE CANNOT GO GREEN ON ITS OWN.\n" +
-          "  The allowance grows with runs only when the ceiling is above zero; at zero it is zero for\n" +
-          "  every denominator, and the crash that tripped it stays in `crashes/`. Clean rounds will not\n" +
-          "  clear this one. It needs a person to decide what a scenario's FIRST host death should cost.",
+        "\n  A CEILING OF ZERO CANNOT GO GREEN ON ITS OWN. The allowance grows with runs only when the\n" +
+          "  ceiling is above zero; at zero it is zero for every denominator, and the crash stays in\n" +
+          "  `crashes/`. Clean rounds will not clear these.",
       );
+    for (const b of unsignable) {
+      const record = (fatal.credits?.[b.name] ?? []).filter(Boolean);
+      if (b.count === 1 && record.length === 1) {
+        // ONE DEATH: signable, and the evidence to sign it by is printed here
+        // rather than left to be dug out of `crashes/`. What a reader needs is
+        // whether this death has a SHAPE the archive has seen before.
+        const last = lastStepOf(crashes, record[0]);
+        const key = crashStepKey(last);
+        // MAPPED TO THE SHAPE THAT FUNCTION TAKES, not handed the raw records.
+        // `poolCrashLastSteps` sorts ties on `at[0].localeCompare`, so it needs
+        // a `name` on every record; `loadCrashRecords` stamps `_file` and never
+        // `name`, and passing its output straight in throws on the sort. Its
+        // only other caller builds `{name, steps, build}` by hand, which is the
+        // contract — met here rather than loosened there.
+        const pooled = poolCrashLastSteps(crashes.map((c) => ({ name: c._file ?? "", steps: c.steps ?? [] }))).find(
+          (g) => g.key === key,
+        );
+        console.error(
+          `\n    \`${b.name}\` has ONE death and can be acknowledged. Read it, then add to\n` +
+            `    DEATHS_ACKNOWLEDGED in this file:\n` +
+            `      { record: "${record[0]}", scenario: "${b.name}", seen: "<date>", why: "<backlog section>" }\n` +
+            `    last step: ${String(last).trim().slice(0, 96)}\n` +
+            `    ${pooled ? `${pooled.n} of ${crashes.length} kept records end on \`${key}\`` : "no pooling for that step"}`,
+        );
+      } else {
+        // TWO OR MORE: not signable, deliberately. The only green path is a
+        // ceiling, and the number is printed because seeding one at the point
+        // estimate is the hair trigger `fatalDeathsAllowed`'s docstring warns
+        // about — `same scale across the deck` seeded that way went red again
+        // on its sixth death, and its ninth.
+        let c = 1;
+        while (c < 1000 && fatalDeathsAllowed(c, b.runs) < b.count) c++;
+        console.error(
+          `\n    \`${b.name}\` has ${b.count} deaths and CANNOT be acknowledged — two deaths is the archive's\n` +
+            `    own signal that the first was not a one-off. Its only green path is a ceiling, and the\n` +
+            `    smallest that holds ${b.count} of ${b.runs} is ${c} per 1000. Seeding below that re-fires on the\n` +
+            `    next death; the point estimate ${((1000 * b.count) / b.runs).toFixed(1)} is not high enough.`,
+        );
+      }
+    }
+    for (const c of receipts.cleared)
+      console.error(
+        `\n  ACKNOWLEDGED, AND STILL COUNTED ABOVE — a death this gate has been told a person read:\n` +
+          `    ${c.name} · ${c.receipt.record} · seen ${c.receipt.seen}\n` +
+          `    why: ${c.receipt.why}`,
+      );
+    if (receipts.stale.length) {
+      console.error("\n  A RECEIPT NO LONGER MATCHES WHAT IT SIGNED FOR — this gate cannot judge that:");
+      for (const s of receipts.stale) console.error(`    ${s.record} → ${s.why}`);
+      console.error("  An entry nobody re-read is not a receipt. Fix or remove it; until then nothing here is judged.");
+      process.exit(2);
+    }
     // EXIT 3, NOT 1, AND THE CODE IS THE POINT. This gate has two fatal checks
     // and they shared one exit code, so `cycle.mjs` — its only consumer — printed
     // "a scenario that WAS passing has stopped" for both. Round 428 tripped THIS
@@ -405,9 +539,24 @@ if (isMain(import.meta.url, process.argv[1])) {
     // `docs/ROUNDS.md` said of this gate that it "answers several different
     // questions and they must not be confused. Exactly one of them is fatal."
     // Two are, and that doc is corrected alongside this.
-    process.exit(3);
+    //
+    // GUARDED ON WHAT IS STILL STANDING, not on `breaches.length`. A breach a
+    // person has signed for still prints — the count never moves — but it no
+    // longer stops the night. If everything here is signed, control falls
+    // through to the regression check below, which is the whole point of the
+    // receipt.
+    if (receipts.standing.length) {
+      // AND THE OTHER FATAL QUESTION IS ANSWERED BEFORE LEAVING, because until
+      // now this exit hid it: a round that killed the host never had its
+      // verdicts judged, and the host-death check has been red since round 428.
+      if (gone.length)
+        console.error(
+          `\n  AND ${gone.length} scenario(s) STOPPED PASSING in the same round — read that too:\n` +
+            gone.map((g) => `    ${g.name} — failed ${g.failed} of ${g.ran} at this profile`).join("\n"),
+        );
+      process.exit(3);
+    }
   }
-  const gone = scenarioRegressions(rounds);
   // A SECOND, DIFFERENT QUESTION. The gate above asks whether a scenario fell
   // against its OWN history; this asks whether one slide size failed what
   // another passed on the same build. Round 077 was exactly that — 10 of 13 at
