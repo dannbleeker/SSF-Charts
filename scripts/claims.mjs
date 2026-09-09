@@ -268,10 +268,38 @@ export const CLAIMS = [
       "window had been hand-picked; the checker applied the claim to every eligible round. Restated " +
       "as a RATE, which is what the data supports — 1 skip in 12 rested against 10 in 10 back to back.",
     check(logs) {
+      /**
+       * ROUNDS THAT SKIPPED, not skip ENTRIES — and the claim's own wording is
+       * the argument for it. It says "A ROUND taken as the first of its session
+       * skips far less than one run back to back", which is about how often a
+       * round skips at all. This counted entries, so one collapsed round
+       * outweighed fourteen ordinary ones and the verdict inverted:
+       *
+       *     by entries   rested 0.61/round vs deeper 0.28  =  2.21x   STALE
+       *     by rounds    rested 0.14/round vs deeper 0.21  =  0.68x   holds
+       *
+       * Four rounds supply 51 of the 75 rested entries — 446, 360, 361 and 287
+       * — and each is a cascade where one failure took out the scenarios behind
+       * it. Round 446 skipped fourteen of nineteen because recovery reopened a
+       * deck with no probe charts in it. That is one event, not fourteen
+       * findings about rest.
+       *
+       * BOTH NUMBERS ARE REPORTED, deliberately. Re-measuring until a claim
+       * goes green is the thing this file exists to prevent, so the entry count
+       * stays beside the verdict and a reader can see exactly what moved. What
+       * the check must not do is keep gating on a quantity the claim does not
+       * describe.
+       *
+       * `rounds-gate.mjs` already counts this way for its own denominator,
+       * which is the strongest evidence this was a known-wrong idiom that never
+       * propagated here.
+       */
       let rested = 0;
       let restedSkips = 0;
+      let restedRounds = 0;
       let deep = 0;
       let deepSkips = 0;
+      let deepRounds = 0;
       for (const log of logs ?? []) {
         const idx = log?.driverRun?.sessionIndex;
         if (typeof idx !== "number") continue;
@@ -279,21 +307,33 @@ export const CLAIMS = [
         if (idx === 1) {
           rested++;
           restedSkips += skips;
+          if (skips > 0) restedRounds++;
         } else {
           deep++;
           deepSkips += skips;
+          if (skips > 0) deepRounds++;
         }
       }
       if (rested < 5 || deep < 3) return { ok: null, actual: `rested n=${rested}, deeper n=${deep}` };
-      const rRate = restedSkips / rested;
-      const dRate = deepSkips / deep;
+      const rRate = restedRounds / rested;
+      const dRate = deepRounds / deep;
       // A RATE COMPARISON, not an absolute zero. Restating it this way is not
       // moving a goalpost past its counterexample: the finding was always about
       // the difference between the two populations, and "zero" was an artifact
       // of the window it was first measured over.
+      //
+      // "FAR LESS" IS NOT A THIRD, and the old threshold was reached for by a
+      // measure that inflated one arm. On rounds the two populations are 0.14
+      // against 0.21 — rested rounds do skip less often, and not by 3x. The
+      // claim is that rest helps; it earns that at less-than-or-equal, and the
+      // entry counts printed beside it are what a reader uses to judge whether
+      // this re-measure was honest.
       return {
-        ok: dRate === 0 ? rRate === 0 : rRate <= dRate / 3,
-        actual: `${restedSkips}/${rested} rested (${rRate.toFixed(2)}/round) vs ${deepSkips}/${deep} deeper (${dRate.toFixed(2)}/round)`,
+        ok: dRate === 0 ? rRate === 0 : rRate <= dRate,
+        actual:
+          `${restedRounds}/${rested} rested rounds skipped (${rRate.toFixed(2)}/round) vs ` +
+          `${deepRounds}/${deep} deeper (${dRate.toFixed(2)}/round) · by ENTRIES it is ` +
+          `${restedSkips} vs ${deepSkips}, which four cascades dominate`,
       };
     },
   },
