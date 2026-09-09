@@ -174,18 +174,17 @@ export const POISONED_BUILDS = new Set(["b5c534a", "3eaab20", "2934204", "6421ba
  * @type {{record: string, scenario: string, seen: string, why: string}[]}
  */
 export const DEATHS_ACKNOWLEDGED = [
-  {
-    record: "2026-09-07T22-13-42-crashed-run.json",
-    scenario: "what a chart kind costs",
-    seen: "2026-09-08",
-    why:
-      "docs/BACKLOG.md, 'The sweep deleted nothing seven times, and that is what killed the tab'. " +
-      "The scenario's own cleanup was refused seven times (`unresolved=1 swept=0`), so all eight " +
-      "specimens stayed on the slide and its occupancy climbed 0, 7, 15, 24, 34, 44, 53, 61 before " +
-      "the tab died on the eighth. All four routes to sweeping a fresh shape are measured and closed " +
-      "in that section. The record's last step ends 5 of 99 kept records against 2.3 expected, so it " +
-      "carries no signature — this is a death understood, not a death explained away.",
-  },
+  // EMPTY AGAIN, AND THE ONE ENTRY IT HELD WAS RETIRED RATHER THAN DROPPED IN
+  // PASSING. `2026-09-07T22-13-42-crashed-run.json` signed the FIRST death of
+  // `what a chart kind costs` on 2026-09-08. That scenario took a second death
+  // the same night, which no receipt may cover, and on 2026-09-09 the owner
+  // seeded it at 50 per 1000 — so it now has a green path of its own, and a
+  // receipt beside it would be a second lock on an open door. The gate says so
+  // itself: a receipt for a scenario carrying a ceiling is STALE, and stale is
+  // exit 2.
+  //
+  // That is the mechanism's whole life so far, and it behaved: signed once,
+  // refused to sign the second, retired when the ceiling replaced it.
 ];
 
 /**
@@ -437,6 +436,29 @@ if (isMain(import.meta.url, process.argv[1])) {
   const receipts = deathsAcknowledged(breaches, fatal.credits, DEATHS_ACKNOWLEDGED, FATAL_SCENARIO_RATE);
   const signedFor = new Map(receipts.cleared.map((c) => [c.name, c.receipt]));
   /**
+   * A STALE RECEIPT IS CHECKED WHETHER OR NOT ANYTHING IS BREACHING, and it was
+   * not — which the mechanism's very first real use exposed.
+   *
+   * The check lived inside the breach block. On 2026-09-09 the owner seeded
+   * `what a chart kind costs` at 50 per 1000, which is exactly the event that
+   * makes its receipt meaningless: a scenario with a ceiling has a green path of
+   * its own and must not also be signed for. The ceiling removed the breach, the
+   * breach block was skipped, and the now-pointless entry sat in
+   * `DEATHS_ACKNOWLEDGED` undetected — while its own docstring promised "It goes
+   * STALE and fatal if the record stops crediting that scenario".
+   *
+   * So the guard that keeps this ledger from becoming a silencer did not run in
+   * the one case that had ever occurred. It runs first now, before anything can
+   * return: an entry nobody re-read is a reason to refuse to judge, not a
+   * footnote underneath a breach that may not be there.
+   */
+  if (receipts.stale.length) {
+    console.error("\n  A RECEIPT NO LONGER MATCHES WHAT IT SIGNED FOR — this gate cannot judge that:");
+    for (const s of receipts.stale) console.error(`    ${s.record} → ${s.why}`);
+    console.error("  An entry nobody re-read is not a receipt. Fix or remove it; until then nothing here is judged.");
+    process.exit(2);
+  }
+  /**
    * The regression verdict, COMPUTED BEFORE the breach block can exit.
    *
    * It used to be computed after, so a round that tripped the host-death check
@@ -554,12 +576,6 @@ if (isMain(import.meta.url, process.argv[1])) {
           `    ${c.name} · ${c.receipt.record} · seen ${c.receipt.seen}\n` +
           `    why: ${c.receipt.why}`,
       );
-    if (receipts.stale.length) {
-      console.error("\n  A RECEIPT NO LONGER MATCHES WHAT IT SIGNED FOR — this gate cannot judge that:");
-      for (const s of receipts.stale) console.error(`    ${s.record} → ${s.why}`);
-      console.error("  An entry nobody re-read is not a receipt. Fix or remove it; until then nothing here is judged.");
-      process.exit(2);
-    }
     // EXIT 3, NOT 1, AND THE CODE IS THE POINT. This gate has two fatal checks
     // and they shared one exit code, so `cycle.mjs` — its only consumer — printed
     // "a scenario that WAS passing has stopped" for both. Round 428 tripped THIS

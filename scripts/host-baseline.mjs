@@ -395,6 +395,37 @@ export const FATAL_SCENARIO_RATE = {
    * 420-600s window where this host dies of session age. Nothing since.
    */
   "same scale across the deck": 30,
+  /**
+   * SEEDED BY THE OWNER ON 2026-09-09, at his instruction, after two deaths.
+   *
+   * This is the first name added to this table since it was written, and the
+   * docstring above forbids adding one "to quiet a gate". It is here because the
+   * scenario reached TWO deaths, which the receipt mechanism refuses to sign —
+   * one death is a coin, two is a pattern — and a ceiling is then the only green
+   * path there is. That refusal working as designed is what made this a decision
+   * rather than a workaround.
+   *
+   * 2 deaths in 45 runs = 44.4 per 1000. The floor that holds is 12; 50 is the
+   * current rate rounded up to the next ten, which is how every other entry here
+   * was seeded and which matches this table's stated purpose: silent while a
+   * known-bad scenario stays as bad as it is, loud the moment it gets worse. A
+   * ceiling of 12 would have re-fired on the third death.
+   *
+   * WHAT IT ADMITS: this scenario may kill PowerPoint on about one run in
+   * twenty. That is worse than `same scale across the deck` and better than the
+   * two own-slide names above it.
+   *
+   * WHY IT DIES, which is known and is not a mystery to be solved by this
+   * number: `kindCostSpread` deletes each specimen before drawing the next, and
+   * on this host that delete does not land — all four routes to sweeping a fresh
+   * shape are measured and closed in `docs/BACKLOG.md`. So occupancy climbs
+   * 0, 7, 15, 24, 34, 44, 53, 61 and the tab dies on the eighth. The fix is to
+   * draw each specimen on a scratch slide that can be deleted whole, which
+   * changes the occupancy the experiment measures at — the reason it is the
+   * owner's call and not a cleanup. When it lands, this number should come back
+   * down, and lowering it is his call too.
+   */
+  "what a chart kind costs": 50,
   // The tail: one death each, on 200-420 runs. At 2.4 per 1000 these are the
   // background rate of a host that falls over sometimes, not scenarios with a
   // problem. They are listed so their FIRST rise is measured against something.

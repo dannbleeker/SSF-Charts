@@ -5641,6 +5641,31 @@ describe("the scenario that killed the host", () => {
     expect(src, "the fatal exit is no longer guarded by what is still standing").toMatch(
       /if \(receipts\.standing\.length\)[\s\S]{0,1500}process\.exit\(3\)/,
     );
+    /**
+     * THE STALE CHECK RUNS WHETHER OR NOT ANYTHING IS BREACHING.
+     *
+     * It used to live inside `if (breaches.length)`, and the mechanism's very
+     * first real use exposed that. On 2026-09-09 the owner seeded `what a chart
+     * kind costs` at 50 per 1000 — exactly the event that makes its receipt
+     * meaningless, because a scenario with a ceiling has a green path and must
+     * not also be signed for. The ceiling removed the breach, the breach block
+     * was skipped, and the pointless entry sat undetected while its docstring
+     * promised it would go stale and fatal.
+     *
+     * Pinned by ORDER rather than by distance: the stale check must appear
+     * before the breach block opens. The distance pin above this one had already
+     * rotted once, matching a nearer occurrence than the one it named.
+     */
+    // ANCHORED TO THE STATEMENT, not to the phrase. The first version compared
+    // against `src.indexOf("if (breaches.length)")`, which matched the sentence
+    // inside the docstring that EXPLAINS this fix — a comment about the code
+    // standing in for the code, several hundred characters earlier.
+    const staleAt = src.indexOf("if (receipts.stale.length) {");
+    const breachAt = src.search(/\n {2}if \(breaches\.length\) \{/);
+    expect(staleAt, "the stale check is gone").toBeGreaterThan(-1);
+    expect(breachAt, "the breach block is gone").toBeGreaterThan(-1);
+    expect(staleAt, "the stale check is back inside the breach block, where a ceiling hides it").toBeLessThan(breachAt);
+
     // AND THE BREACH BLOCK IS STILL WHAT COMPUTES IT. Without this the pin above
     // would survive deleting the breach report entirely.
     expect(src, "the gate no longer computes rate breaches").toMatch(/fatalRateBreaches\(fatal\.deaths, runs,/);
