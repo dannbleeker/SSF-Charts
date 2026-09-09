@@ -2799,6 +2799,52 @@ What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
 
+### office-js#6329 has its first evidence here, and it was never untestable — 2026-09-09
+
+**Rounds that die were syncing about 15% faster than rounds that live, in both
+arms.** This is the first thing this archive has ever said about #6329, which
+`powerpoint.ts` has carried as an open question for weeks.
+
+    4:3    died n=21 median 2.89 syncs/s  ·  lived n=34 median 2.52/s
+    16:9   died n= 9 median 2.81 syncs/s  ·  lived n=44 median 2.45/s
+    pooled Mann-Whitney U=1653, z=3.31, p≈0.001 (30 died vs 78 lived)
+
+**The control is the important half.** The 4:3 arm crashes on 34% of attempts
+against 16:9's 3.8%, so the entire gap could have been the profile wearing a
+sync costume. It is not: the arms barely differ from each other (2.89 against
+2.81 among the dead, 2.52 against 2.45 among the living) while the died/lived
+gap is ~0.37 syncs/s inside each one.
+
+**Read it as correlation and nothing stronger.** The direction is not
+established: a pane asking faster may be loading the save channel, exactly as
+#6329 predicts, or a struggling host may be provoking retries that raise the
+rate, or both may follow a third thing. `n=9` for the 16:9 dead is thin. What
+can be said is that the sign is the one the hypothesis predicts and the profile
+does not explain it.
+
+**AND I HAD DECLARED THIS UNTESTABLE, WRONGLY.** I reported that `syncs` is in
+77 of 412 round files and 0 of 107 crash records, and that since a dying round
+files nothing, every observation with the outcome is missing the predictor.
+The first two numbers are right about the top-level FIELD and the conclusion is
+wrong: `app.ts` stamps `syncsSoFar()` onto the deck-scan trace lines precisely
+so a crashed round can report it, and its comment says so — *"the only place a
+crashed round can report how much it had asked of the save channel before it
+went"*. **95 of 108 crash records carry it.** I checked for the field and
+declared the question dead without reading the comment that had already solved
+it.
+
+**A TRAP THAT PRODUCED TWO WRONG READINGS BEFORE THE RIGHT ONE.** Two different
+producers write the key `syncs` with different meanings:
+
+    deck scan — asking how many slides   ... syncs=1404   running total
+    updated only the shapes that changed ... syncs=4 contextSyncs=2   this chart
+
+Taking the last `syncs=` in a record mixes them and comes out bimodal — median
+2, p75 1900 — which is two quantities, not a distribution. Any query on this key
+must scope to the message. Both sites now say so. Renaming the per-chart one
+would be cleaner and is deliberately not done: 400 archived rounds carry it, and
+a rename buys tidiness at the price of comparability.
+
 ### The first thing the unblocked gate reported is a divergence that is not one — 2026-09-08
 
 Signing round 428's death let `rounds:gate` finish for the first time since that

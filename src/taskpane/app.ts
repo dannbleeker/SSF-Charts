@@ -4040,6 +4040,19 @@ async function collectDeckEvidenceUnbounded(idsBefore: string[] | undefined): Pr
      * office-js#6329 raises. Putting it on the same line as the scan
      * announcement rather than a line of its own keeps the crash-log tail
      * comparable with the 160 records already on file.
+     *
+     * IT WORKED, AND THE FIRST ANSWER CAME ON 2026-09-09. Rounds that died were
+     * syncing about 15% faster than rounds that lived — 2.89 against 2.52 per
+     * second at 4:3, 2.81 against 2.45 at 16:9, pooled p≈0.001 — with the arm
+     * split done precisely because the 4:3 crash rate could otherwise have been
+     * the whole effect. Correlation only, and the direction is not established,
+     * but it is the sign #6329 predicts and it is the first evidence this
+     * archive has produced about it. See `docs/BACKLOG.md`.
+     *
+     * `syncs` ON THIS LINE IS THE ROUND'S RUNNING TOTAL. The same key on
+     * `updated only the shapes that changed` is that ONE chart's syncs, and a
+     * query that does not scope to the message mixes the two into a bimodal
+     * nonsense. Both sites carry this warning.
      */
     trace("pane", "collecting deck evidence — scanning", {
       knownBefore: idsBefore?.length ?? null,

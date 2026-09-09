@@ -12352,6 +12352,20 @@ async function tryInPlaceUpdate(
   // A benefit nobody measured should not be printed as data. `changed` of `of`
   // is the measurement; anyone reading "1 of 24" can see the saving without
   // being told a number for it.
+  /**
+   * `syncs` HERE MEANS THIS CHART'S SYNCS, and `syncs` on the deck-scan lines
+   * means the ROUND'S RUNNING TOTAL. One key, two quantities.
+   *
+   * Nothing is wrong with either number; the collision is. A query that takes
+   * the last `syncs=` in a crash record mixes them and comes out bimodal —
+   * median 2, p75 1900 — which is two populations, not a distribution. That
+   * cost two wrong readings on 2026-09-09 before the third one scoped to the
+   * message and got the answer.
+   *
+   * ANY QUERY ON THIS KEY MUST SCOPE TO THE MESSAGE. Renaming this one would be
+   * cleaner and is deliberately not done: 400 archived rounds carry it, and a
+   * rename buys tidiness at the price of comparing them.
+   */
   trace("draw", "updated only the shapes that changed", {
     changed: plan.changed.length,
     of: it.scene.nodes.length,
