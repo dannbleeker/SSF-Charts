@@ -184,11 +184,45 @@ describe("whether the shipped bundle could possibly be responsible", () => {
     expect(bundleChanged("e97699e · 2026-08-26 21:28Z", "10f8c60 · 2026-08-27 00:10Z", noSrc)).toBe(false);
   });
 
-  it("says it changed when src/ moved", async () => {
+  it("says it changed when a line that RUNS moved", async () => {
     // @ts-expect-error — plain .mjs tool, no types.
     const { bundleChanged } = await import("../scripts/rounds-gate.mjs");
-    const withSrc = () => "src/render/powerpoint.ts\n";
-    expect(bundleChanged("aaaaaaa · x", "bbbbbbb · y", withSrc)).toBe(true);
+    // Two calls now — the name list, then the diff. The stub answers by which
+    // one it was handed, because the second is what decides.
+    const withCode = (_cmd: string, args: string[]) =>
+      args.includes("--name-only")
+        ? "src/render/powerpoint.ts\n"
+        : "--- a/x\n+++ b/x\n-  const a = 1;\n+  const a = 2;\n";
+    expect(bundleChanged("aaaaaaa · x", "bbbbbbb · y", withCode)).toBe(true);
+  });
+
+  it("says COMMENTS when src/ moved but no line that runs did", async () => {
+    /**
+     * Round 440's 4:3 leg failed and the gate could not say "read this as the
+     * host", because 27 lines of COMMENT had been added to `app.ts` and
+     * `powerpoint.ts` an hour earlier. `--name-only` sees a file, so the reader
+     * was sent to run by hand the diff this check exists to spare them.
+     *
+     * A THIRD VALUE, never `false`. The caller prints it as a fact rather than
+     * as the "the product did not change" verdict — saying that wrongly excuses
+     * a regression, while saying "changed" wrongly costs one diff.
+     */
+    // @ts-expect-error — plain .mjs tool, no types.
+    const { bundleChanged } = await import("../scripts/rounds-gate.mjs");
+    const commentsOnly = (_cmd: string, args: string[]) =>
+      args.includes("--name-only")
+        ? "src/taskpane/app.ts\n"
+        : "--- a/x\n+++ b/x\n+  // a note about why\n+   * and its continuation\n+\n";
+    expect(bundleChanged("aaaaaaa · x", "bbbbbbb · y", commentsOnly)).toBe("comments");
+
+    // AND THE ASYMMETRY IS PINNED. One real line among the comments makes it a
+    // change: anything this cannot plainly see as a comment counts as code,
+    // which is the safe direction.
+    const mixed = (_cmd: string, args: string[]) =>
+      args.includes("--name-only")
+        ? "src/taskpane/app.ts\n"
+        : '--- a/x\n+++ b/x\n+  // a note\n+  const s = "// not a comment";\n';
+    expect(bundleChanged("aaaaaaa · x", "bbbbbbb · y", mixed), "a code line hid behind a comment").toBe(true);
   });
 
   it("answers NULL rather than guessing when it cannot tell", async () => {

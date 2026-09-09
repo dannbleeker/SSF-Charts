@@ -70,7 +70,37 @@ export function bundleChanged(fromBuild, toBuild, run = execFileSync) {
   if (!from || !to) return null;
   if (from === to) return false;
   try {
-    return run("git", ["diff", "--name-only", `${from}..${to}`, "--", "src/"], { encoding: "utf8" }).trim().length > 0;
+    if (!run("git", ["diff", "--name-only", `${from}..${to}`, "--", "src/"], { encoding: "utf8" }).trim()) return false;
+    /**
+     * A FILE UNDER `src/` CHANGED — but did any LINE that runs?
+     *
+     * Round 440 is why this is here. Its 4:3 leg failed, the gate could not say
+     * "read this as the host", and the reason was 27 lines of COMMENT I had
+     * added to `app.ts` and `powerpoint.ts` an hour earlier. `--name-only` sees
+     * a file, so the guard reported the product as changed when the bundle was
+     * behaviourally identical, and the one check that exists to spare a reader
+     * that hunt sent them on it.
+     *
+     * DELIBERATELY ASYMMETRIC, because the two errors are not equal. Saying
+     * "changed" when only comments moved costs a manual `git diff`. Saying
+     * "unchanged" when something real moved EXCUSES A REGRESSION, which is the
+     * failure this whole check exists to prevent. So anything that is not
+     * plainly a comment or a blank line counts as a change: a `//` inside a
+     * string literal reads as code here, and that is the safe direction.
+     *
+     * `"comments"` is a THIRD value, not `false`. The caller prints it as a
+     * fact, never as the "read this as the host" verdict — a reader who wants
+     * that conclusion can have it from the fact, and a heuristic must not hand
+     * out the strong claim on its own.
+     */
+    const diff = run("git", ["diff", "-U0", `${from}..${to}`, "--", "src/"], { encoding: "utf8" });
+    const moved = String(diff)
+      .split("\n")
+      .filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---)/.test(l))
+      .map((l) => l.slice(1).trim())
+      .filter((l) => l.length > 0);
+    const code = moved.filter((l) => !(l.startsWith("//") || l.startsWith("*") || l.startsWith("/*") || l === "*/"));
+    return code.length > 0 ? true : "comments";
   } catch {
     return null;
   }
@@ -1142,6 +1172,17 @@ if (isMain(import.meta.url, process.argv[1])) {
       "  THE SHIPPED BUNDLE IS UNCHANGED since the previous round at this profile — nothing under\n" +
         "  `src/` differs between the two builds. Whatever moved, the product did not: read this as\n" +
         "  the host. Still exit 1, because a scenario falling is worth a person's eyes either way.",
+    );
+  // THE THIRD VALUE, printed as a fact rather than as the verdict above it.
+  // `src/` moved but no line that runs did — round 440's 4:3 leg failed against
+  // 27 lines of comment. A reader can draw the same conclusion from this; the
+  // heuristic is not allowed to draw it for them, because "unchanged" said
+  // wrongly excuses a regression while "changed" said wrongly costs a diff.
+  else if (bundleMoved === "comments")
+    console.error(
+      "  `src/` changed since the previous round at this profile, but ONLY IN COMMENTS AND BLANK\n" +
+        "  LINES — no line that runs moved. Read that as a fact, not as a verdict: anything this\n" +
+        "  check cannot plainly see as a comment is counted as code, on purpose.",
     );
   console.error("  A round is evidence; this is the only thing that holds a build to it. See docs/ROUNDS.md.");
   process.exit(1);

@@ -457,6 +457,29 @@ would make waffle charts native and re-editable. That changes what a user
 RECEIVES, so it is the owner's call; the evidence for it is 35 completed draws
 of one chart on two decks — narrow but real.
 
+**RE-DERIVED 2026-09-09, AND THE EVIDENCE IS NOW TWICE AS WIDE AND SPLIT BY
+ARM** — which matters, because the 35 above are 16:9 and the risk is at 4:3.
+`a big chart on a slide of its own` is the 103-shape own-slide draw:
+
+    lifetime   16:9  ran 42  passed 36  failed 6      4:3  ran 34  passed 28  failed 5, skipped 1
+    since 376  16:9  ran 35  passed 35  failed 0      4:3  ran 30  passed 28  failed 1
+
+Every lifetime failure is in rounds 365-375 except one. **Since round 376 the
+draw is 63 for 65 across both profiles**, and the two exceptions are one skip
+and round 440.
+
+**Round 440 is the counter-example and is worth reading before deciding.** It is
+today's 4:3 leg, the first failure of this draw in 65 rounds, and its shape is
+new: *"PowerPoint did not respond while drawing shapes 101-103 of 103 (45s) —
+while the control insert onto the visible slide DREW, seconds earlier"*. Not a
+GeneralException like rounds 370-372, not the delete failure of 375 — a timeout
+on the FINAL batch of the chart while a control drew fine moments before. So the
+host will take 100 of these shapes and then stop, occasionally, at 4:3.
+
+What that does to the decision is the owner's to weigh: 63 of 65 is a much
+stronger base than 35 of 35 on one arm, and one failure in 65 is not zero. A
+user who meets it gets a picture, which is what the budget delivers today.
+
 WHAT WOULD CHANGE THE PICTURE: drawing a 176-shape area chart or a 253-shape
 violin on a host. Neither has ever been attempted. The gate exists for those and
 they are entirely unmeasured, which is the honest reason not to raise it far.
