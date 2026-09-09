@@ -462,11 +462,13 @@ ARM** — which matters, because the 35 above are 16:9 and the risk is at 4:3.
 `a big chart on a slide of its own` is the 103-shape own-slide draw:
 
     lifetime   16:9  ran 42  passed 36  failed 6      4:3  ran 34  passed 28  failed 5, skipped 1
-    since 376  16:9  ran 35  passed 35  failed 0      4:3  ran 30  passed 28  failed 1
+    since 376  16:9  ran 39  passed 39  failed 0      4:3  ran 31  passed 29  failed 1
 
 Every lifetime failure is in rounds 365-375 except one. **Since round 376 the
-draw is 63 for 65 across both profiles**, and the two exceptions are one skip
-and round 440.
+draw is 68 for 69 across both profiles**, and the one exception is round 440.
+
+Round 445, the next 4:3 leg after it, drew the chart cleanly — so 440 stands as
+a single miss rather than the start of something.
 
 **Round 440 is the counter-example and is worth reading before deciding.** It is
 today's 4:3 leg, the first failure of this draw in 65 rounds, and its shape is
