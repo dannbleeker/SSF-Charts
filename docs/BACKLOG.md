@@ -2824,6 +2824,62 @@ What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
 
+### The "read by nothing" list cannot see a once-per-round metric — 2026-09-09
+
+`unreadSignals` ranks a round's messages by how many times each FIRED and prints
+the top six. So the list is a busiest-events list, which is what it says it is —
+and it is also the only place this project surfaces an unread signal, which
+means a metric that fires once per round has no home at all.
+
+Measured over 423 rounds, my own numbers rather than the survey's:
+
+    the sixth slot costs      min 12   median 20   max 31 events
+    rounds where it costs <=2   0 of 423
+    `second pass finished`    exactly 1 event in every one of 423 rounds,
+                              best rank 19, median 40, in a top-six 0 times
+
+There is no round in the archive where a once-per-round line could have placed.
+Today's gate output is six slots of `deck scan —` chatter at 31 apiece.
+
+**NOT AN OVERSIGHT, which is why this is recorded rather than patched.**
+`test/triage.test.ts` pins the ranking with "since a signal seen once is not a
+missed instrument", and `triage.mjs` argues the same rule again for
+`dormantInstruments`. Changing it means refuting a decision that is written down
+and mutation-guarded, and the obvious one-line fix does not work either: ranking
+by rounds-covered puts `second pass finished` at rank 7 of 110, because seven
+messages tie at 423 of 423.
+
+What would work is a SECOND list rather than a different sort — unread messages
+that fire at most twice a round, in at least 200 rounds, carrying a numeric
+payload. About 21 items, and roughly two thirds of them are not quoted anywhere
+in `docs/`. Left for a person to decide, because it means editing a test whose
+title states the opposite rule.
+
+**Also: this section printed for the first time in weeks today.** The gate exits
+before reaching it whenever a host-death breach is standing, and one was
+standing from round 428 until the ceiling landed this morning. An unread-signal
+report that the gate cannot reach is unread twice over.
+
+### A latency reading at 34 seconds forecasts the round, and changes nothing — 2026-09-09
+
+Recorded so nobody derives it again. The median pass-1 probe latency, available
+34 seconds into a round, correlates with that round's scenario work at rho 0.65
+over 413 rounds, 0.55-0.58 held out, permutation p < 1/8000, surviving a
+circular shift. Real, and useless:
+
+- `laterMed`, the round's own in-place-update median that `poolNoiseFloor`
+  already computes, predicts the same basket at **rho 0.857**.
+- The prior rounds' median basket — a predictor the loop already has, available
+  BEFORE the round starts — scores 0.59-0.61 held out.
+- It is mostly a between-day reading: 0.675 between days against 0.328 within
+  one.
+- In the current regime it is rho 0.397, not the 0.65 the whole archive gives.
+
+And the half that would have been worth having is dead: rho(latency, failed
+scenarios) = **-0.019, p = 0.65** over 413 rounds. An early reading forecasts how
+SLOW a round will be, which the repo already knows is a property of the round,
+and says nothing about whether it will find anything.
+
 ### ROUND 254 IS OUR OWN COMMIT, and nine host notes are dated from one side of it — 2026-09-09
 
 **The probe sheet has a structural break at round 254, and the thing that broke
