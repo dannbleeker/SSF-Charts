@@ -2824,6 +2824,65 @@ What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
 
+### ROUND 254 IS OUR OWN COMMIT, and nine host notes are dated from one side of it — 2026-09-09
+
+**The probe sheet has a structural break at round 254, and the thing that broke
+it is a commit of ours.** Eleven questions change their answer there. Nowhere
+else in 413 rounds does more than one.
+
+    round 253   build 086426a   2026-08-25 19:19
+    round 254   build 77f9ca4   2026-08-25 19:46   "Re-acquire the scratch slide
+                                                    instead of buying another one"
+
+`git rev-list --count 086426a..77f9ca4` is **1**. Twenty-seven minutes, one
+commit, and it changed how the probe gets its scratch slide.
+
+**The crossings are not subtle.** Counted from the round files:
+
+    shapes-items-via-positional-slide   <=253  not-listed 208, short-0 21
+                                        >=254  at-least-5 165, short-* 23
+    group-of-existing-shape-readable    <=253  no-group-id 229 of 229
+                                        >=254  threw 154, no-group-id 34
+    does-a-failed-group-poison-the-tag  <=253  no-refusal 184, tags-gone 26
+                                        >=254  tags-gone 187, no-refusal 1
+
+`not-listed` appears 208 times before and never after. `at-least-5` appears 165
+times after and never before.
+
+**WHY THIS MATTERS MORE THAN A DATE.** Those answers are written into
+`KNOWN_DIVERGENCES` in `scripts/host-baseline.mjs` as facts about PowerPoint,
+with tallies drawn from rounds 265-297 — entirely post-254. Two examples, both
+verified against the archive:
+
+- *"This host answers `tags-gone`, 25 of 25"* — it answered `no-refusal` **184
+  times** before our commit.
+- *"This host would not: `no-group-id`"* — true before the commit, and after it
+  the host mostly answers `threw` (154 against 34).
+
+Each note is honest about its window and silent about the fact that the window
+has a wall in it. Read as written, they describe the HOST; what they actually
+describe is the host **as our probe asks it since 77f9ca4**.
+
+`shapes-items-via-positional-slide` is the worst of the nine because it is
+declared an AGREEMENT with the fake rather than a divergence: pre-254 the host
+said `not-listed` 208 times against the fake's `at-least-5`, so the commit turned
+a real divergence into a recorded agreement — the direction that misleads.
+`test/fixtures/host-answers-web.json` is build `8643e2d` (2026-09-01), post-254,
+so `test/host-contract.test.ts` pins the new answers as the baseline.
+
+**WHAT IS NOT CLAIMED.** That the notes are wrong about today's behaviour —
+mostly they are right about it. That the commit was a mistake — re-acquiring the
+scratch slide was the point of it, and `docs/BACKLOG.md:1629` already credits it
+with fixing `shape-add-fresh-getitem-slide`. What is claimed is that nine
+sentences about a Microsoft product are really sentences about our own probe
+change, and nothing in the file says so.
+
+**FOR THE OWNER, because it is about what the archive MEANS**: the notes can be
+re-worded to date themselves, or the questions can be re-asked the old way to
+separate probe from host. Re-wording is cheap and honest and I have done the two
+above. Re-asking costs rounds and is the only thing that would settle which of
+the eleven are host facts at all.
+
 ### office-js#6329 has its first evidence here, and it was never untestable — 2026-09-09
 
 **Rounds that die were syncing about 15% faster than rounds that live, in both

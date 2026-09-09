@@ -208,7 +208,11 @@ export const KNOWN_DIVERGENCES = {
     "The fake models the host this code was written against, where a refused group leaves the context usable and the tag written afterwards lands. This " +
     "host answers `tags-gone`, 25 of 25 — a failed `addGroup` takes the tag with it. That is what `settleAndTagChart` " +
     "exists for and why it opens a FRESH context rather than continuing in the one that just failed. Declared rather " +
-    "than modelled: the fake's version is what makes an ordinary grouping test about grouping.",
+    "than modelled: the fake's version is what makes an ordinary grouping test about grouping. " +
+    "DATED 2026-09-09: that 25 of 25 is a window on ONE SIDE OF A WALL. Across the archive this question answers " +
+    "`no-refusal` 184 times up to round 253 and `tags-gone` 187 times from round 254 — the round our own commit " +
+    "77f9ca4 changed how the probe acquires its scratch slide. The sentence above is true of the host AS ASKED SINCE " +
+    "THEN, and was false of it before. See BACKLOG, 'ROUND 254 IS OUR OWN COMMIT'.",
   "picture-then-shape-read":
     "office-js#5022. The fake's happy path reads a shape collection after a picture insert; this host mostly will not. " +
     "`unreadable` 21 of 25, `yes` 4 — A COIN, and its `UNSTABLE_ANSWERS` entry is the one to read before acting. One " +
@@ -242,7 +246,11 @@ export const KNOWN_DIVERGENCES = {
   "group-children-via-getcount":
     "The fake's happy path counts a group's children; the web host's refusal lives in a named fault rather than the default. ANSWERED 2026-08-08: `unreadable`. Read with `group-reports-its-children` above — both ways into a group's children are refused on this host. Also carried in UNSTABLE_ANSWERS, because it has been asked once and once is a sample.",
   "group-of-existing-shape-readable":
-    "The fake's happy path names a group it has just made, so the later-batch question can be put at all. This host would not: `no-group-id`. That is an answer and not a setup failure — a host that will not name a fresh group cannot be asked about resolving one from the deck afterwards, and the fact belongs in the sheet. It also means `countGroupChildrenPage`, which swallows failures per shape, produces no error and no measurement here.",
+    "The fake's happy path names a group it has just made, so the later-batch question can be put at all. This host would not: `no-group-id`. That is an answer and not a setup failure — a host that will not name a fresh group cannot be asked about resolving one from the deck afterwards, and the fact belongs in the sheet. It also means `countGroupChildrenPage`, which swallows failures per shape, produces no error and no measurement here. " +
+    "DATED 2026-09-09, AND IT DESCRIBES THE OLD SIDE OF A WALL. `no-group-id` is 229 of 229 up to round 253; from " +
+    "round 254 — our commit 77f9ca4, which re-acquires the scratch slide — the host answers `threw` 154 times against " +
+    "`no-group-id` 34. So the refusal above is still the reason `countGroupChildrenPage` measures nothing, but the FACE " +
+    "it wears changed when we changed the question. See BACKLOG, 'ROUND 254 IS OUR OWN COMMIT'.",
 };
 
 /**
