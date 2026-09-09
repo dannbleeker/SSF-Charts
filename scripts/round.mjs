@@ -2281,8 +2281,25 @@ export async function attempt(argv, deps, sh, healed = false) {
     // at all", seconds after the host answered in 3ms. Calling that a missing
     // BUTTON is what made it terminal.
     if (described !== null && paneAnsweredNothing(described)) {
+      /**
+       * RETURNED IN THE SHAPE RECOVERY UNDERSTANDS, which the first version was
+       * not — it said `reason: "pane-closed"` and changed nothing.
+       *
+       * `shouldRetry` retries a short list of named reasons and otherwise only
+       * `not-ready`, whose CODES it then checks against `RECOVERABLE_STOPS`. A
+       * bare `pane-closed` reason is in neither list, so it fell through to
+       * `return false`: no retry, `recoverable: false`, and the cycle stopped
+       * saying "pane-closed is not something recovery addresses — it needs a
+       * person", which is the opposite of true. Cycle B's 4:3 leg died that way
+       * on 2026-09-09, with this very line printing "recovery can reopen"
+       * three lines above the stop that said it could not.
+       *
+       * A rename is not a reclassification. The readiness path carries the
+       * state in `codes` and the reason is the CHANNEL; matching that shape is
+       * what actually reaches recovery.
+       */
       console.error("  nothing at all is on the pane — treating it as a closed pane, which recovery can reopen");
-      return { code: 1, reason: "pane-closed" };
+      return { code: 1, reason: "not-ready", codes: ["pane-closed"] };
     }
     return { code: 1, reason: "no-run-button" };
   }

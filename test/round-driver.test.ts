@@ -1145,6 +1145,38 @@ describe("talking to the browser at all", () => {
     expect(paneAnsweredNothing('  - button "Insert into slide" [ref=f2]'), "indented controls still count").toBe(false);
   });
 
+  it("returns the blank pane in the shape recovery actually understands", () => {
+    /**
+     * A RENAME IS NOT A RECLASSIFICATION, and the first version of this fix was
+     * only a rename. It returned `reason: "pane-closed"`, on the assumption that
+     * `RECOVERABLE_STOPS` containing that name was enough. It is not:
+     * `shouldRetry` retries a short list of named reasons and otherwise only
+     * `not-ready`, whose CODES it checks against that set. A bare `pane-closed`
+     * matched neither list and fell through to `return false`.
+     *
+     * So cycle B's 4:3 leg on 2026-09-09 printed "treating it as a closed pane,
+     * which recovery can reopen" and then stopped three lines later with
+     * "pane-closed is not something recovery addresses — it needs a person".
+     * Both sentences from the same run, one of them false.
+     *
+     * The behaviour is asserted through the real decision function, and the
+     * SHAPE is pinned in the source — a test on `shouldRetry` alone would still
+     * pass if the driver went back to returning the bare reason.
+     */
+    expect(shouldRetry("not-ready", 1, 7, ["pane-closed"]), "the shape the driver now returns is not retried").toBe(
+      true,
+    );
+    expect(shouldRetry("pane-closed", 1, 7, []), "a bare reason must not look retryable").toBe(false);
+    // A pane on the WRONG TAB is still terminal: it has tabs, so it is not this
+    // branch, and burning seven attempts on it would help nobody.
+    expect(shouldRetry("not-ready", 1, 7, ["no-run-button"])).toBe(false);
+
+    const src = readFileSync(new URL("../scripts/round.mjs", import.meta.url), "utf8");
+    expect(src, "the blank-pane branch no longer returns a recoverable shape").toMatch(
+      /paneAnsweredNothing\(described\)\)[\s\S]{0,1600}reason: "not-ready", codes: \["pane-closed"\]/,
+    );
+  });
+
   it("keeps what a failed CLI call said, and nothing from one that worked", () => {
     // The stderr is the only place the two browser-absent states differ, so a
     // driver that discards it cannot tell them apart however carefully it reads
