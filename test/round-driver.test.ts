@@ -62,6 +62,11 @@ const {
   selectDeck,
   sideloadAddIn,
   sweepDeck,
+  sweepVeto,
+  isConfiguredDeck,
+  configuredDeckNames,
+  cleanDeckScript,
+  SWEEP_CEILING,
   DECK_HOME_URL,
 } = driver;
 
@@ -898,15 +903,94 @@ describe("talking to the browser at all", () => {
     // cleaned the deck, failed outright, or left slides on it. The next round
     // then refuses with `deck-dirty` for a state the previous round's output
     // said could not exist. A tool that exits in silence reads as a pass.
+    // THE TAB LIST ANSWERS A CONFIGURED DECK, because `sweepDeck` now refuses
+    // outright on a document nobody named — see `sweepVeto`. Before this line
+    // the fake answered `deck:1` to `tab-list` as well, so `frontedDeck` read
+    // no document, the veto fired first, and three of the four cases below
+    // passed for a reason that had nothing to do with this test's title.
     const shWith = (evalAnswer: string) =>
       ((...args: string[]) => {
         if (args[0] === "find") return 'tab "Chart" [ref=r1]';
+        if (args[0] === "tab-list") return "0: https://x/ [Presentation64.pptx] (current)";
         return evalAnswer;
       }) as never as (...a: string[]) => string;
     expect(sweepDeck(shWith("deck:1")), "a deck down to its one slide is clean").toBe(true);
     expect(sweepDeck(shWith("deck:7")), "seven slides left is not a swept deck").toBe(false);
     expect(sweepDeck(shWith("deck-failed")), "the sweep said it failed").toBe(false);
     expect(sweepDeck(shWith("")), "no answer is not a clean deck").toBe(false);
+  });
+
+  it("will not delete slides out of a document nobody named", () => {
+    // THE HAZARD THIS CLOSES. `cleanDeckScript` deletes every slide but the
+    // first on a positional rule with no name test, and with no `PW_DECK` the
+    // driver runs against whichever document is fronted. Every script in
+    // `docs/evidence/` drives the SAME `.pw-session` profile and leaves its own
+    // deck in front — one of them 51 slides of evidence that exists so a
+    // finding can be re-run rather than re-argued.
+    const shOn = (tabLine: string) =>
+      ((...args: string[]) => {
+        if (args[0] === "find") return 'tab "Chart" [ref=r1]';
+        if (args[0] === "tab-list") return tabLine;
+        return "deck:1";
+      }) as never as (...a: string[]) => string;
+
+    expect(
+      sweepDeck(shOn("0: https://x/ [Presentation64.pptx] (current)")),
+      "the cycle's own 16:9 default is configured and sweeps",
+    ).toBe(true);
+    expect(
+      sweepDeck(shOn("0: https://x/ [SomeoneElsesDeck.pptx] (current)")),
+      "a document nobody configured is not swept, whatever the sweep would have answered",
+    ).toBe(false);
+    expect(sweepDeck(shOn("0: https://x/ [Home - OneDrive]")), "no fronted document is a veto, not a guess").toBe(
+      false,
+    );
+  });
+
+  it("refuses to sweep a deck that is larger than any round has ever produced", () => {
+    // The name check is the load-bearing half; this is the second layer, for an
+    // operator who names a big deck on purpose. `deck-too-big:N` is a deliberate
+    // stop and must not read as a broken sweep — 425 archived rounds end at a
+    // median of 7 slides and never above 9, so nothing ordinary comes near 20.
+    const sh = ((...args: string[]) => {
+      if (args[0] === "find") return 'tab "Chart" [ref=r1]';
+      if (args[0] === "tab-list") return "0: https://x/ [Presentation64.pptx] (current)";
+      return "deck-too-big:51";
+    }) as never as (...a: string[]) => string;
+    expect(sweepDeck(sh), "51 slides is above the ceiling and nothing was deleted").toBe(false);
+    expect(cleanDeckScript(90000, 20)).toContain("if (count > 20)");
+  });
+
+  it("tells the operator how to proceed rather than only refusing", () => {
+    // A guard that stops an unattended run at 2am and does not say what to type
+    // costs the night. Both refusals name the way forward.
+    const noDoc = sweepVeto(null);
+    expect(noDoc, "an unreadable tab list is a veto").toBeTruthy();
+    expect(String(noDoc)).toContain("DELETES SLIDES");
+
+    const stranger = sweepVeto("Presentation72.pptx");
+    expect(stranger, "a document nobody configured is a veto").toBeTruthy();
+    expect(String(stranger), "names the env var that would authorise it").toContain("PW_DECK=Presentation72");
+
+    expect(sweepVeto("Presentation64.pptx"), "a configured deck is not vetoed").toBeNull();
+    expect(configuredDeckNames(), "the cycle's own defaults are always in the list").toEqual(
+      expect.arrayContaining(["Presentation64", "Presentation70"]),
+    );
+    expect(SWEEP_CEILING, "well above the 9 slides the largest archived round left").toBeGreaterThan(9);
+  });
+
+  it("guards the delete on an EXACT name, never a prefix", () => {
+    // `selectDeck` matches by `includes`, so a `PW_DECK` of `Presentation7`
+    // fronts `Presentation72`. A gate that guards a DELETE may not inherit that.
+    const before = process.env.PW_DECK;
+    try {
+      process.env.PW_DECK = "Presentation7";
+      expect(isConfiguredDeck("Presentation7.pptx"), "the name the operator actually gave").toBe(true);
+      expect(isConfiguredDeck("Presentation72.pptx"), "a longer name that merely starts with it").toBe(false);
+    } finally {
+      if (before === undefined) delete process.env.PW_DECK;
+      else process.env.PW_DECK = before;
+    }
   });
 
   it("stops on the first attempt when the document has no add-in to open", () => {

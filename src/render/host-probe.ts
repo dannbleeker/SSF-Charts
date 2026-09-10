@@ -138,6 +138,17 @@ export interface ProbeSample {
    * the live candidate once `regime` was eliminated.
    */
   scratch: ScratchState;
+  /**
+   * WHICH ROUTE got the slide this sample was taken on. See
+   * `ScratchAcquisition` — the state above says what the slide IS, this says
+   * where it came from, and round 254 is the round where those two answers
+   * stopped agreeing.
+   *
+   * Recorded on EVERY sample, like its two neighbours, and for the reason their
+   * docstrings each give: a value written down only when something looks wrong
+   * cannot be compared against anything.
+   */
+  acquired: ScratchAcquisition;
 }
 
 /**
@@ -177,6 +188,38 @@ export type HostRegime = "healthy" | "slide-trouble" | "collection-refused" | "u
  * four times with four different fields.
  */
 export type ScratchState = "first-slide" | "fresh-slide" | "reused-slide" | "no-slide";
+
+/**
+ * HOW the run came to hold this sample's scratch slide — the ROUTE, where
+ * `ScratchState` above is the resulting STATE. They are different facts and
+ * round 254 is what proves it.
+ *
+ * `77f9ca4` (2026-08-25, "Re-acquire the scratch slide instead of buying
+ * another one") changed acquisition from "buy a new one" to "ask the deck for
+ * the one we already have", and nothing in a round file said which route a
+ * sample took. The only record was `trace.entries`: 5,122 "re-acquired the
+ * scratch slide by position" lines, every one in a round numbered 254 or above
+ * and none in the 229 below it. Reconstructing the split from those lines is
+ * how the round-254 wall was found, weeks late, and it cost an entire analysis
+ * to do what this field now does for free. `docs/BACKLOG.md` §"ROUND 254 IS OUR
+ * OWN COMMIT" is the write-up.
+ *
+ * SIX SITES TAKE A SLIDE and `takeScratch`'s `sameSlide` flag names only one of
+ * them. It is a parameter read once inside an `if` and never stored, so it
+ * cannot be the record: it separates the re-acquire from everything else and
+ * says nothing about WHICH of the other five, nor about there being no slide at
+ * all. Hence a value per route rather than a boolean.
+ *
+ * `unknown` IS NOT A ROUTE, it is the absence of one, and the distinction is
+ * this file's own rule — see `archivableDeck`'s `undisclosed` in
+ * `scripts/round.mjs` for the same argument. A sample archived before this
+ * field existed carries no `acquired` at all; a sample that carries `unknown`
+ * was taken by a path that reached `record` without going through
+ * `takeScratch`. A reader can tell those apart, and collapsing them is exactly
+ * the mistake the `regime` and `ScratchState` docstrings above are each
+ * counting instances of. Do not add to that tally here; point at it.
+ */
+export type ScratchAcquisition = "first-add" | "re-acquired" | "recovered" | "replaced" | "no-slide" | "unknown";
 
 /**
  * How long an observation still describes the host.
@@ -586,7 +629,22 @@ export function scratchReplacementWhy(result: { why?: string; answer: string }):
  * before they were made weak. A probe that needs a non-answer of its own should
  * name it for its own question rather than reach for a generic one.
  */
-export const UNINFORMATIVE = new Set(["other", "unreadable", "silent", "not-a-short-read", "none-of-ours"]);
+export const UNINFORMATIVE = new Set([
+  "other",
+  "unreadable",
+  "silent",
+  "not-a-short-read",
+  "none-of-ours",
+  // `no-shapes-to-list` belongs to `durable-slide-lists-its-shapes` and means
+  // the slide it was asked about was empty — the host answered the call, there
+  // was simply nothing to count. Named for its own question exactly as the
+  // paragraph above demands, and weak for the reason that paragraph gives: on
+  // the 16:9 arm the durable slide is empty in nearly every round, so a strong
+  // answer here would lock the row with a non-answer in the arm where the
+  // question cannot inform, and the 4:3 arm — where it CAN — would never get to
+  // speak. A trigger that cannot fail is not a measurement.
+  "no-shapes-to-list",
+]);
 
 /** Weak enough to be replaced by a named answer: never asked, or asked and unnameable. */
 export function weakAnswer(a: string): boolean {
@@ -1867,6 +1925,82 @@ const PROBES: Probe[] = [
       } catch (err) {
         return unreadable(err);
       }
+    },
+    // THE ROUND-254 CONTROL, and the only half of this question that can be put
+    // read-only.
+    //
+    // This question is the worst of the crossings at round 254. Measured over
+    // the whole archive at SAMPLE level: `not-listed` 606 times in the 229
+    // rounds up to 253 and ZERO in the 200 since; what is there instead is
+    // `short-0` 397 and `at-least-5` 173. The boundary is `77f9ca4`, OUR commit,
+    // which stopped the probe buying a fresh scratch slide per question and made
+    // it re-acquire one by position. So the ask above now reads a slide this run
+    // added, lost and RE-ACQUIRED, and nothing in the sheet says so.
+    //
+    // Two readings fit that and they want opposite things:
+    //
+    //   the COLLECTION   this host under-reports a shape collection, and
+    //                    `slideShapeList`'s corroborated count is load-bearing.
+    //   the SLIDE        it under-reports OUR slide, and says nothing about the
+    //                    slides a user's charts actually live on.
+    //
+    // `experiments.ts` found the SECOND for four sibling questions on
+    // 2026-08-26, two of them reversing a shipped decision. That is the reason
+    // to ask rather than to assume.
+    //
+    // READ-ONLY, and that is why this is a probe follow rather than an
+    // experiment. The write half — "after adding five shapes" — cannot be asked
+    // here: `durableSlideId`'s own docstring says nothing may ever write to it,
+    // because a diagnostic that litters the owner's deck on every round forever
+    // is one they stop running. What is left is the half the crossing is about:
+    // whether a collection on a slide we did NOT create enumerates at all.
+    follow: {
+      // NOT on `at-least-5`. That face is the read WORKING — there is nothing to
+      // disambiguate, and firing on it would spend a slide-free question on the
+      // one answer that already means what it says.
+      when: (answer) => answer !== "at-least-5",
+      because:
+        "the collection under-reported a slide this run added and re-acquired by position, which could be about the collection or about that slide",
+      probe: {
+        id: "durable-slide-lists-its-shapes",
+        // DELIBERATELY NOT NAMED `shapes-…`. `record` treats any id matching
+        // /^shapes?-/ as evidence about the scratch collection and feeds it into
+        // `lastRefusalAt`, which stamps the `regime` of every sample taken in the
+        // next twenty seconds. A durable-slide observation entering that signal
+        // would silently re-classify every other question in the run.
+        question: "Same positional collection read, on a slide that was in the deck before this run — any different?",
+        ask: async (ctx) => {
+          const durable = ctx.durableSlideId;
+          if (!durable) return { answer: "no-durable-slide", detail: "the deck has no slide this run did not add" };
+          ctx.slides.load("items/id");
+          await ctx.sync();
+          let index: number;
+          try {
+            index = ctx.slides.items.findIndex((s) => s.id === durable);
+          } catch (err) {
+            return unreadable(err);
+          }
+          // The SAME positional route as the trigger, so the only thing that
+          // differs between the two answers is which slide was asked about.
+          if (index < 0) return { answer: "not-listed" };
+          const shapes = ctx.slides.getItemAt(index).shapes;
+          shapes.load("items/id");
+          await ctx.sync();
+          try {
+            const n = shapes.items.length;
+            // An empty durable slide cannot answer this and must not pretend to
+            // — see `no-shapes-to-list` in `UNINFORMATIVE`.
+            return n > 0
+              ? { answer: "lists-shapes", detail: `items=${n}` }
+              : {
+                  answer: "no-shapes-to-list",
+                  detail: "the durable slide is empty, so there is nothing to under-report",
+                };
+          } catch (err) {
+            return unreadable(err);
+          }
+        },
+      },
     },
   },
   {
@@ -3483,7 +3617,22 @@ export async function runHostProbes(
    */
   let scratchGeneration = 0;
   let scratchUsed = false;
-  const takeScratch = (id: string | null, { sameSlide = false } = {}): string | null => {
+  /**
+   * The route the slide currently in hand arrived by. `unknown` until the first
+   * take, which is honest rather than tidy: it means no take has happened yet,
+   * and `record` only ever writes it out alongside a non-null `scratchId`.
+   */
+  let scratchAcquired: ScratchAcquisition = "unknown";
+  const takeScratch = (
+    id: string | null,
+    { sameSlide = false, via }: { sameSlide?: boolean; via: ScratchAcquisition },
+  ): string | null => {
+    // THE ROUTE IS RECORDED EVEN WHEN THE TAKE FAILED TO PRODUCE A SLIDE, and
+    // then `record` overrides it with `no-slide` for the sample. Two different
+    // questions: this variable answers "how did we last try", the sample answers
+    // "what was this measured on". Keeping them separate is why a failed replace
+    // does not silently label the next sample with the route before it.
+    scratchAcquired = via;
     // `sameSlide` is the re-acquire: the deck listing handed back the id the
     // scratch slide is CURRENTLY listed under, and it is the slide this run has
     // been using all along. Bumping the generation there would report the next
@@ -3542,7 +3691,9 @@ export async function runHostProbes(
     slides: opened?.length,
   });
   const deckAtStart = opened?.length;
-  let scratchId = takeScratch(await addScratchSlide(SCRATCH_ADD_BUDGET_MS, noteScratch, noteUnnamed));
+  let scratchId = takeScratch(await addScratchSlide(SCRATCH_ADD_BUDGET_MS, noteScratch, noteUnnamed), {
+    via: "first-add",
+  });
   if (scratchId) scratchIds.push(scratchId);
   /**
    * Consecutive questions that could not get an answer out of the host at all.
@@ -3612,7 +3763,12 @@ export async function runHostProbes(
         : scratchGeneration <= 1
           ? "first-slide"
           : "fresh-slide";
-    const sample: ProbeSample = { answer: row.answer, pass, atMs, regime: regimeNow(atMs), scratch };
+    // THE ROUTE, alongside the state. `scratchAcquired` is set by `takeScratch`
+    // at whichever of its six call sites actually produced the slide this run is
+    // holding; with no slide the route is `no-slide` regardless of what the last
+    // successful take recorded, because the sample was not taken on that slide.
+    const acquired: ScratchAcquisition = scratchId ? scratchAcquired : "no-slide";
+    const sample: ProbeSample = { answer: row.answer, pass, atMs, regime: regimeNow(atMs), scratch, acquired };
     // Marked here rather than at the ask, because `record` is the one path every
     // question's outcome goes through — a retry, a partner and a second-pass
     // rescue all land here, and each of them genuinely has used the slide.
@@ -3714,7 +3870,7 @@ export async function runHostProbes(
           const recovered = await addScratchSlide(SCRATCH_ADD_BUDGET_MS, noteScratch, noteUnnamed);
           if (recovered) {
             noteScratch(recovered);
-            scratchId = takeScratch(recovered);
+            scratchId = takeScratch(recovered, { via: "recovered" });
             trace("probe", "took another scratch slide after giving up on the last", { id: probe.id });
           }
         }
@@ -3778,7 +3934,7 @@ export async function runHostProbes(
                   // Recorded under the id the deck actually lists, which is also
                   // the id the clean-up would need to delete it by.
                   noteScratch(settled);
-                  scratchId = takeScratch(settled, { sameSlide: true });
+                  scratchId = takeScratch(settled, { sameSlide: true, via: "re-acquired" });
                   result = onSettled;
                 }
               }
@@ -3789,7 +3945,7 @@ export async function runHostProbes(
             const replacement = await addScratchSlide(SCRATCH_ADD_BUDGET_MS, noteScratch, noteUnnamed);
             if (replacement) {
               noteScratch(replacement);
-              scratchId = takeScratch(replacement);
+              scratchId = takeScratch(replacement, { via: "replaced" });
               trace("probe", "replaced the scratch slide", {
                 id: probe.id,
                 scratchId: replacement,
@@ -3896,7 +4052,7 @@ export async function runHostProbes(
             const replacement = await addScratchSlide(SCRATCH_ADD_BUDGET_MS, noteScratch, noteUnnamed);
             if (replacement) {
               noteScratch(replacement);
-              scratchId = takeScratch(replacement);
+              scratchId = takeScratch(replacement, { via: "replaced" });
               trace("probe", "replaced the scratch slide for a partner question", {
                 id: follow.probe.id,
                 scratchId: replacement,
@@ -4009,7 +4165,7 @@ export async function runHostProbes(
         }
         noSlide = 0;
         noteScratch(replacement);
-        scratchId = takeScratch(replacement);
+        scratchId = takeScratch(replacement, { via: "replaced" });
         const deadlinesBefore = deadlinesFired;
         const started = Date.now();
         const retry = await ask(probe, replacement, durableSlideId);
@@ -4035,6 +4191,10 @@ export async function runHostProbes(
             // derived. `scratchGeneration` is past 1 by now in any run that
             // reached here, so `fresh-slide` rather than `first-slide`.
             scratch: "fresh-slide",
+            // Same construction, same certainty: the slide under this sample was
+            // taken by the replacement path a few lines above, so the route is
+            // known outright rather than read off `scratchAcquired`.
+            acquired: "replaced",
           },
         ];
         if (!NOT_ASKED.has(retry.answer)) {

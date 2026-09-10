@@ -923,9 +923,21 @@ export function frontedDeck(sh) {
  * not tell" is the same defect this file spent the day removing from slide
  * counts. A reader can tell all three apart.
  */
-export function archivableDeck(name) {
-  if (!name) return null;
-  const configured = [
+/**
+ * The decks somebody CONFIGURED, and not one name this file invented.
+ *
+ * TWO QUESTIONS READ THIS LIST AND THEY ARE THE SAME FACT. `archivableDeck`
+ * asks whether a name may be written into a public archive; `sweepVeto` asks
+ * whether the driver may delete slides out of the document. Both reduce to "did
+ * the operator name this on purpose", so the list lives once. Widening it widens
+ * BOTH — that coupling is deliberate, and it is the reason a private document
+ * name must never be added here. Names arrive through `PW_DECK`,
+ * `PW_DECK_16_9` and `PW_DECK_4_3`; the two literals are the cycle's own
+ * defaults, already published in `cyclePlan`, in `DECK_NAME` below and in the
+ * `driverDeck` field of archived rounds.
+ */
+export function configuredDeckNames() {
+  return [
     process.env.PW_DECK,
     process.env.PW_DECK_16_9,
     process.env.PW_DECK_4_3,
@@ -934,10 +946,28 @@ export function archivableDeck(name) {
     "Presentation64",
     "Presentation70",
   ].filter(Boolean);
-  // Matched with and without the extension: `PW_DECK` carries a bare name
-  // (`Presentation70`) and the tab list reports a filename.
-  const base = name.replace(/\.pptx$/i, "").toLowerCase();
-  return configured.some((d) => d.replace(/\.pptx$/i, "").toLowerCase() === base) ? name : "undisclosed";
+}
+
+/**
+ * Did the operator name this document?
+ *
+ * Matched with and without the extension: `PW_DECK` carries a bare name
+ * (`Presentation70`) and the tab list reports a filename. EXACT on the base
+ * name, never a prefix — `selectDeck` matches by `includes` and would front
+ * `Presentation72` for a `PW_DECK` of `Presentation7`. A gate that guards a
+ * DELETE may not inherit that looseness.
+ */
+export function isConfiguredDeck(name) {
+  if (!name) return false;
+  const base = String(name)
+    .replace(/\.pptx$/i, "")
+    .toLowerCase();
+  return configuredDeckNames().some((d) => d.replace(/\.pptx$/i, "").toLowerCase() === base);
+}
+
+export function archivableDeck(name) {
+  if (!name) return null;
+  return isConfiguredDeck(name) ? name : "undisclosed";
 }
 
 export function selectDeck(sh, deckName) {
@@ -3244,14 +3274,83 @@ export function shouldRetry(reason, attempt, max, codes) {
   return Array.isArray(codes) && codes.length > 0 && codes.every((c) => RECOVERABLE_STOPS.has(c));
 }
 
-/** Delete every slide but the first, so the next round starts where the last one did. */
-export function cleanDeckScript(budgetMs) {
+/**
+ * How many slides a deck may hold before the driver refuses to sweep it.
+ *
+ * MEASURED, 2026-09-10. Across the 425 of 429 archived rounds carrying
+ * `deck.inventory`, the deck at end of run holds 7 slides at the median, 8 at
+ * the 95th and NEVER more than 9. So 20 is more than twice anything a round has
+ * ever produced, and far under the 51 slides of the deck this exists to save.
+ *
+ * A CEILING CANNOT BE THE WHOLE GUARD, and reading it as one is the trap. The
+ * other deck worth protecting holds SIX slides — under any ceiling that still
+ * lets an ordinary round sweep. `sweepVeto`'s name check is the load-bearing
+ * half; this catches only the operator who names a big deck on purpose.
+ *
+ * Env-overridable because the legitimate case — someone who really does mean to
+ * sweep a big deck — must not need an edit to this file at 2am.
+ */
+export const SWEEP_CEILING = Number(process.env.PW_SWEEP_MAX) || 20;
+
+/**
+ * Why this sweep must NOT happen, or null when it may.
+ *
+ * THE DRIVER MAY ONLY DESTROY WHAT IT MAY NAME. `cleanDeckScript` deletes every
+ * slide but index 0 on a positional rule with no name, tag or session test, and
+ * until this existed nothing asked whose slides they were: with no `PW_DECK`,
+ * `wantDeck` is null, `selectDeck` is never called, and the round measures — and
+ * sweeps — whichever document happens to be fronted.
+ *
+ * THAT IS A LIVE PATH, NOT A THEORETICAL ONE. Every script in `docs/evidence/`
+ * hard-codes the SAME `.pw-session` profile this driver uses and leaves its own
+ * deck in front when it finishes. Those decks are the substrate the evidence
+ * README keeps "so the assertion can be re-run rather than re-argued" — one of
+ * them 51 slides deep. Running an arm and then the documented
+ * `node scripts/round.mjs --dir .pw-session` was one readiness check away from
+ * taking it to a single slide. It reaches `--check` too: the `onlyDirtyDeck`
+ * heal runs BEFORE `--check` returns.
+ *
+ * NULL IS A VETO HERE, and that is the opposite of this file's usual rule.
+ * Everywhere else an unread value must never be reported as a negative one —
+ * see `archivableDeck`'s `undisclosed`. Here the unread value decides whether to
+ * DELETE, and "I could not tell whose deck this is" is not a licence. Being
+ * wrong this way costs a dirty deck and a `deck-dirty` refusal, which is
+ * recoverable; being wrong the other way is not.
+ */
+export function sweepVeto(fronted) {
+  if (!fronted)
+    return (
+      "no PowerPoint document could be read from the tab list, and a sweep DELETES SLIDES — " +
+      "refusing to guess which document it would delete them from"
+    );
+  if (!isConfiguredDeck(fronted))
+    return (
+      `\`${fronted}\` is not a deck anyone configured this driver to use, and the sweep deletes every ` +
+      "slide but the first. If it really is a round deck, re-run with " +
+      `\`PW_DECK=${String(fronted).replace(/\.pptx$/i, "")}\` — which also names it in the archive`
+    );
+  return null;
+}
+
+/**
+ * Delete every slide but the first, so the next round starts where the last one
+ * did — unless there are more of them than any round has ever produced.
+ *
+ * THE CEILING IS CHECKED INSIDE THE HOST, after the count and before the first
+ * delete, because that is the only place the number is known. The driver's own
+ * `sweepVeto` runs earlier and on a different fact (whose deck it is); this is
+ * the second layer, and it returns `deck-too-big:N` rather than throwing so the
+ * caller can tell "refused on size" from "the host would not answer".
+ */
+export function cleanDeckScript(budgetMs, ceiling = SWEEP_CEILING) {
   return (
     "async () => { const budget = (p, ms) => Promise.race([p, new Promise((_, r) => " +
     `setTimeout(() => r(new Error("TIMEOUT")), ms))]); try { const n = await budget(PowerPoint.run(async (c) => { ` +
     'const s = c.presentation.slides; s.load("items/id"); await c.sync(); const count = s.items.length; ' +
+    `if (count > ${ceiling}) return "too-big:" + count; ` +
     "for (let i = count - 1; i >= 1; i--) c.presentation.slides.getItemAt(i).delete(); await c.sync(); " +
-    `s.load("items/id"); await c.sync(); return s.items.length; }), ${budgetMs}); return "deck:" + n; } ` +
+    `s.load("items/id"); await c.sync(); return s.items.length; }), ${budgetMs}); ` +
+    'return typeof n === "string" && n.indexOf("too-big:") === 0 ? "deck-" + n : "deck:" + n; } ' +
     'catch (e) { return "deck-failed"; } }'
   );
 }
@@ -3550,6 +3649,20 @@ export async function refreshPane(sh, sleep, { reloaded = false } = {}) {
  * hardcoded deck name and the three stale slogans in `triage.mjs` happened.
  */
 export function sweepDeck(sh) {
+  // WHOSE DECK IS THIS, ASKED BEFORE ANYTHING IS DELETED. `sweepVeto` carries
+  // the reasoning; the short version is that with no `PW_DECK` this function
+  // used to delete slides out of whatever document happened to be fronted, and
+  // the evidence decks in `docs/evidence/` share this driver's browser profile.
+  //
+  // READ HERE rather than taken as a parameter, for the same reason the
+  // end-of-round call re-reads it: every caller reached this by a different
+  // path, and a name passed down from a readiness check made three refusals ago
+  // is a name that may no longer be in front.
+  const veto = sweepVeto(frontedDeck(sh));
+  if (veto) {
+    console.log(`  DECK NOT SWEPT — ${veto}`);
+    return false;
+  }
   const anchor = refFor(sh, "Chart", /tab "Chart"/);
   if (!anchor) return false;
   // READ WHAT IT ANSWERED. This threw the result away and returned `true`
@@ -3562,6 +3675,17 @@ export function sweepDeck(sh) {
   // loop stops at index 1 on purpose, because a deck cannot have zero slides and
   // a fixed-count delete once took one to exactly that.
   const out = sh("eval", cleanDeckScript(90000), anchor);
+  // THE SIZE REFUSAL IS NOT A FAILURE AND MUST NOT READ AS ONE. `deck-too-big:N`
+  // means the host counted more slides than `SWEEP_CEILING` and deleted nothing
+  // — a deliberate stop, printed by name so nobody debugs it as a broken sweep.
+  const tooBig = /deck-too-big:(\d+)/.exec(out)?.[1];
+  if (tooBig !== undefined) {
+    console.log(
+      `  DECK NOT SWEPT — it holds ${tooBig} slides, above the ceiling of ${SWEEP_CEILING}, and the sweep ` +
+        "deletes every slide but the first. Raise it with `PW_SWEEP_MAX` if this really is a round deck.",
+    );
+    return false;
+  }
   const left = /deck:(\d+)/.exec(out)?.[1];
   if (left === undefined) return false;
   return Number(left) <= 1;

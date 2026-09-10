@@ -802,6 +802,13 @@ export const UNSTABLE_ANSWERS = {
     "differ only in how the refusal arrives: a collection that throws, versus one that answers with zero items. Worth keeping apart " +
     "because the two want different code (a catch versus a corroborated count), and `slideShapeList` handles both for exactly this reason.",
   "shapes-items-via-positional-slide":
+    "**`not-listed` ON EVERY RUN SINCE' STOPPED BEING TRUE AT ROUND 254 AND THIS ENTRY SAID IT FOR 200 ROUNDS — corrected 2026-09-10.** " +
+    "Counted at sample level over the whole archive: `not-listed` 606 times in the 229 rounds up to 253, and **ZERO times in the 200 " +
+    "since** — the form did not merely drift, it disappeared. What is there instead is `short-0` (397) and `at-least-5` (173), and the " +
+    "ROW reads `at-least-5` because `record` keeps the first NAMED answer rather than the majority one. " +
+    "THE BOUNDARY IS `77f9ca4`, OUR OWN COMMIT, which stopped the probe buying a fresh scratch slide per question and made it re-acquire " +
+    "one by position — so this question's post-254 face describes a re-acquired slide and its pre-254 face a brand-new one. See " +
+    "`docs/BACKLOG.md` §'ROUND 254 IS OUR OWN COMMIT'. The ORIGINAL note, true of its own window, follows. " +
     "As its by-id partner above, and moving in step with it: `short-0` (2f1e8c4), then `not-listed` on every run since (a546897, d812d0c, 448ffc6, cfa1f50). Every run agrees with the " +
     "by-id form in the same run, which is the finding — the parent handle is not the variable. What varies is the host, run to run.",
   "group-children-via-getcount":
@@ -1142,7 +1149,17 @@ export const NEVER_ASKED = new Set(["no-scratch-slide", "no-scratch-shape", "no-
  * the original; each of these words cost this project rounds of real answers
  * before it was classified there.
  */
-export const UNINFORMATIVE_ANSWERS = new Set(["other", "unreadable", "silent", "not-a-short-read", "none-of-ours"]);
+export const UNINFORMATIVE_ANSWERS = new Set([
+  "other",
+  "unreadable",
+  "silent",
+  "not-a-short-read",
+  "none-of-ours",
+  // `durable-slide-lists-its-shapes` asked about an EMPTY slide. Kept in step
+  // with `UNINFORMATIVE` in `src/render/host-probe.ts` by a test, because the
+  // tools import nothing from the TypeScript and these two lists are copies.
+  "no-shapes-to-list",
+]);
 
 /**
  * Compare two answer sheets.

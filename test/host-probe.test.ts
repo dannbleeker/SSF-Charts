@@ -175,6 +175,10 @@ describe("the failure vocabulary is classified on purpose", () => {
     "scattered",
     "index-beats-items",
     "index-unreadable",
+    // `durable-slide-lists-its-shapes` — the round-254 control. A REAL answer:
+    // the host enumerated a collection on a slide this run did not create, which
+    // is precisely the thing its trigger cannot establish about its own slide.
+    "lists-shapes",
     "survives-8",
     "survives-12",
     "same-as-id",
@@ -243,6 +247,7 @@ describe("`unreadable` is the same trap as `other`, and cost eight questions the
           atMs: 0,
           regime: "healthy" as const,
           scratch: "first-slide" as const,
+          acquired: "first-add" as const,
         })),
       })),
     }) as HostAnswerSheet;
@@ -1364,6 +1369,43 @@ describe("questions that ask their own follow-up", () => {
     }
   });
 
+  it("asks the durable slide when the positional collection read comes back short", async () => {
+    // THE ROUND-254 CONTROL. `shapes-items-via-positional-slide` reads a
+    // collection on a slide this run added and re-acquired by position, and its
+    // answer changed at round 254 because OUR commit `77f9ca4` changed how that
+    // slide is obtained — not because PowerPoint changed. A short read has two
+    // readings that lead opposite ways: the host under-reports COLLECTIONS, or
+    // it under-reports OUR SLIDE and says nothing about the slides a user's
+    // charts live on. Only a slide the run did not create can tell them apart.
+    installHost([makeSlide("s1"), makeSlide("s2")]);
+    faults.hollowReads = 99;
+    try {
+      const rows = await sheetRows();
+      const asked = rows.find((r) => r.id === "shapes-items-via-positional-slide")!;
+      const partner = rows.find((r) => r.id === "durable-slide-lists-its-shapes");
+      expect(asked.answer, "the fault did not provoke the answer this pair is about").not.toBe("at-least-5");
+      expect(partner, "the follow-up was never asked").toBeTruthy();
+      expect(partner!.detail, "the sheet does not say the two rows are a pair").toContain(
+        "asked because shapes-items-via-positional-slide answered",
+      );
+    } finally {
+      faults.hollowReads = 0;
+    }
+  });
+
+  it("does not ask the durable slide when the collection read worked", async () => {
+    // The other half, and the one that keeps this from being a question that is
+    // always asked: on a host that enumerates its own slide there is nothing to
+    // disambiguate, and the follow costs a deck read for no answer.
+    installHost([makeSlide("s1"), makeSlide("s2")]);
+    const rows = await sheetRows();
+    expect(rows.find((r) => r.id === "shapes-items-via-positional-slide")!.answer).toBe("at-least-5");
+    expect(
+      rows.find((r) => r.id === "durable-slide-lists-its-shapes"),
+      "asked a follow-up nobody needed",
+    ).toBeFalsy();
+  });
+
   it("does not ask it when there is nothing to disambiguate", async () => {
     // An unconditional partner is just another probe and belongs in the list.
     // A follow-up earns its place by being worth asking only in the light of a
@@ -1729,7 +1771,46 @@ describe("a run samples each question more than once", () => {
       expect(typeof s.atMs).toBe("number");
       expect(["healthy", "slide-trouble", "collection-refused", "unknown"]).toContain(s.regime);
       expect(["first-slide", "fresh-slide", "reused-slide", "no-slide"]).toContain(s.scratch);
+      // THE ROUTE, on every sample and for the same reason as the three above.
+      // `unknown` is in the list because it is a real state — `record` reached
+      // without a take — and NOT because a missing stamp may fall back to it:
+      // a sample with no `acquired` at all fails `toContain(undefined)` here,
+      // which is the point. Round 254 cost an entire analysis to reconstruct
+      // this from `trace.entries` after the fact.
+      expect(["first-add", "re-acquired", "recovered", "replaced", "no-slide", "unknown"]).toContain(s.acquired);
     }
+  });
+
+  it("stamps the route a slide arrived by, not merely that one did", async () => {
+    // A STAMP THAT CANNOT DISAGREE WITH ITSELF IS A CONSTANT WEARING A FIELD'S
+    // NAME — the same argument the scratch-stamp test below makes. `takeScratch`
+    // has SIX call sites and its `sameSlide` flag distinguishes exactly one of
+    // them, which is why this is a value per route rather than a boolean.
+    //
+    // DROPPING `via` FROM A CALL SITE IS A COMPILE ERROR, not a silent gap:
+    // `takeScratch`'s options parameter is required and `via` has no default,
+    // so the type system catches the mutation this field exists to prevent.
+    // What THIS test adds is the half types cannot see — that the value which
+    // reaches the archive is a real route and not the initial `unknown`.
+    installHost([makeSlide("s1")]);
+    const sheet = await runHostProbes("fake", "test", { passes: 1 });
+    const samples = sheet.answers.flatMap((r) => r.samples ?? []);
+    expect(samples.length, "the fake host answers enough to judge").toBeGreaterThan(3);
+
+    const onASlide = samples.filter((s) => s.scratch !== "no-slide");
+    expect(onASlide.length, "the fake host does hand out a scratch slide").toBeGreaterThan(0);
+    expect(
+      onASlide.map((s) => s.acquired).filter((a) => a === "unknown"),
+      "a sample taken ON a slide always knows which route produced it",
+    ).toEqual([]);
+    // And a sample taken on NO slide says so through this field too, rather
+    // than inheriting the route of the last slide the run happened to hold.
+    for (const s of samples.filter((x) => x.scratch === "no-slide")) {
+      expect(s.acquired, "no slide means no route, not the previous route").toBe("no-slide");
+    }
+    // The two fields answer DIFFERENT questions, which is the whole reason this
+    // one exists. If they ever moved together they would be one fact twice.
+    expect([...new Set(onASlide.map((s) => s.scratch))].length, "the state varies across a run").toBeGreaterThan(1);
   });
 
   /**
@@ -1952,6 +2033,7 @@ describe("stabilityOf", () => {
     atMs: 0,
     regime: "healthy" as const,
     scratch: "first-slide" as const,
+    acquired: "first-add" as const,
   });
 
   it("needs two REAL samples before it will say anything", () => {
@@ -2672,6 +2754,7 @@ describe("re-asking what an empty deck could not answer", () => {
         atMs: pass,
         regime: "healthy" as const,
         scratch: "first-slide" as const,
+        acquired: "first-add" as const,
       })),
     })),
   });
@@ -2706,6 +2789,7 @@ describe("re-asking what an empty deck could not answer", () => {
       atMs: i,
       regime: "healthy" as const,
       scratch: "first-slide" as const,
+      acquired: "first-add" as const,
     }));
     expect(deferredForLackOfShape(sheet)).toEqual(["a"]);
   });
@@ -2716,8 +2800,15 @@ describe("re-asking what an empty deck could not answer", () => {
     // to something already decided, and it costs a scratch slide to do it.
     const sheet = sheetWith([{ id: "a", answer: "yes" }]);
     sheet.answers[0].samples = [
-      { answer: "no-scratch-shape", pass: 1, atMs: 1, regime: "healthy", scratch: "first-slide" },
-      { answer: "yes", pass: 2, atMs: 2, regime: "healthy", scratch: "first-slide" },
+      {
+        answer: "no-scratch-shape",
+        pass: 1,
+        atMs: 1,
+        regime: "healthy",
+        scratch: "first-slide",
+        acquired: "first-add",
+      },
+      { answer: "yes", pass: 2, atMs: 2, regime: "healthy", scratch: "first-slide", acquired: "first-add" },
     ];
     expect(deferredForLackOfShape(sheet)).toEqual([]);
   });

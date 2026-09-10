@@ -3134,36 +3134,67 @@ export function rasteriseArmVerdict(raster: DrawArm[], cheap: DrawArm[]): { ok: 
  * it is confounded with scenario in the archive today — the same mistake, moved
  * into the instrument built to escape it.
  *
- * EACH SPECIMEN IS DELETED BEFORE THE NEXT, so the slide this scenario leaves
- * is the slide it found and eight specimens do not pile up where later
- * scenarios read.
+ * THE SLIDE THIS SCENARIO LEAVES IS NOT THE SLIDE IT FOUND, and it never has
+ * been. An earlier version of this docstring promised the opposite — "each
+ * specimen is deleted before the next, so the slide this scenario leaves is the
+ * slide it found" — and then retracted it eight lines later. The promise is
+ * retired here rather than repeated: `docs/BACKLOG.md` §"The sweep deleted
+ * nothing seven times" set out the two ways forward, and this is the second of
+ * them, taken 2026-09-10.
  *
- * **THAT PROMISE IS NOT KEPT ON THIS HOST, measured 2026-09-07/08.**
- * `deleteShapesById` resolves each stray by id through a slide handle a sync
- * old, which this host refuses for a shape drawn seconds earlier. **28 of this
- * scenario's 33 archived rounds swept all eight specimens and took none of
- * them** (round 407 took all eight, four rounds took some — it is a coin). The
- * owner's 16:9 deck stepped from 14 to 22 top-level shapes exactly when that
- * began, and round 430's inventory shows slide index 6 holding nine `PowerChart`s
- * where one belongs. In the run that killed the tab, this slide's occupancy
- * climbed 0, 7, 15, 24, 34, 44, 53, 61 and PowerPoint died on the eighth
- * specimen.
+ * WHY THE SWEEP DOES NOT LAND. `deleteShapesById` resolves each stray by id
+ * through a slide handle a sync old, which is the one lookup this host refuses
+ * for a shape drawn seconds earlier. Re-measured over the 55 archived rounds
+ * that drew a specimen: **369 of the 419 sweeps that reported an outcome were
+ * refused**, 34 of the 55 rounds had all eight refused, exactly one round took
+ * all eight, and 20 fell in between. It is a coin, not a wall. (The figures
+ * this paragraph replaced — "28 of 33 rounds" — were right at their own
+ * denominator and had simply aged.)
+ *
+ * SO SAY WHAT IT LEAVES. The slide ends the round holding the probe chart this
+ * scenario drew beside, plus one grouped chart per unswept specimen: a median
+ * of 8 top-level shapes and 49 in the worst round. That litter is why the prior
+ * occupancy the experiment measures at climbs 0, 7, 15, 24, 34, 44, 53, 61
+ * across the eight slots; in the run that killed the tab, PowerPoint died on
+ * the eighth.
+ *
+ * NOTHING DOWNSTREAM INHERITS IT, BECAUSE THE DRIVER DISPOSES OF IT. This
+ * scenario runs LAST in every round that has carried it, and `sweepDeck`
+ * (`scripts/round.mjs`) runs straight after the round is archived, deleting
+ * every slide from the last down to index 1. **427 of 429 archived rounds begin
+ * at `deckSlides: 1`.** The litter lives for the tail of one round and is gone
+ * before the next reads anything.
  *
  * All four routes out are measured and closed — by-id, collection read matched
- * by id, binding retrieval, and name/positional matching. See "The sweep
- * deleted nothing seven times" in `docs/BACKLOG.md` for the numbers. What is
- * left is a choice about this scenario, not a fix: draw each specimen on a
- * scratch slide that can be deleted whole, which changes the occupancy it
- * measures at, or keep the measurement and stop claiming the deck is left as
- * found. Both change what the instrument reports, so both are the owner's.
+ * by id, binding retrieval, and name/positional matching. The remaining option,
+ * drawing each specimen on a scratch slide deleted whole, is NOT taken and is
+ * not a pending decision: a scratch ADD is the call with the worst kill record
+ * in this archive — see `chartIsVisible`, which stopped making it after it
+ * killed the host five rounds running.
  *
- * The sentence below still holds, and the failed delete does not disturb it:
- * occupancy climbs in the renderer's own counter, which does not decrement on a
- * plain delete — deliberate, not overlooked: `last batch settled` records
- * `onSlideAfter` and `drew`, so the true prior is exact for every reading and
- * the analysis conditions on it rather than assuming it. When the sweep is
- * refused the counter is not merely conservative, it is CORRECT: the shapes are
- * still there.
+ * THE COUNTER IS RIGHT AND THE SWEEP'S ARITHMETIC IS NOT. Occupancy climbs in
+ * the renderer's own counter, which does not decrement on a plain delete —
+ * deliberate: `last batch settled` records `onSlideAfter` and `drew`, so the
+ * true prior is exact for every reading. When a sweep is REFUSED the counter is
+ * not merely conservative, it is CORRECT: the shapes are still there.
+ *
+ * **BUT WHEN A SWEEP LANDS ON A GROUP, THE COUNTER OVER-DEDUCTS THE OTHER WAY.**
+ * `forgetShapesDrawnOn(slideId, gone)` subtracts the number of delete CALLS, and
+ * a group delete takes 7-10 shapes in one call — the defect `replacedShapeCount`
+ * exists to fix on the UPDATE path, which the sweep path never got. Measured
+ * 2026-09-10: of 423 readings, **91 (21.5%) carry a prior the counter got
+ * wrong**, and refitting the cost model on the repaired covariate moves the
+ * occupancy slope from 198 to 219 ms/shape — about 1.9 standard errors.
+ *
+ * IT IS INVERTIBLE FROM THE ARCHIVE, so this is a note for the reader and not a
+ * change to the instrument. Within one slide, `prior(n+1) === onSlideAfter(n) −
+ * resolved(n)` holds in 364 of 368 transitions, and `resolved === 1` following a
+ * chart of 7-10 shapes is a group delete whose true bite is that chart's
+ * `total` — n=28, every one between 7 and 10. Whoever pools these readings
+ * should apply that before fitting. **No reader is written**, deliberately:
+ * `onSlideAfter` appears zero times in `triage.mjs`, `rounds-gate.mjs` and
+ * `claims.mjs`, so there is no consumer to correct — building one would be an
+ * instrument for an analysis nobody runs.
  *
  * THE VERDICT IS NOT THE MEASUREMENT. This returns pass/fail on whether the
  * draws LANDED; the costs live in the trace and are read from the archive. A
