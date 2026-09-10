@@ -22,7 +22,9 @@ org-wide admin deploy (see `PUBLISHING.md` "Distribution beyond sideloading").
 > analysts actually use — waterfall/bridge, Mekko/Marimekko, stacked and
 > clustered columns, 100% charts, lines, areas, pie/doughnut, scatter/bubble,
 > Gantt plans, and more — inserted onto your slide as **native, fully editable
-> PowerPoint shapes** you can recolour, move and restyle by hand. Add the
+> PowerPoint shapes** you can recolour, move and restyle by hand (on PowerPoint
+> on the web and Microsoft 365 builds from 2026; older builds get a complete
+> chart with a note about what they cannot draw). Add the
 > annotations that tell the story: CAGR arrows, difference arrows, value lines,
 > automatic column totals, and collision-avoiding labels. Every chart stays
 > re-editable: reopen the pane, change the data, and it updates in place.
@@ -31,7 +33,8 @@ org-wide admin deploy (see `PUBLISHING.md` "Distribution beyond sideloading").
 - 25 chart kinds incl. waterfall bridges, Mekko/Marimekko, stacked/clustered/100%,
   cascade, funnel, butterfly, Gantt, combo, scatter/bubble, boxplot, violin,
   candlestick, radar, heatmap, tile map, treemap, sunburst and waffle.
-- Native PowerPoint shapes — recolour, move, or restyle any element by hand.
+- Native PowerPoint shapes on the web and current Microsoft 365 — recolour,
+  move, or restyle any element by hand.
 - Signature annotations: CAGR & difference arrows, value lines, totals, smart
   labels with a global de-overlap pass.
 - Re-editable charts, saved templates, and an import/export style file for a
@@ -57,9 +60,17 @@ org-wide admin deploy (see `PUBLISHING.md` "Distribution beyond sideloading").
 >
 > The BEHAVIOUR is good and worth describing plainly rather than hiding: the
 > user gets a complete chart plus a message naming what would otherwise be
-> missing, instead of a silently broken one. If you want the guarantee back in
-> the copy, qualify it — "native shapes on PowerPoint 2601/16.105 and later" —
-> rather than dropping the qualifier.
+> missing, instead of a silently broken one.
+>
+> **AND THE FIRST FIX HERE WAS INCOMPLETE, which is worth recording.** Striking
+> "never flat pictures" left two sentences making the same promise in other
+> words — the short description's "inserted onto your slide as native, fully
+> editable PowerPoint shapes" and the bullet "Native PowerPoint shapes —
+> recolour, move, or restyle any element by hand". Both are now qualified. If
+> the unqualified guarantee is ever wanted back, the honest route is to raise
+> the manifest's `MinVersion` to 1.10 so it is TRUE, not to delete the
+> qualifier: read every sentence in this file, not just the one that named the
+> word "picture".
 
 > **Where "25" comes from, so it cannot go stale unnoticed:** it is the number of
 > entries in `CHART_KINDS` (`src/core/samples.ts`), which is what the picker

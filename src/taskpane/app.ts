@@ -5708,6 +5708,21 @@ const TESTING_UI_NEEDS_OPT_IN = false;
 if (TESTING_UI_NEEDS_OPT_IN && deepLink.get("harness") !== "1") {
   const testing = document.getElementById("testing-section");
   if (testing) testing.hidden = true;
+  // HIDING A CONTROL DOES NOT TURN IT OFF, and the first draft of this gate
+  // shipped exactly that trap. `#demo-trace` lives inside the section above,
+  // ships `checked`, and `wireInsert` reads `traceToggle?.checked` at boot to
+  // call `setTracing(true)` — which reaches `enableExtendedErrorLogging`. So
+  // hiding the section would have left verbose tracing ON for every user, with
+  // the only switch for it now invisible. `hidden` removes an element from the
+  // accessibility tree; it does not uncheck a checkbox.
+  //
+  // Both halves, because the ORDER is not guaranteed: unchecking handles the
+  // case where `wireInsert` has not run yet, and `setTracing(false)` handles
+  // the case where it already has. Doing only one of them works by accident of
+  // load order, which is the kind of fix that comes back.
+  const traceToggle = document.getElementById("demo-trace") as HTMLInputElement | null;
+  if (traceToggle) traceToggle.checked = false;
+  setTracing(false);
 }
 
 const requestedKind = deepLink.get("kind");

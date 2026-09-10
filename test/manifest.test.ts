@@ -182,6 +182,21 @@ describe("hiding the test harness from a published add-in", () => {
     expect(paneHtml.slice(at, at + 400), "`#testing-section` is not the Testing block").toContain("<h2>Testing</h2>");
   });
 
+  it("turns the verbose-trace toggle off, not merely out of sight", () => {
+    // THE TRAP THE FIRST DRAFT OF THIS GATE SHIPPED. `#demo-trace` lives inside
+    // `#testing-section`, ships `checked`, and `wireInsert` reads it at boot to
+    // call `setTracing(true)` — which reaches `enableExtendedErrorLogging`.
+    // `hidden` takes an element out of the accessibility tree; it does not
+    // uncheck a checkbox. So hiding the section on its own would leave verbose
+    // tracing running for every user with its only switch invisible.
+    expect(paneHtml, "the toggle is no longer inside the gated section — re-check this gate").toMatch(
+      /id="testing-section"[\s\S]*id="demo-trace"/,
+    );
+    const gate = /if \(TESTING_UI_NEEDS_OPT_IN[\s\S]*?\n\}/.exec(appSrc)?.[0] ?? "";
+    expect(gate, "the gate does not uncheck the trace toggle").toContain('getElementById("demo-trace")');
+    expect(gate, "the gate does not stop tracing that has already started").toContain("setTracing(false)");
+  });
+
   it("requires a harness manifest the moment the switch is flipped", () => {
     if (optIn !== "true") {
       // Not flipped: the harness is visible to everyone, which is today's
