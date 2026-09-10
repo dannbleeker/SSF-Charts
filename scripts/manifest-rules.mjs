@@ -81,6 +81,40 @@ export function checkManifest(xml, name, opts = {}) {
     problems.push(`${name}: a production manifest points at localhost, so nothing in it resolves for a user`);
   }
 
+  // THE ICONS ARE A SIZE CONTRACT, AND NOTHING HERE HAD EVER READ IT.
+  //
+  // Microsoft's reference for `HighResolutionIconUrl`: "For content and task
+  // pane apps, the image resolution must be 64 x 64 pixels", and both it and
+  // `IconUrl` are "required for add-ins distributed in AppSource". All four
+  // manifests pointed the high-res one at `icon-80.png` — measured 80x80 — from
+  // the day they were written until 2026-09-10, and `icon-64.png` was sitting
+  // in `assets/` and on the deployed site the whole time.
+  //
+  // WHY EVERY EXISTING GATE MISSED IT, which is the part worth keeping:
+  // `check-published-install.mjs` HEAD-checks every URL, so it proved the icon
+  // RESOLVES and reported green; `office-addin-manifest validate` checks the
+  // schema, not the pixels; and the rules above never opened an image. **A URL
+  // that 200s is not a URL that is right.**
+  //
+  // Checked by NAME rather than by measuring the file: these rules run against
+  // an XML string, with no filesystem and no image decoder, and `npm run icons`
+  // is what guarantees `icon-64.png` is 64x64. So what is enforced here is "the
+  // declaration names the asset built for it" — the half that actually drifted.
+  for (const [element, px] of [
+    ["IconUrl", 32],
+    ["HighResolutionIconUrl", 64],
+  ]) {
+    const url = new RegExp(`<${element}[^>]*DefaultValue="([^"]+)"`).exec(xml)?.[1];
+    if (!url) {
+      problems.push(`${name}: has no <${element}>, which AppSource requires`);
+    } else if (!new RegExp(`icon-${px}\\.png$`, "i").test(url)) {
+      problems.push(
+        `${name}: <${element}> points at ${url.split("/").pop()}, but Office requires ${px}x${px} there — ` +
+          `use icon-${px}.png (a URL that resolves is not a URL that is the right size)`,
+      );
+    }
+  }
+
   return problems;
 }
 

@@ -13,7 +13,7 @@
   <DisplayName DefaultValue="SSF Charts" />
   <Description DefaultValue="Consulting-grade charts — waterfall/bridge, Mekko/Marimekko, stacked columns, CAGR and difference arrows — inserted as native, fully editable PowerPoint shapes." />
   <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png" />
-  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-80.png" />
+  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png" />
   <SupportUrl DefaultValue="https://github.com/dannbleeker/SSF-Charts" />
 
   <Hosts>

@@ -868,7 +868,16 @@ function startElapsed() {
     if (!saidSilent && silentMs >= SILENT_RUN_MS) {
       saidSilent = true;
       note(
-        "PowerPoint has not answered for {secs}s. Look at the slide area: if PowerPoint is showing *Sorry, we ran into a problem*, click Refresh there — nothing behind that dialog can answer. The run's steps are saved either way and *Download the crashed run* will offer them.",
+        // "IF a test run was in progress" — this fires from `guard()`, which
+        // wraps EVERY pane action, an ordinary Insert included. It used to end
+        // "The run's steps are saved either way and *Download the crashed run*
+        // will offer them", which names a run an ordinary user never started and
+        // a button they cannot see: `beginCrashLog` is called only from the
+        // three harness paths, and the control lives in Automation ▸ Testing.
+        // Being pointed at a missing button while your slide is frozen is worse
+        // than being told nothing. The first two sentences are the ones that
+        // help, and they are unchanged.
+        "PowerPoint has not answered for {secs}s. Look at the slide area: if PowerPoint is showing *Sorry, we ran into a problem*, click Refresh there — nothing behind that dialog can answer. If a test run was in progress, its steps are saved and *Download the crashed run* will offer them.",
         "busy",
         { secs: Math.round(silentMs / 1000) },
       );
