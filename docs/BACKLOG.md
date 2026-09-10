@@ -2955,6 +2955,62 @@ scenarios) = **-0.019, p = 0.65** over 413 rounds. An early reading forecasts ho
 SLOW a round will be, which the repo already knows is a property of the round,
 and says nothing about whether it will find anything.
 
+### THE NEXT BOUNDARY IS AT ROUND 454, AND IT IS OURS — declared 2026-09-10, before it happens
+
+**Read the entry below this one first.** Round 254 is a structural break in the
+probe sheet caused by a commit of ours, and it took weeks to trace because
+nothing in the archive said it had happened. `30f8d8c` creates another one on
+purpose. This entry exists so that nobody spends a day rediscovering it.
+
+    last round on the old shape   453  ·  f3c281a  ·  2026-09-09 16:13Z
+    first round on the new one    454  ·  30f8d8c or later
+
+**WHAT CHANGES, EXACTLY.** Three things, all in `src/render/host-probe.ts`:
+
+1. **Every `ProbeSample` gains an `acquired` field.** Samples up to round 453
+   carry `answer, pass, atMs, regime, scratch` and nothing else; from 454 they
+   carry `acquired` as well — `first-add`, `re-acquired`, `recovered`,
+   `replaced`, `no-slide` or `unknown`. A sample with NO `acquired` key predates
+   the field. A sample carrying `unknown` reached `record` without a take. Those
+   two are different facts and must not be pooled, which is the same rule
+   `archivableDeck`'s `undisclosed` follows.
+
+2. **A new row can appear: `durable-slide-lists-its-shapes`.** It is a `follow`
+   on `shapes-items-via-positional-slide` and fires only when that question
+   answers anything other than `at-least-5`. **So the sheet's ROW COUNT is no
+   longer fixed.** Sheets ran 41-42 rows over the last twenty rounds; from 454
+   they may run one higher, and whether they do is conditional on another
+   question's answer. Any analysis that uses rows-per-sheet as a denominator, or
+   that assumes a fixed question list, is affected — and denominators are the
+   trap this archive has paid for more than any other.
+
+3. **Two new answer words.** `lists-shapes` is a real answer; `no-shapes-to-list`
+   is uninformative and means the durable slide was empty, which on the 16:9 arm
+   is nearly every round. Pooling the second as though it were an answer would
+   manufacture agreement out of an empty slide.
+
+**AND ONE BEHAVIOURAL CHANGE THAT CAN SHOW IN THE ARCHIVE.** `sweepVeto`
+(`scripts/round.mjs`) makes the driver refuse to sweep a deck nobody configured.
+If that fires, the deck is left dirty and the NEXT round refuses `deck-dirty`
+until it is cleaned. Before 454 that state healed itself silently. A cluster of
+`deck-dirty` refusals starting at 454 is this, not the host.
+
+**HOW TO TELL THIS BOUNDARY FROM A HOST CHANGE**, which is the whole point of
+writing it down in advance:
+
+- The break is at a KNOWN round and a known commit. Round 254 had to be found by
+  changepoint search; this one is named here.
+- `acquired` is the discriminator round 254 lacked. From 454 a question's answer
+  can be conditioned on how its slide was obtained, in the round file itself,
+  with no trace mining.
+- A host change would not respect a commit boundary to the round. Ours does.
+
+**WHAT WOULD MAKE THIS ENTRY WRONG.** If questions OTHER than
+`shapes-items-via-positional-slide` change their answers at 454, that is not
+explained by anything above and should be treated as a real finding rather than
+as this. The three changes listed are additive: no existing question's `ask` was
+touched, and no existing answer word changed meaning.
+
 ### ROUND 254 IS OUR OWN COMMIT, and nine host notes are dated from one side of it — 2026-09-09
 
 **The probe sheet has a structural break at round 254, and the thing that broke
