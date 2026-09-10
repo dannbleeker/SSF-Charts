@@ -28,14 +28,22 @@ org-wide admin deploy (see `PUBLISHING.md` "Distribution beyond sideloading").
 > re-editable: reopen the pane, change the data, and it updates in place.
 
 **Long description — feature bullets:**
-- 18 chart kinds incl. waterfall bridges, Mekko, stacked/clustered/100%,
-  Gantt, combo, scatter/bubble, radar, heatmap, treemap, and more.
+- 25 chart kinds incl. waterfall bridges, Mekko/Marimekko, stacked/clustered/100%,
+  cascade, funnel, butterfly, Gantt, combo, scatter/bubble, boxplot, violin,
+  candlestick, radar, heatmap, tile map, treemap, sunburst and waffle.
 - Native PowerPoint shapes — recolour, move, or restyle any element by hand.
 - Signature annotations: CAGR & difference arrows, value lines, totals, smart
   labels with a global de-overlap pass.
 - Re-editable charts, saved templates, and an import/export style file for a
   consistent corporate look.
 - Runs entirely in your client — your data never leaves your device.
+
+> **Where "25" comes from, so it cannot go stale unnoticed:** it is the number of
+> entries in `CHART_KINDS` (`src/core/samples.ts`), which is what the picker
+> offers — 25 unique kinds, re-counted 2026-09-10. It read **18** until then,
+> which understated the product by seven and had been wrong for some time. A
+> listing number that nobody can re-derive is a listing number that drifts; count
+> it again before submitting.
 
 **Categories:** Productivity; Data visualization
 **Search keywords:** waterfall chart, bridge chart, Mekko, Marimekko, Gantt,

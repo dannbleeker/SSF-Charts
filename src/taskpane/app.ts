@@ -5660,6 +5660,47 @@ function wireInsert() {
 // ?tab=elements opens a tab and ?el=harvey focuses that element's card
 // (the ribbon's "Insert element" menu uses these).
 const deepLink = new URLSearchParams(location.search);
+
+/**
+ * Does the Testing section have to be asked for, or is it simply there?
+ *
+ * **THE PRODUCT SHIPS ITS OWN TEST HARNESS IN ITS UI.** The Automation tab's
+ * first half is `Testing` — demo deck, self-test, host probe, one experiment,
+ * download run log, clean up the last round — and every published build has
+ * carried it, ungated, to every user. It is written for the person who runs the
+ * round loop, and it reads that way: "the fake host every test runs against",
+ * "a full round takes minutes and leaves its slides behind", "clean up the last
+ * round". A stranger cannot parse it, and two of those buttons change their
+ * document.
+ *
+ * That is fine for a sideloaded tool and is a problem for a store listing,
+ * where a reviewer opens every tab cold.
+ *
+ * **WHY A URL PARAMETER AND NOT A BUILD FLAG.** A build flag would mean the
+ * bundle users get is not the bundle the round loop tests, and this project's
+ * whole validation rests on those being the same artifact — `round.mjs` refuses
+ * to run when HEAD and the deployed stamp differ, for exactly that reason. One
+ * build, one deployment; only the manifest differs. `build-manifest.mjs`
+ * already emits more than one manifest, so the harness gets one carrying
+ * `?harness=1` and users get one that does not.
+ *
+ * **HIDDEN, NOT REMOVED.** `hidden` takes the section out of the accessibility
+ * tree, which is the tree `round.mjs` searches with `find` — so an un-opted-in
+ * pane genuinely cannot be driven — while leaving the nodes in place so the
+ * queries app.ts makes at init keep working. Removing the subtree would mean
+ * auditing every one of those, for no gain.
+ *
+ * **DEFAULT `false`, WHICH IS TODAY'S BEHAVIOUR.** Flipping this changes what a
+ * user receives, so it is the owner's call and not this file's. Flip it, and
+ * regenerate the manifests, together: on its own this hides the section from the
+ * round driver as well and the loop stops.
+ */
+const TESTING_UI_NEEDS_OPT_IN = false;
+if (TESTING_UI_NEEDS_OPT_IN && deepLink.get("harness") !== "1") {
+  const testing = document.getElementById("testing-section");
+  if (testing) testing.hidden = true;
+}
+
 const requestedKind = deepLink.get("kind");
 if (requestedKind && CHART_KINDS.some((k) => k.kind === requestedKind)) {
   applyConfig(sampleConfig(requestedKind as ChartKind), null);

@@ -145,3 +145,62 @@ describe("the URLs a manifest asks the host to fetch", () => {
     ]);
   });
 });
+
+/**
+ * THE TESTING SECTION AND THE MANIFESTS HAVE TO MOVE TOGETHER.
+ *
+ * The Automation tab's first half is the round-loop harness, and every published
+ * build has shipped it to every user. `TESTING_UI_NEEDS_OPT_IN` in
+ * `src/taskpane/app.ts` can hide it — but the SAME section is how `round.mjs`
+ * drives a round: it clicks `Probe, then self-test` and waits on
+ * `Download run log`, both by name, in the accessibility tree that `hidden`
+ * removes them from.
+ *
+ * So flipping that constant without giving the driver a manifest that opts back
+ * in does not fail loudly. It ends the round loop, quietly, and the next person
+ * to notice is whoever wonders why no round has been archived in a week. That is
+ * this repo's most-repeated defect — the fix that reached all but one call site
+ * — and this is the test that refuses to let it happen again.
+ */
+describe("hiding the test harness from a published add-in", () => {
+  const appSrc = read("src/taskpane/app.ts");
+  const paneHtml = read("src/taskpane/taskpane.html");
+  const optIn = /const TESTING_UI_NEEDS_OPT_IN = (true|false);/.exec(appSrc)?.[1];
+
+  it("keeps the switch where a reader can find it", () => {
+    expect(optIn, "`TESTING_UI_NEEDS_OPT_IN` is gone or no longer a plain boolean literal").toBeDefined();
+  });
+
+  it("targets a section that actually exists", () => {
+    // The gate hides `#testing-section`. Rename the id in the HTML and the gate
+    // silently stops hiding anything — a published add-in would then ship the
+    // harness while this file claimed otherwise.
+    expect(appSrc, "the gate no longer names the section it hides").toContain('getElementById("testing-section")');
+    expect(paneHtml, "the section the gate hides is not in the pane").toContain('id="testing-section"');
+    // And it must be the block that holds the harness, not some other section.
+    const at = paneHtml.indexOf('id="testing-section"');
+    expect(paneHtml.slice(at, at + 400), "`#testing-section` is not the Testing block").toContain("<h2>Testing</h2>");
+  });
+
+  it("requires a harness manifest the moment the switch is flipped", () => {
+    if (optIn !== "true") {
+      // Not flipped: the harness is visible to everyone, which is today's
+      // behaviour and the driver works. Nothing to require.
+      expect(optIn).toBe("false");
+      return;
+    }
+    // Flipped: at least one manifest must ask for the pane WITH the opt-in, or
+    // no round can be driven against the deployment ever again.
+    const withParam = MANIFESTS.filter((m) => /taskpane\.html\?[^"<]*harness=1/.test(read(m)));
+    expect(
+      withParam,
+      "TESTING_UI_NEEDS_OPT_IN is true but no manifest opens the pane with `?harness=1` — " +
+        "the round loop cannot reach `Probe, then self-test` and will stop without saying so",
+    ).not.toEqual([]);
+    // And the manifest a USER installs must NOT carry it, or nothing was gained.
+    expect(
+      /taskpane\.html\?[^"<]*harness=1/.test(read("manifest-prod.xml")),
+      "the production manifest opts INTO the harness, so users still get it",
+    ).toBe(false);
+  });
+});

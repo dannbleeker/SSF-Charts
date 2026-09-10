@@ -263,7 +263,14 @@
 
       <!-- ── AUTOMATION ─────────────────────────────────────────── -->
       <div class="tab-panel" data-panel="automation">
-        <section class="section">
+        <!-- `id` so `TESTING_UI_NEEDS_OPT_IN` in app.ts can take this whole block
+             out of a published add-in without touching anything inside it. HIDDEN
+             rather than removed, deliberately: app.ts queries controls in here at
+             init, and `hidden` keeps those queries working while removing the
+             section from the ACCESSIBILITY TREE — which is the tree the round
+             driver reads, so the driver stops finding it too unless it opted in.
+             See `TESTING_UI_NEEDS_OPT_IN` for why that is the whole design. -->
+        <section class="section" id="testing-section">
           <h2>Testing</h2>
           <!-- The one control that starts a standard round, above everything, because
                it is the one the owner presses. Every other button here is occasional;
