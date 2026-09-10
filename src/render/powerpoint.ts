@@ -458,6 +458,18 @@ async function step<T>(label: string, fn: () => Promise<T>): Promise<T> {
       // and poisons it — but the session-wide latch was turning off a working
       // feature: in-place updates after the first refusal ran 0 across rounds
       // 254-261. See `forgetGroupReadRefusal`.
+      //
+      // THIS CORRECTION IS ONE INSTANCE OF A GENERAL ONE, connected 2026-09-10.
+      // "Both are measured on the SCRATCH slide" is the whole of the round-254
+      // wall: `77f9ca4` changed how the probe acquires that slide, and a group
+      // of probe questions change their answer there — our commit, not the
+      // host. This comment found it from the product side on 2026-08-26 without
+      // knowing that; `docs/BACKLOG.md` §"ROUND 254 IS OUR OWN COMMIT" has the
+      // list and says ELEVEN. A 2026-09-10 changepoint pass put it at sixteen;
+      // that figure has not been independently re-derived, so take eleven as
+      // the number this repo stands behind and sixteen as a lead. Any other
+      // comment quoting a probe answer as a fact about PowerPoint is suspect
+      // for the same reason.
       if (isGroupReadRefusal(text)) groupReadRefused = true;
       trace("error", label, { error: text });
     }
@@ -1273,6 +1285,40 @@ export function _setSlideSizeTimeoutForTest(ms: number): void {
  * first three charts. The harness is strictly worse than production here, so the
  * measurement has to be taken in production.
  *
+ * **THAT PREMISE IS DEAD — corrected 2026-09-10, and it did not die where a
+ * first draft of this correction said it did.** That draft claimed the premise
+ * "died at round 254 and nobody noticed for 200 rounds". Both halves are wrong.
+ * The paragraph above entered at `3ee11e6` on 2026-08-15, when **26 archived
+ * rounds existed** — 27 files, one of them `predictions.json`, which
+ * `loadRounds` does not count — so it was fair on the evidence it had. And all
+ * three questions had
+ * already begun answering long before 254 — `short-at-1` from round 54, with 21
+ * pre-254 readings, `short-0` 19 and `none` 29. It died around round 54. Nobody
+ * noticed for roughly four hundred rounds, not two hundred.
+ *
+ * What happens at 254 is that the DOMINANT answer flips, which is a different
+ * and weaker claim. Per round, by side of the boundary:
+ *
+ *                                                    ≤253                 ≥254
+ *     shapes-items-count-honest             unreadable 210 / short-0 19   short-3 139
+ *     which-end-a-short-read-drops          unreadable 182 / none 29      all 87 / not-a-short-read 83
+ *     how-many-collection-reads-a-context-… unreadable-at-1 184 / short-at-1 21   short-at-1 186
+ *
+ * The boundary is 77f9ca4, OUR commit — the probe stopped buying a fresh scratch
+ * slide per question and started re-acquiring one, and a re-acquired slide
+ * enumerates. `short-at-1` is a direct probe reading of the very thing this
+ * paragraph says only production can see: the FIRST collection read in a context
+ * already comes back short. **186 is a TOTAL, not a streak** — the longest
+ * consecutive run is 48, and 9 post-254 rounds answer `survives-12`, which is
+ * the opposite reading and is not mentioned by the tally. The denominators also
+ * differ per question; none of the three is answered in all 429 files.
+ *
+ * SO THE STATED REASON FOR DEFERRING THIS TO PRODUCTION IS GONE. The CONCLUSION
+ * may still stand — a real slide holding three charts is a different population
+ * from a scratch slide holding one, and none of the answers above settles that —
+ * but it now has to be re-derived rather than inherited. Do not read the
+ * paragraph above as evidence; read it as history.
+ *
  * A WeakMap keyed by the context, so the count dies with it and never leaks
  * across calls.
  *
@@ -1635,14 +1681,48 @@ async function insertSceneIntoSlideInner(
     // one. Both halves are now false. `addSlideForChart` passes exactly such an
     // id on every accepted slow-insert offer, and the probe answers `yes`.
     //
-    // The archive says when it changed and why. Over 269 rounds the answer is
-    // `threw` 227 times and `yes` 41 — and every `threw` is round 253 or
-    // earlier. The boundary is 77f9ca4, OUR commit, which stopped the probe
-    // holding the id `slides.add()` hands back and made it re-read the slide's
-    // id positionally after the add settled. The two are different id spaces,
-    // not near-misses: `4123571114#123571113` at add time, `256#2587447327` a
-    // moment later for the same slide. The old answer was never a fact about
-    // `getItem`; it was a fact about a stale id.
+    // The archive says when it changed and why. Over 269 rounds the answer was
+    // `threw` 227 times and `yes` 41. The boundary is 77f9ca4, OUR commit, which
+    // stopped the probe holding the id `slides.add()` hands back and made it
+    // re-read the slide's id positionally after the add settled. The two are
+    // different id spaces, not near-misses: `4123571114#123571113` at add time,
+    // `256#2587447327` a moment later for the same slide. The old answer was
+    // never a fact about `getItem`; it was a fact about a stale id.
+    //
+    // **"EVERY `threw` IS ROUND 253 OR EARLIER" WAS FALSE THE DAY IT WAS
+    // WRITTEN — corrected 2026-09-10.** Not stale, wrong: it entered at
+    // `f769521` on 2026-08-29, and rounds **263 and 280** had already answered
+    // `threw` by then, inside the same 269 files the sentence counts over. A
+    // first draft of this correction said "was true when written and is false
+    // now", which is decay-framing applied to an error and is the more
+    // comfortable of the two readings. It is not the true one.
+    //
+    // Counted over all 429 round files: pre-254 is `threw` 225 / `yes` 4;
+    // post-254 is `yes` 159, **`threw` 34**, silent 3, no-scratch 4. The latest
+    // `threw` is **round 453, the newest file in the archive**. So the boundary
+    // is a strong shift, not a wall, and this paragraph is the argument the
+    // slow-insert offer rests on — which makes the difference load-bearing
+    // rather than cosmetic. (The retained "227 + 41" above omits 1 `silent`.)
+    //
+    // WHAT SURVIVES THE CORRECTION, and it is the part that matters: the RULE
+    // below is not damaged, because `addSlideForChart` does not take the route
+    // the probe takes. The probe asks on a scratch slide it has just bought.
+    //
+    // BUT NOT FOR THE REASON THE PARAGRAPH BELOW GIVES, and a first draft of
+    // this correction repeated that reason instead of checking it. It says
+    // `addSlideForChart` "reads the id off a positional handle". It does not:
+    // it DISCARDS the positional thunk and recovers the id by diffing
+    // `slideIds()` across the add, in its own context — its docstring says so in
+    // capitals, "DIFFED RATHER THAN RE-READ POSITIONALLY, because the position
+    // is not knowable from here". The conclusion is if anything stronger that
+    // way, since both sides of the diff are in the id space `getItem` accepts,
+    // but the stated mechanism was not the code.
+    //
+    // The 34 are consistent with a slide that had not settled when it was asked.
+    // **That is a reconstruction, not a measurement** — nobody has stratified
+    // those 34 by settle state — so treat the rule as supported by
+    // `addSlideForChart`'s deck diff and by the offer working in production, NOT
+    // by the sentence above it.
     //
     // So the rule is: **a new slide's id is not durable until the slide
     // settles, and is durable afterwards.** `addSlideForChart` is built on that
@@ -9965,6 +10045,30 @@ async function renderShapesChunked(
     // `tags-on-fresh-shape: yes`. A shape has its tags collection the moment it
     // is added; what it does not survive is the round trip that rewrites its
     // object path. So this sync looks like the one window the web host honours.
+    //
+    // **THE PROBE STOPPED ANSWERING THIS IN ROUND 254 — noted 2026-09-10, and
+    // the first draft of this note got it backwards.** Over 429 round files
+    // `tags-on-fresh-shape` reads `yes` 229 of 229 up to round 253 and `threw`
+    // 192 of 200 after it, the boundary being 77f9ca4, our own commit.
+    //
+    // THAT IS NOT THE HOST CHANGING ITS MIND. All 192 of those `threw` carry the
+    // same detail, without exception: `InvalidParam passed to GetItem(id)` —
+    // the probe failing to RESOLVE ITS SLIDE, which is the round-254 stale-id
+    // artifact. It never reaches the tags collection. So post-254 is a
+    // NON-ANSWER, not a contrary one, and the honest statement is that this
+    // question has not been asked since round 253 rather than that its answer
+    // went stale. A first draft said "the probe half is stale", which tells a
+    // reader the evidence now points the other way. It does not point anywhere.
+    //
+    // WHAT THAT COSTS THE ARGUMENT ABOVE, stated at full strength because the
+    // first draft understated it. The 2026-08-07 log supports only the NEGATIVE
+    // half — that a proxy several batches old gets refused. The POSITIVE half,
+    // "a shape has its tags collection the moment it is added", was never
+    // supported by anything but this probe answer, and that answer is now
+    // 229 rounds old with nothing since. Calling the probe mere corroboration
+    // was wrong: on the half that licenses this sync, it is the only evidence
+    // there is. Treat the sync below as resting on a measurement that has not
+    // been re-taken, not on a fact re-confirmed nightly.
     //
     // What it breaks is the case where grouping WORKS. The group is tagged as
     // well, and both tags are then findable, so the deck scan counts one chart

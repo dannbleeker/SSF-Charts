@@ -2841,6 +2841,50 @@ Measured over 423 rounds, my own numbers rather than the survey's:
 There is no round in the archive where a once-per-round line could have placed.
 Today's gate output is six slots of `deck scan —` chatter at 31 apiece.
 
+**A CORRECTION WAS ATTEMPTED HERE ON 2026-09-10 AND IT WAS ITSELF WRONG. Both
+halves are recorded because the mistake is the more useful of the two.**
+
+The correction claimed three of the four figures above were wrong, reporting
+`min 1 / median 7 / max 31` and "the sixth slot costs <=2 in 5 of 429 rounds, so
+'there is no round where a once-per-round line could have placed' is false". It
+then diagnosed the original numbers as "a RANK read as a count, one column
+across".
+
+**That diagnosis was invented, and the original figures are exactly
+reproducible.** `unreadSignals(log, toolSource)` filters out any message whose
+text appears in `toolSource`. Called with `""` — no source, nothing filtered —
+the archive gives `min 12, median 20, max 31, <=2 in 0 of 423`: all four
+original figures, to the digit. The correction had passed a DIFFERENT source
+(`triage.mjs + rounds-gate.mjs + claims.mjs`) and read the difference as an
+error in someone else's arithmetic rather than as a difference in method.
+
+The authoritative source is neither: `rounds-gate.mjs:816` passes
+`triage.mjs + rounds-gate.mjs` and nothing else. Under that, over 429 rounds:
+
+    the sixth slot costs        min 1   median 8   max 31
+    rounds where it costs <=2   4 of 429
+    rounds where it costs  1    1 of 429
+
+**And the original's CONCLUSION survives all of it.** A line firing once per
+round needs the sixth slot to cost 1, not 2 — so the relevant count is one
+round, not four, and that round is `3eaab20`, which this same gate excludes by
+name as having "RAN ALMOST NOTHING — 3 of 16 scenarios ran". Of the other three,
+exactly ONE (`2934204`) is also collapsed; `dcfd7ac` and `cce9416` each ran 14
+of 14 scenarios and are short-trace `no-scratch-slide` rounds, 329 and 339 trace
+entries against a ~500 norm. So the honest statement is narrower than "they are
+all collapsed": the one round that could have hosted a once-per-round line is
+one the gate refuses to judge, and the other three never had a slot cheap enough
+to matter. "There is no round in the archive where a once-per-round line could
+have placed" is TRUE, and the correction that called it false was reading
+degraded and short-trace rounds as evidence.
+
+What the episode is actually worth: **the entry above and the gate disagree
+about what `toolSource` should be**, and nothing says which is right. An
+unfiltered call reports messages the tools DO match, which is what the block's
+own title promises not to do. That is a real defect in the entry's method, it
+is smaller than the one that was claimed, and it is the only thing here that
+needed changing.
+
 **NOT AN OVERSIGHT, which is why this is recorded rather than patched.**
 `test/triage.test.ts` pins the ranking with "since a signal seen once is not a
 missed instrument", and `triage.mjs` argues the same rule again for
@@ -2849,11 +2893,42 @@ and mutation-guarded, and the obvious one-line fix does not work either: ranking
 by rounds-covered puts `second pass finished` at rank 7 of 110, because seven
 messages tie at 423 of 423.
 
+**"MUTATION-GUARDED" IS ALSO WRONG.** `stryker.config.json` mutates
+`src/core/**` only, and its own `_comment_uncovered` names `scripts/triage.mjs`
+as explicitly outside the mutated set — the ranking rule is guarded by a test
+TITLE, which is real, but not by a mutant.
+
 What would work is a SECOND list rather than a different sort — unread messages
 that fire at most twice a round, in at least 200 rounds, carrying a numeric
 payload. About 21 items, and roughly two thirds of them are not quoted anywhere
 in `docs/`. Left for a person to decide, because it means editing a test whose
 title states the opposite rule.
+
+**DECIDED 2026-09-10: DO NOT BUILD IT — and the reason is that the filter is
+aimed away from its own motivating cases.** This entry's rationale rests on
+`poolFallbackRates` and `poolInPlaceUpdates`, the two signals that sat unread
+for months. Both fire more than twice a round, so the proposed "at most twice"
+filter excludes them by construction:
+
+    updated only the shapes that changed     303 rounds, median 12/round,
+                                             MORE than twice in 303 of 303
+    not updating in place — redrawing        424 rounds, median  2/round,
+                                             more than twice in 181 of 424 (43%)
+    second pass finished                     429 rounds, exactly 1 every time
+
+A frequency filter is not a noise filter, and both precedents were
+high-frequency. The list would have caught neither of the only two data points
+anyone has about what a missed instrument looks like here — while the EXISTING
+busiest-six list surfaces exactly that shape. Six of the ~21 candidates also
+carry numbers that have never once moved across the archive, and a constant
+cannot change a decision.
+
+What is worth doing instead, and is much smaller: one named reader for
+`tag pass over a page`, whose payload (`shapesSeen`, `shapesExpected`,
+`tagsFound`, `undetermined`, `withoutTag`) genuinely has no reader today. Its
+nine anomalies all resolve at `read the deck back`, so it is not urgent — but if
+that resolution line ever stops being reliable, this payload is the only place
+the failure would show.
 
 **Also: this section printed for the first time in weeks today.** The gate exits
 before reaching it whenever a host-death breach is standing, and one was
@@ -5356,8 +5431,21 @@ scenario that deliberately abandons a draw mid-flight and leaves the host holdin
 a half-issued batch.
 
 `same scale` looks worst for a duller reason: it is the longest scenario, it runs
-late, and every one of its ten deaths landed in the 420-600s window inside
-`updated only the shapes that changed`, with single syncs taking 9-20s. That is
+late, and eight of its ten deaths landed inside `updated only the shapes that
+changed`, with single syncs taking 9-20s.
+
+> **CORRECTED 2026-09-10 — "every one of its ten deaths landed in the 420-600s
+> window" was false.** Measured from the last `atMs` in each crash record the ten
+> land at 218, 221, 254, 307, 326, 341, 356, 387, 504 and 1350 seconds: ONE is
+> inside [420, 600]. An independent pass on a different elapsed measure counted
+> five. Either way "every one" was never true, and the same sentence in
+> `scripts/host-baseline.mjs` is struck. This scenario dies EARLY and widely
+> spread, which does not fit the session-age story it was being used to support.
+> The "eight of ten inside `updated only the shapes that changed`" half holds —
+> the 2026-08-25T13:22 record carries no such line and dies at a group
+> config-tag write.
+
+That is
 the session-age crash this archive has documented all month, arriving while the
 longest scenario happens to be open. Attribution credits whoever holds the floor.
 

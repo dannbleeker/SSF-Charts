@@ -3267,8 +3267,10 @@ export function crashStepKey(line) {
  *
  * ATTRIBUTION IS DELIBERATELY NARROW. A scenario counts as fatal only when its
  * `scenario starting` line has no matching `scenario passed|failed` after it —
- * it was open when the record ends. 26 of 83 sound records attribute this way;
- * the other 57 died in the probe phase or the deck-evidence scan and are
+ * it was open when the record ends. 39 of 104 sound records attribute this way
+ * as of 2026-09-10 — it read "26 of 83", and this pair moves every cycle, so
+ * read the shape and take the numbers from the gate;
+ * the other 65 died in the probe phase or the deck-evidence scan and are
  * credited to NOTHING, which is correct and is why this returns counts rather
  * than a rate. A death with a scenario open is not proof that the scenario
  * caused it, and the budget in `host-baseline.mjs` is what turns the counts

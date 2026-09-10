@@ -305,37 +305,171 @@ export const KNOWN_DIVERGENCES = {
  * `docs/BACKLOG.md` records happening to an earlier one.
  *
  * It also RANKED WRONG. Deaths arrive in episodes, not at a steady drip:
- * `same scale` took all nine of its deaths between 2026-08-24 and 08-29 and
- * none since, and `stop a run mid-draw` took all eight on 09-02 and 09-03. So a
- * cumulative count mostly measures how long a scenario has been exposed. Put
- * against how often each actually runs, the order inverts:
+ * `same scale` took nine of its ten deaths between 2026-08-24 and 08-29 (the
+ * tenth on 2026-09-09), and `stop a run mid-draw` took all eight on 09-02 and
+ * 09-03. So a cumulative count mostly measures how long a scenario has been
+ * exposed. Put against how often each actually runs, the order inverts:
  *
  *     a big chart on a slide of its own    5 deaths /  11 runs = 455
  *     stop a run mid-draw                  8 deaths /  27 runs = 296
  *     same scale across the deck           9 deaths / 421 runs =  21
  *     every other listed scenario          1 death  / ~420     =   2.4
  *
- * THOSE ARE THE 2026-09-03 READINGS AND THE CEILINGS ARE STILL SEEDED FROM
- * THEM. Re-derived 2026-09-08, and every one has fallen — not because anything
- * was fixed, but because the denominators grew while the deaths did not:
+ * THOSE ARE THE 2026-09-03 READINGS. **RE-SEEDED 2026-09-10 BY THE OWNER, and
+ * the reason is not the one an earlier version of this paragraph gave.** It
+ * said the rates had fallen "not because anything was fixed, but because the
+ * denominators grew while the deaths did not". That was wrong. Something was
+ * fixed, on the same day these ceilings were seeded and a few hours later:
+ * `40dfee0`, "The 4:3 crash is a two-master crash, and it is a documented API
+ * misuse". The ceilings went in at 18:28; the fix at 23:01.
  *
- *     a big chart on a slide of its own   12 deaths /  84 runs = 143  (ceiling 460)
- *     stop a run mid-draw                  8 deaths /  93 runs =  86  (ceiling 330)
- *     same scale across the deck           9 deaths / 495 runs =  18  (ceiling  30)
+ * AND IT IS A MECHANISM, NOT A COINCIDENCE OF DATES — which is the check round
+ * 254 failed and this one has to pass. `40dfee0` fixes `addSlides` sending a
+ * `layoutId` with no `slideMasterId`, which the API documents as an error
+ * whenever the previous slide's master is not the first one. Its own measured
+ * rates: two-master decks crashed **4 of 4 at 16:9 and 27 of 30 at 4:3**,
+ * against 9 of 182 on one-master decks. BOTH names re-seeded below draw onto a
+ * slide the product just added, so both go through `addSlides`. The other two
+ * names in this table do not add a slide, and neither moves across the split.
  *
- * So the two worst are now running at roughly a third of what they are allowed,
- * and the gate would not notice either of them tripling. That is the cost of a
- * ceiling seeded once from a point estimate, and it is the mirror of the zero
- * problem below rather than a separate defect. Whether to re-seed is the
- * owner's: lowering a ceiling is deciding a scenario may kill PowerPoint LESS
- * often than it used to be allowed to, which is a claim about the product, not
- * about the instrument.
+ * TWO HONESTY MARKS ON THAT, BOTH FOUND IN REVIEW. **`40dfee0` is not a single
+ * cause, it is the first and largest piece of a repair window.** `89604bc`
+ * landed 41 minutes later and rewrote the same own-slide add path ("The
+ * own-slide scenarios find their slide by what the deck GAINED"), and `6dfaa4b`
+ * followed the next morning; only two post-fix rounds carry `40dfee0` without
+ * them. Read "the own-slide add path was repaired across the evening of 09-03
+ * and the morning of 09-04" and treat the commit name as shorthand for that.
+ * **And the two-master covariate cannot be checked over this window**: the
+ * `masters=` field appears in 15 of 104 crash records, all from 19:56Z on
+ * 09-03, and in NO round file. It did not exist for most of what it would be
+ * read over — the same field-age trap this archive keeps finding. The mechanism
+ * is supported by `40dfee0`'s own commit-time measurement and by the code path,
+ * not by anything re-derivable from the archive today.
+ *
+ * Split the archive there and the two worst names are not diluted versions of
+ * themselves, they are two different populations:
+ *
+ *                                          before 40dfee0     after
+ *     a big chart on a slide of its own    11 /  20 = 550     1 / 89 = 11.2
+ *     stop a run mid-draw                   8 /  30 = 267     0 / 88 =  0.0
+ *     same scale across the deck            9 / 430 =  21     1 / 91 = 11.0
+ *
+ * **AND ONE OF THOSE ROWS IS NOT WHAT IT LOOKS LIKE.** `40dfee0` is a clean
+ * boundary for `a big chart` — its eleven deaths all land on 09-03 between
+ * 07:25 and 20:18 and the fix is at 21:01. It is NOT the boundary for `stop a
+ * run mid-draw`, whose last death is 06:42Z the same morning, fourteen hours
+ * and eight clean runs earlier. What sits there is `8053f62`, 06:59Z, our own
+ * scenario REORDER: the two share a defect, whichever runs first takes the
+ * death, and the reorder moved the deaths from one name to the other. See that
+ * entry's own docstring. The 267 in the row above is therefore measured over a
+ * window padded with runs that already belong to the later regime — read it as
+ * an underestimate of the dying regime, and read the ZERO beside it as real
+ * only from 09-04 on, when the two run at near-equal exposure (85 and 84 runs).
+ *
+ * So the lifetime rates the gate prints — 112 and 70 — are weighted averages of
+ * a dead episode and ninety-odd clean runs, and describe no population that
+ * exists. The ceilings were guarding a defect that had already been fixed when
+ * they were written. At 460 and 330 the gate needed SIXTY and FORTY-EIGHT
+ * deaths to fire against twelve and eight standing. Replay a FULL relapse to
+ * each scenario's own pre-fix rate against the old ceilings and the gate fires
+ * after **735 further runs** of it, n reaching 842 — and **never, at any n**, on the second,
+ * because 267 per 1000 is BELOW a ceiling of 330 and a rate under its ceiling
+ * cannot breach it however long it runs. At 120 and 60 the same relapse is
+ * caught 19 and 22 rounds from here.
+ *
+ * BY DAY, WITH RUNS AS THE DENOMINATOR — because "the deaths cluster" is worth
+ * nothing if the RUNS cluster the same way. **A first draft of this table put
+ * the crashes in the numerator and left them out of the denominator**, counting
+ * runs from round files only when `scenarioRuns` counts a crash record's
+ * `scenario starting` as a run too. It read 11 of 11 where the truth is 11 of
+ * 22. Denominators are the trap this archive keeps paying for and this table
+ * walked into it. On the gate's own population — 424 rounds, collapsed ones
+ * dropped at `rounds-gate.mjs:420`, which is what makes the totals 107 and 114:
+ *
+ *     a big chart on a slide of its own        stop a run mid-draw
+ *     09-03   22 runs  11 deaths   500         09-01    3 runs  0 deaths    0
+ *     09-04    8 runs   0 deaths     0         09-02   13 runs  6 deaths  462
+ *     09-05   21 runs   1 death     48         09-03   14 runs  2 deaths  143
+ *     09-06   14 runs   0 deaths     0         09-04    8 runs  0 deaths    0
+ *     09-07   16 runs   0 deaths     0         09-05   20 runs  0 deaths    0
+ *     09-08    8 runs   0 deaths     0         09-06..09  56 runs 0 deaths   0
+ *     09-09   18 runs   0 deaths     0
+ *            107 runs  12 deaths                        114 runs  8 deaths
+ *
+ * The first killed the host on HALF the runs it made the day it was written and
+ * once in the eighty-five since; the second on 462 and 143 per 1000 across two
+ * days and never in the eighty-four since. Half is not "every run", and the
+ * clustering conclusion does not need it to be: 500 against 12 for everything
+ * after is the same finding, honestly counted.
+ *
+ * THE TEST EACH NUMBER HAD TO PASS, and it is not a rounding rule. A ceiling
+ * here is set by two constraints, and the band between them is usually narrow:
+ *
+ *   - GREEN ON TODAY'S ARCHIVE, or it is red on arrival and teaches a reader to
+ *     stop reading reds;
+ *   - FIRES ON A REPEAT OF THE SCENARIO'S OWN WORST DAY, replayed against the
+ *     lifetime numerator, or it cannot see the worst thing that scenario has
+ *     ever actually done.
+ *
+ * `a big chart on a slide of its own` at 120: green today (12 against a cap of
+ * 19.56) and fires on a repeat of 09-03 (23 of 129 against 22.86). **That is by
+ * fourteen hundredths of a death, and it is the tightest number in this table.**
+ * It passes, and it would not pass at 130. `stop a run mid-draw` at 60: green
+ * today (8 against 11.91) and fires both on a worst-day repeat (14 of 127
+ * against 12.97) and on a repeat of its whole pre-fix episode (16 of 142
+ * against 14.18).
+ *
+ * **THE SECOND TEST IS A SNAPSHOT, NOT A PROPERTY OF THE CEILING.** It is a
+ * function of n at the moment the burst arrives, and n only grows: at 120 a
+ * repeat of 09-03 fires only if it comes within about ONE more clean run —
+ * after that the cap crosses 23 and the same burst is silent. 60 holds its
+ * version for roughly 13 further clean runs, and 21 on a whole-episode repeat.
+ * So this criterion DATES, exactly the way the rounding rule it replaced dated.
+ * It is the check that was actually run, against the archive as it stood on
+ * 2026-09-10 — re-run it before trusting it, and do not read it as a guarantee
+ * that either ceiling will still catch a burst a hundred rounds from now.
+ *
+ * **80 FAILED THAT TEST AND A FIRST DRAFT OF THIS COMMENT SHIPPED IT ANYWAY.**
+ * It was picked by the rounding rule — lifetime 70 rounded up — and justified
+ * with a sentence saying it "survives a repeat of its worst night", which is
+ * the opposite of the criterion above and was not replayed. At 80 that scenario
+ * is silent on a worst-day repeat (14 of 127 against 16.27) AND on its entire
+ * pre-fix episode (16 of 142 against 17.83). A rounding convention is how a
+ * ceiling is PROPOSED; the replay is what accepts it.
+ *
+ * AND THE FIRST DRAFT ARGUED FOR PADDING FROM BURSTINESS, WHICH DOUBLE-COUNTS.
+ * It said deaths arrive in one-day episodes rather than at a Bernoulli drip, so
+ * a ceiling at the post-fix rate would go red on the first bad night. But the
+ * over-dispersion is entirely BETWEEN regimes — it is the pre-fix defect, which
+ * the paragraphs above already credit to `40dfee0` and `8053f62`. Within either
+ * regime these are consistent with Bernoulli. Using the burst to explain the
+ * split and then again to justify padding above the post-fix rate is the same
+ * event spent twice. The honest reason these are not seeded at 11 and 0 is the
+ * green-on-today constraint, not burstiness.
+ *
+ * `same scale across the deck` and `what a chart kind costs` were NOT re-seeded.
+ * The first shows no regime change across the split (21 to 11 on n=91, and its
+ * deaths are spread over six calendar days rather than bunched). The second is
+ * entirely post-fix — 3 of 64 = 47 against a ceiling of 50 — so it is already
+ * calibrated to the regime it runs in.
+ *
+ * WHAT THIS STILL CANNOT SEE is a slow drift, because the pre-fix deaths sit in
+ * the numerator for ever: a rise from 11 to 23 per 1000 on `a big chart` never
+ * fires at any ceiling. Catching that needs the counter scoped to an epoch,
+ * which is a real change to `triage.mjs` and carries its own hazard — an epoch
+ * you can move is a ceiling edit wearing a different hat. Not built.
+ *
+ * Lowering a ceiling is deciding a scenario may kill PowerPoint LESS often than
+ * it used to be allowed to, which is a claim about the product and is why the
+ * numbers above are the owner's and were his call, not the instrument's.
  *
  * The scenario that led on raw count is a nine-times-baseline one. The two that
- * kill the host on a THIRD to a HALF of their runs looked smaller only because
- * they are young — `a big chart on a slide of its own` was written on
- * 2026-09-03 and has run eleven times. Both are the OWN-SLIDE pair, which is
- * the defect `6438dd1` fixed at 16:9 and round 370 showed still open at 4:3.
+ * killed the host on a THIRD to a HALF of their runs looked smaller than it on
+ * 2026-09-03 only because they were young — `a big chart on a slide of its own`
+ * was written that day and had run eleven times. Both are the OWN-SLIDE pair,
+ * which is the defect `6438dd1` fixed at 16:9 and round 370 showed still open at
+ * 4:3 — and which `40dfee0` closed the same day this table was written, so the
+ * two sentences above describe a state that lasted hours.
  *
  * AND A RATE CAN FALL. This is the property the instrument needed and the one a
  * count can never have: runs keep accumulating, so a scenario that stops dying
@@ -345,11 +479,21 @@ export const KNOWN_DIVERGENCES = {
  * promised a fall over a cumulative count and had to be retracted; this is what
  * it should have said.
  *
- * SEEDED AT THE RATES MEASURED ON 2026-09-03, rounded up to the next ten. At
- * zero this would fail every night for damage already known and already on the
- * backlog. At today's rates it is silent while a known-bad scenario stays as
- * bad as it is, and loud the moment one gets WORSE — which is the question
- * worth asking, and the one the count could not ask.
+ * **THAT PROPERTY IS WEAKER THAN IT SOUNDS AND THE RE-SEED IS THE PROOF.** A
+ * rate does fall, but it falls towards a lifetime average that keeps the dead
+ * episode in the numerator for ever, so it never reaches the current truth: `a
+ * big chart` reads 112 today and would still read 13 after eight hundred more
+ * clean runs, against a post-fix truth of 11. Waiting for dilution is waiting
+ * for something that does not arrive. A fix protecting itself is real; a fix
+ * RE-ARMING the gate behind it is not, and that is the part that needed a hand.
+ *
+ * SEEDED FROM THE LIFETIME RATES, rounded up to the next ten — on 2026-09-03
+ * for every name here, and re-seeded the same way on 2026-09-10 for the two the
+ * split above showed were guarding a fixed defect. At zero this would fail every
+ * night for damage already known and already on the backlog. At these rates it
+ * is silent while a known-bad scenario stays as bad as it is, and loud the
+ * moment one gets WORSE — which is the question worth asking, and the one the
+ * count could not ask.
  *
  * A NAME ABSENT FROM THIS TABLE HAS NEVER KILLED THE HOST, so its first death
  * is a rise from zero and is caught. That is the case most worth catching, and
@@ -368,39 +512,123 @@ export const KNOWN_DIVERGENCES = {
  * not.
  *
  * Attribution is narrow on purpose: a scenario counts only when its
- * `scenario starting` line was never closed. **36 of 99** sound crash records
- * attribute this way and the other 63 died in the probe phase or the deck
- * scan, credited to nothing (re-derived 2026-09-08; it read "26 of 83"). See
- * `fatalScenarios` in `scripts/triage.mjs`, and `scenarioRuns` for the
- * denominator.
+ * `scenario starting` line was never closed. **39 of 104** sound crash records
+ * attribute this way and the other 65 died in the probe phase or the deck
+ * scan, credited to nothing (re-derived 2026-09-10; it read "26 of 83", then
+ * "36 of 99" — this figure goes stale every cycle, so read it as the shape and
+ * take the number from the gate). **Most host deaths are credited to no
+ * scenario at all**, which bounds what every ceiling here can ever do: this
+ * table governs 39 deaths, not 104. See `fatalScenarios` in
+ * `scripts/triage.mjs`, and `scenarioRuns` for the denominator.
  */
 export const FATAL_SCENARIO_RATE = {
   /**
-   * IT KILLS POWERPOINT ON NEARLY HALF ITS RUNS. Five deaths in eleven, and it
-   * has only existed since 2026-09-03 — written that day to isolate the
+   * IT KILLED POWERPOINT ON NEARLY HALF ITS RUNS, FOR ONE DAY. Five deaths in
+   * eleven when this was seeded on 2026-09-03 — written that day to isolate the
    * own-slide defect from `stop a run mid-draw`, which it did.
    *
-   * This is the worst number in the suite by a factor of 190 over baseline, and
-   * it is not a harness problem: the scenario draws a chart onto a slide the
+   * It is not a harness problem: the scenario draws a chart onto a slide the
    * product just added, which is a thing users do.
-   */
-  "a big chart on a slide of its own": 460,
-  /**
-   * Ours, and known: `ca138f8` moved it onto a freshly-added slide and it has
-   * failed every round since. Same defect as the entry above — the two share
-   * it, which is why they share an order of magnitude.
    *
-   * Nine seconds long and 296 per 1000. Duration is not danger.
+   * **460 → 120, re-seeded 2026-09-10.** `40dfee0` landed hours after the
+   * original seeding and the scenario has died ONCE in the eighty-five runs
+   * since (11.8 per 1000, against 500 on 09-03). 460 needed sixty deaths to
+   * fire against twelve standing; 120 needs twenty and leaves eight of
+   * headroom.
+   *
+   * ELEVEN OF ITS TWELVE DEATHS LANDED ON 2026-09-03 — on 22 runs, not 11; see
+   * the denominator note in the table docstring. It is NOT seeded at the
+   * post-fix 11 because 11 is not green on today's archive, which is the whole
+   * of the reason: an earlier draft here also claimed the clustering as a
+   * second reason and the table docstring now retracts that as double-counting.
+   * Eight of headroom does fire on a repeat of 09-03, but only by 0.14 of a
+   * death — this is the tightest entry in the table.
    */
-  "stop a run mid-draw": 330,
+  "a big chart on a slide of its own": 120,
+  /**
+   * Ours, and known: `ca138f8` moved it onto a freshly-added slide and it failed
+   * every round for the week after. Same defect as the entry above — the two
+   * share it, which is why they shared an order of magnitude.
+   *
+   * Nine seconds long and 296 per 1000 on the day it was seeded. Duration is not
+   * danger.
+   *
+   * **330 → 60, re-seeded 2026-09-10.** 330 needed forty-eight deaths to fire
+   * against eight standing, and a full relapse to the old rate could NEVER have
+   * fired at any n, because 267 per 1000 is below a ceiling of 330.
+   *
+   * **THIS IS THE DIRTIEST READING IN THE TABLE AND A FIRST DRAFT CALLED IT THE
+   * CLEANEST.** The tempting sentence is "eight deaths in the thirty runs before
+   * `40dfee0` and ZERO in the eighty-eight since". The arithmetic is right and
+   * the attribution is wrong. This scenario's last death is 2026-09-03T06:42Z.
+   * `40dfee0` is 21:01Z — FOURTEEN HOURS and eight clean runs later. What
+   * actually sits at the boundary is `8053f62`, 06:59Z, "Run the new scenario
+   * BEFORE the one that kills the round", which reordered `SCENARIOS` so that
+   * `a big chart on a slide of its own` runs first. Split there and it is
+   * perfect: all 8 of this scenario's deaths fall before the reorder, all 12 of
+   * the other's fall after it, and in **all twelve** of those crash records this
+   * scenario never emits a `scenario starting` line at all. The two share one
+   * defect, so whichever runs FIRST takes the death. The reorder moved the
+   * deaths from this name to that one. **That is round 254's mistake — a
+   * changepoint credited to a host fix when the cause was our own commit — and
+   * it was made here first and caught in review.**
+   *
+   * SO WHY RE-SEED AT ALL, if the zero is an artifact? Because it stops being
+   * one on 09-04. Shielding only bites when the scenario in front actually kills
+   * the host, and after `40dfee0` that happens once in seventy-eight. Post-fix
+   * the two run in near-lockstep — **85 and 84 runs, 1 death and 0** — so this
+   * scenario's zero is measured at FULL exposure and is real evidence. What the
+   * reorder explains is the 09-03 gap, not the week after it.
+   *
+   * WHY 60 AND NOT 80. A first draft said 80 and justified it by "survives a
+   * repeat of its own worst night". Replayed, 80 does not merely survive that —
+   * it is SILENT on it (14 deaths of 122 against a cap of 15.8), and silent on a
+   * repeat of the entire pre-fix episode too (16 of 144 against 18.0). A ceiling
+   * that cannot fire on the worst thing a scenario has ever done is not a
+   * ceiling. 60 is green today with four of headroom and fires on both.
+   *
+   * THE GATE PRINTS A RATE OF 70.2 AGAINST THIS CEILING OF 60 AND IS GREEN. That
+   * is not a bug and it is the only row in the table where it happens, so it is
+   * worth saying once: `fatalRateBreaches` compares a COUNT against
+   * `fatalDeathsAllowed(p, n)` — a binomial band — not a rate against a rate. At
+   * n=114 the band allows 11.9 deaths and eight are standing. The printed rate is
+   * a lifetime average that still carries the eight pre-fix deaths, and it falls
+   * as clean runs accumulate while the band rises; both move the right way. Do
+   * not "fix" this by raising the ceiling back to 70 — that is the rounding rule
+   * this entry was re-seeded to get away from.
+   */
+  "stop a run mid-draw": 60,
   /**
    * THE ONE THIS TABLE EXISTS FOR, and the reason it is a rate. Nine deaths and
    * not one failed verdict in 282 — every reader of this archive has been told
    * for weeks that this scenario is among the safest in the suite.
    *
-   * Nine times baseline, not the worst in the suite. All nine landed between
-   * 2026-08-24 and 08-29, inside `updated only the shapes that changed`, in the
-   * 420-600s window where this host dies of session age. Nothing since.
+   * Nine times baseline, not the worst in the suite. Nine landed between
+   * 2026-08-24 and 08-29, and eight of those nine sit inside
+   * `updated only the shapes that changed`.
+   *
+   * **"IN THE 420-600s WINDOW WHERE THIS HOST DIES OF SESSION AGE" IS FALSE —
+   * struck 2026-09-10.** Measured from the last `atMs` in each crash record,
+   * this scenario's ten deaths land at 218, 221, 254, 307, 326, 341, 356, 387,
+   * 504 and 1350 seconds: **one** of the ten is in [420, 600]. An independent
+   * pass using a different elapsed measure counted five. The two disagree about
+   * the measure and agree about the claim, which was never true under either.
+   * `docs/BACKLOG.md` states it harder still — "every one of its ten deaths
+   * landed in the 420-600s window" — and that is corrected there too. This
+   * scenario dies EARLY and across a wide spread, which is a different fact
+   * from the one the session-age story predicts.
+   *
+   * **"Nothing since" WAS TRUE AND IS NOT.** A tenth landed 2026-09-09, on
+   * `5451617`, eleven days after the ninth and — this is the part that matters —
+   * on the far side of `40dfee0`. `triage.mjs` has been printing ten while this
+   * sentence said nine.
+   *
+   * **NOT RE-SEEDED, and the tenth death is why the split does not license it.**
+   * Across `40dfee0` this reads 9/430 before and 1/91 after: 21 to 11, which on
+   * ninety-one runs is not a regime change, and its deaths are spread over SIX
+   * calendar days rather than bunched into one. It is the only name here that
+   * dies at a steady drip, which is exactly the shape a fixed ceiling is good
+   * at watching. 30 against a lifetime 19 leaves fourteen of headroom.
    */
   "same scale across the deck": 30,
   /**
@@ -419,6 +647,13 @@ export const FATAL_SCENARIO_RATE = {
    * known-bad scenario stays as bad as it is, loud the moment it gets worse. A
    * ceiling of 12 would have re-fired on the third death.
    *
+   * **THE THIRD DEATH CAME, and the seeding held.** 3 in 64 = 47 per 1000 as of
+   * 2026-09-10, against the 50 seeded a day earlier. Left alone in the
+   * 2026-09-10 re-seed for the one reason that separates it from the two names
+   * above: this scenario is **entirely post-`40dfee0`** — it has no pre-fix runs
+   * at all — so its ceiling was never seeded from a dead regime and needs no
+   * correcting. It is the only entry here calibrated to the regime it runs in.
+   *
    * WHAT IT ADMITS: this scenario may kill PowerPoint on about one run in
    * twenty. That is worse than `same scale across the deck` and better than the
    * two own-slide names above it.
@@ -427,16 +662,35 @@ export const FATAL_SCENARIO_RATE = {
    * number: `kindCostSpread` deletes each specimen before drawing the next, and
    * on this host that delete does not land — all four routes to sweeping a fresh
    * shape are measured and closed in `docs/BACKLOG.md`. So occupancy climbs
-   * 0, 7, 15, 24, 34, 44, 53, 61 and the tab dies on the eighth. The fix is to
-   * draw each specimen on a scratch slide that can be deleted whole, which
-   * changes the occupancy the experiment measures at — the reason it is the
-   * owner's call and not a cleanup. When it lands, this number should come back
-   * down, and lowering it is his call too.
+   * 0, 7, 15, 24, 34, 44, 53, 61 and the tab dies on the eighth.
+   *
+   * **THE "FIX" THIS COMMENT USED TO NAME IS NOT ONE.** It said: draw each
+   * specimen on a scratch slide that can be deleted whole, and treated the only
+   * cost as changing the occupancy the experiment measures at. Both halves are
+   * wrong. Occupancy is a recorded covariate, not the treatment — `onSlideAfter`
+   * and `drew` make the true prior exact for every reading and the analysis
+   * conditions on it. And a scratch ADD is the call with the worst kill record
+   * in this archive: it killed PowerPoint on the web five rounds running until
+   * `chartIsVisible` stopped making it, and the isolating round reached the
+   * scenario at 61.5s, added a slide at 61.5s and died at 61.8s. See the
+   * `chartIsVisible` comment in `src/taskpane/selftest.ts` — "a fresh slide is
+   * the worst surface this host offers". Putting it back would trade a measured
+   * one-in-twenty for a call that went 0 for 5.
+   *
+   * SO THIS NUMBER IS NOT WAITING ON A FIX. What is left is a docstring that
+   * stops promising the deck is left as found, and a reader that reconstructs
+   * the true prior — `resolved == 1` is a GROUP delete and takes 7-10 shapes
+   * while the counter decrements by one. Both are cheap and neither moves this
+   * ceiling.
    */
   "what a chart kind costs": 50,
-  // The tail: one death each, on 200-420 runs. At 2.4 per 1000 these are the
-  // background rate of a host that falls over sometimes, not scenarios with a
-  // problem. They are listed so their FIRST rise is measured against something.
+  // The tail: one death each on 200-420 runs when this was written; as of
+  // 2026-09-10 `explode a degraded picture` has TWO (2 of 505 = 4.0 per 1000,
+  // 2026-08-25 and 2026-09-05) and the other four still have one. At 2-4 per
+  // 1000 these are the background rate of a host that falls over sometimes, not
+  // scenarios with a problem. They are listed so their FIRST rise is measured
+  // against something — and at n≈500 a ceiling of 10 trips at ten deaths, so
+  // the headroom here is real and none of them is close to it.
   "one chart alone on a warm deck": 10,
   "edit the chart the user selected": 10,
   "explode a degraded picture": 10,
