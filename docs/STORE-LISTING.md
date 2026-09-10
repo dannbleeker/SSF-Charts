@@ -22,7 +22,7 @@ org-wide admin deploy (see `PUBLISHING.md` "Distribution beyond sideloading").
 > analysts actually use — waterfall/bridge, Mekko/Marimekko, stacked and
 > clustered columns, 100% charts, lines, areas, pie/doughnut, scatter/bubble,
 > Gantt plans, and more — inserted onto your slide as **native, fully editable
-> PowerPoint shapes**, never flat pictures or opaque objects. Add the
+> PowerPoint shapes** you can recolour, move and restyle by hand. Add the
 > annotations that tell the story: CAGR arrows, difference arrows, value lines,
 > automatic column totals, and collision-avoiding labels. Every chart stays
 > re-editable: reopen the pane, change the data, and it updates in place.
@@ -37,6 +37,29 @@ org-wide admin deploy (see `PUBLISHING.md` "Distribution beyond sideloading").
 - Re-editable charts, saved templates, and an import/export style file for a
   consistent corporate look.
 - Runs entirely in your client — your data never leaves your device.
+
+> **"NEVER FLAT PICTURES" WAS REMOVED FROM THE COPY ABOVE ON 2026-09-10, AND IT
+> MUST NOT COME BACK.** It was not true on two of the four platforms Microsoft
+> says it will test. Below PowerPointApi 1.10 the add-in deliberately inserts a
+> **picture** for any chart carrying marks the host cannot draw, and tells the
+> user so: *"This PowerPoint cannot draw … — that needs a newer Office
+> (PowerPointApi 1.10). Inserted as a picture so it is complete; it stays an
+> image here."* (`pictureForUndrawableMarks`, `src/taskpane/app.ts`). The repo's
+> own measurement: **18 of 123 shipped charts lose ink below 1.10 and 8 lose
+> their subject entirely** — pie 4/4, doughnut 2/2, sunburst 2/2.
+>
+> 1.10 needs Windows M365 2601, Mac 16.105, and is **not available at all on
+> volume-licensed perpetual/LTSC**, while the manifest claims support down to
+> 1.4 (Windows 2207 / Mac 16.62). So a validator on an ordinary corporate build
+> inserts a pie chart and gets an image. "Functionality does not match the offer
+> description" is the ordinary AppSource rejection, and this was the shortest
+> path to it.
+>
+> The BEHAVIOUR is good and worth describing plainly rather than hiding: the
+> user gets a complete chart plus a message naming what would otherwise be
+> missing, instead of a silently broken one. If you want the guarantee back in
+> the copy, qualify it — "native shapes on PowerPoint 2601/16.105 and later" —
+> rather than dropping the qualifier.
 
 > **Where "25" comes from, so it cannot go stale unnoticed:** it is the number of
 > entries in `CHART_KINDS` (`src/core/samples.ts`), which is what the picker

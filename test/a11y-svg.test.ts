@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildChart, describeChart } from "../src/core/chart";
+import { buildCheckbox, buildHarveyBall, buildKpiTile, buildProcessFlow, buildTableScene } from "../src/core/elements";
 import type { TextNode } from "../src/core/scene";
 import { sceneToSvg } from "../src/render/svg";
 import type { ChartConfig } from "../src/core/types";
@@ -111,5 +112,63 @@ describe("the accessible description matches the chart that was drawn", () => {
     // The negative control: no sort, no pareto, no bucket — nothing may move.
     const scene = buildChart({ ...base, kind: "clustered" } as ChartConfig);
     expect(scene.desc).toBe("clustered column chart. 1 data series: V. 4 categories: C0, C1, C2, C3.");
+  });
+});
+
+/**
+ * THE SAME RULE, FOR THE ELEMENTS — written for charts, and the element family
+ * never got it.
+ *
+ * `sceneToSvg` stamps `role="img"` on EVERY scene, and its own comment says what
+ * that costs when there is no name: "role=img with no name is exactly what
+ * axe-core's role-img-alt reports as a 1.1.1 failure". `buildChart` always set a
+ * `desc`; the five builders in `src/core/elements.ts` set neither field, so the
+ * four Elements-tab previews shipped to every user as unnamed images. Found by
+ * running axe-core against the LIVE pane on 2026-09-10, not by reading the code
+ * — every test above passed the whole time it was true, because every one of
+ * them asks about a chart.
+ *
+ * The repo's most-repeated defect wearing a new hat: the fix reached all but one
+ * call site. So this iterates the family rather than naming a favourite.
+ */
+describe("every element scene carries a text alternative", () => {
+  const scenes: [string, ReturnType<typeof buildHarveyBall>][] = [
+    ["harvey ball", buildHarveyBall(0.75)],
+    ["checkbox", buildCheckbox("yes")],
+    ["process flow", buildProcessFlow(["Scope", "Design", "Build"], 1)],
+    ["kpi tile", buildKpiTile({ label: "Revenue", value: "€4.2m", delta: "+12% vs LY" })],
+    [
+      "table",
+      buildTableScene([
+        ["a", "b"],
+        ["1", "2"],
+      ]),
+    ],
+    ["empty table", buildTableScene([])],
+  ];
+
+  it.each(scenes)("%s is named, so its role=img is not anonymous", (_name, scene) => {
+    expect(scene.desc, "no text alternative — this is the axe-core role-img-alt failure").toBeTruthy();
+    const svg = sceneToSvg(scene);
+    expect(svg).toContain('role="img"');
+    // `sceneToSvg` promotes a desc-only scene's description to the NAME, which
+    // is the point: a description without a name still fails 1.1.1.
+    expect(svg, "the description did not become the accessible name").toContain(`<title>${scene.desc}</title>`);
+  });
+
+  it("describes what was drawn rather than what was asked for", () => {
+    // Each builder sanitises its input, and the text alternative has to agree
+    // with the sanitised value or it describes a graphic nobody drew.
+    expect(buildCheckbox("__proto__" as never).desc, "a bogus state draws the neutral glyph").toBe(
+      "Checkbox, partial.",
+    );
+    expect(buildProcessFlow(null as never).desc, "a non-array draws an empty flow").toBe("Process flow with no steps.");
+    expect(buildProcessFlow(["A", "B"], 9).desc, "a highlight past the end names no step").toBe("Process flow: A, B.");
+    expect(buildHarveyBall(2).desc, "a fraction above 1 is clamped before it is drawn").toBe(
+      "Harvey ball, 100% filled.",
+    );
+    expect(buildTableScene([["a", "b", "c"], ["1"]]).desc, "a ragged paste is drawn to its widest row").toBe(
+      "Table, 2 rows by 3 columns.",
+    );
   });
 });

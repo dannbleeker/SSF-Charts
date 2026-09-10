@@ -68,7 +68,13 @@ export function buildHarveyBall(fraction: number, size = 24): Scene {
       name: "harvey-fill",
     });
   }
-  return { width: size, height: size, nodes: finiteNodes(nodes) };
+  // A TEXT ALTERNATIVE, because `sceneToSvg` marks every scene `role="img"`.
+  // Its own comment says why that matters: "role=img with no name is exactly
+  // what axe-core's role-img-alt reports as a 1.1.1 failure". `buildChart` sets
+  // `desc` on every chart and `test/a11y-svg.test.ts` pins it — the element
+  // builders were simply never given the same treatment, so the four Elements
+  // previews shipped unnamed. Measured against the live pane 2026-09-10.
+  return { width: size, height: size, desc: `Harvey ball, ${Math.round(f * 100)}% filled.`, nodes: finiteNodes(nodes) };
 }
 
 export type CheckState = "yes" | "no" | "partial";
@@ -90,9 +96,15 @@ export function buildCheckbox(state: CheckState, size = 20): Scene {
   // builder that refuses is worse for a caller than one that draws the
   // undecided glyph.
   const known: CheckState = Object.prototype.hasOwnProperty.call(glyph, state) ? state : "partial";
+  // See `buildHarveyBall` for why every element scene carries a `desc`. Named
+  // from the RESOLVED state, not the argument: a caller passing nonsense gets
+  // the neutral glyph above, and the text alternative has to agree with what
+  // was actually drawn rather than with what was asked for.
+  const said: Record<CheckState, string> = { yes: "yes", no: "no", partial: "partial" };
   return {
     width: size,
     height: size,
+    desc: `Checkbox, ${said[known]}.`,
     nodes: [
       {
         kind: "rect",
@@ -164,7 +176,15 @@ export function buildProcessFlow(steps: string[], highlight = -1, width = 480, h
       },
     );
   });
-  return { width, height, nodes: finiteNodes(nodes) };
+  // See `buildHarveyBall`. Built from `list`, the SANITISED steps, so a caller
+  // that passed a non-array gets "Process flow with no steps." rather than a
+  // description of something that was not drawn — and the highlight is named
+  // only when it points at a step that exists.
+  const flowDesc = list.length
+    ? `Process flow: ${list.join(", ")}.` +
+      (highlight >= 0 && highlight < list.length ? ` ${list[highlight]} highlighted.` : "")
+    : "Process flow with no steps.";
+  return { width, height, desc: flowDesc, nodes: finiteNodes(nodes) };
 }
 
 export interface KpiTileOptions {
@@ -288,7 +308,18 @@ export function buildKpiTile(opts: KpiTileOptions, width = 160, height = 90): Sc
       name: "kpi-delta",
     });
   }
-  return { width, height, nodes: finiteNodes(nodes) };
+  // See `buildHarveyBall`. Assembled from the COERCED locals above rather than
+  // from `opts`, so a `delta` that arrived as a number is described the way it
+  // was actually drawn. The value carries its own units ("€4.2m"), so it is
+  // read out as-is.
+  const kpiDesc = [
+    opts.label ? `${String(opts.label)}:` : "KPI:",
+    String(opts.value ?? ""),
+    delta ? `${delta}${dir && dir !== "flat" ? ` (${dir})` : ""}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return { width, height, desc: `${kpiDesc}.`, nodes: finiteNodes(nodes) };
 }
 
 export interface TableOptions {
@@ -418,7 +449,10 @@ export function buildTableScene(cellsIn: string[][], width = 480, opts: TableOpt
   // No rows: the closing rule would be drawn at y = -0.5, i.e. above the top of
   // a zero-height scene (and at a negative offset from the insertion point in
   // the PowerPoint renderers). Nothing to draw.
-  if (rows === 0) return { width, height: 0, nodes: [] };
+  // Still named, even with nothing in it: `sceneToSvg` stamps `role="img"` on
+  // every scene it renders, including this one, and an empty img with no
+  // accessible name is the same 1.1.1 failure as a full one.
+  if (rows === 0) return { width, height: 0, desc: "Empty table.", nodes: [] };
   const cols = Math.max(1, ...cells.map((r) => r.length));
   const parsed = cells.map((row) => row.map((c) => parseCell(c)));
   const colWidths = (f: number) =>
@@ -536,5 +570,9 @@ export function buildTableScene(cellsIn: string[][], width = 480, opts: TableOpt
     nodes.unshift(rule(0.5, 1.25, "rule-top"));
     nodes.push(rule(y - 0.5, 1.25, "rule-bottom"));
   }
-  return { width, height: y, nodes: finiteNodes(nodes) };
+  // See `buildHarveyBall`. Reuses `cols` from above rather than recounting, so
+  // the description cannot disagree with the grid that was actually drawn — it
+  // is already the widest row, which is what a ragged paste is drawn to.
+  const tableDesc = `Table, ${rows} row${rows === 1 ? "" : "s"} by ${cols} column${cols === 1 ? "" : "s"}.`;
+  return { width, height: y, desc: tableDesc, nodes: finiteNodes(nodes) };
 }
