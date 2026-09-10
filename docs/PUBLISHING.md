@@ -699,6 +699,75 @@ v0.2.0 fixes that. If a future release ever ships a manifest again, check the
 asset list, not just the workflow file — the workflow was right for 12 days
 while the published release stayed wrong.
 
+## Publication readiness, audited 2026-09-10 — what is fixed and what is yours
+
+A pass over everything between "main is green" and "a stranger installs this
+from AppSource". The technical gates were already clean and stayed clean:
+`office-addin-manifest validate` says valid, `vite build` and the manifest check
+pass, CI is green, and every one of the 16 URLs the prod manifest references
+returns 200. What follows is what those gates do not look at.
+
+### Fixed, and the reason each survived every existing check
+
+- **`HighResolutionIconUrl` was 80×80; Office requires 64×64.** Wrong in all
+  four manifests since they were written, with the correct `icon-64.png` sitting
+  in `assets/` and on the deployed site the whole time. Survived because
+  `check-published-install.mjs` HEAD-checks that a URL *resolves*,
+  `office-addin-manifest validate` checks the *schema*, and `manifest-rules.mjs`
+  never opened an image. **A URL that 200s is not a URL that is right.** Fixed,
+  plus a rule so it cannot drift back.
+- **The store listing promised "never flat pictures or opaque objects".** Below
+  PowerPointApi 1.10 the add-in deliberately inserts a picture and says so.
+  "Functionality does not match the offer description" is the ordinary AppSource
+  rejection. Copy corrected; see `STORE-LISTING.md` for the measurement and the
+  right way to say it if the guarantee is wanted back.
+- **Four Elements-tab previews shipped as `role="img"` with no accessible name**
+  — a WCAG 1.1.1 Level A failure, found with axe-core against the live pane. The
+  `desc` written for charts never reached the element family, and every test
+  guarding it asked about a chart. All five builders fixed; the test now
+  iterates the family.
+- **"18 chart kinds"** in the listing; `CHART_KINDS` has 25.
+- **The 60-second watchdog** pointed an ordinary user at *Download the crashed
+  run*, a control that only exists for a harness run.
+
+### Yours, and the first is the one that blocks everything else
+
+1. **Cut a release.** `check-published-install.mjs` now exits 3: the manifests in
+   v0.5.0 are not the committed ones, so **the icon fix reaches nobody until a
+   release is cut**. A tag auto-publishes, which is why this is not done here.
+2. **The pane ships its own test harness to every user.** Automation ▸ Testing —
+   self-test, host probe, download run log, clean up the last round — is live in
+   production, ungated, in harness vocabulary, with buttons that rewrite the
+   reader's deck. `TESTING_UI_NEEDS_OPT_IN` (`src/taskpane/app.ts`) hides it
+   behind `?harness=1` and is committed **false**, because flipping it changes
+   what a user receives. Flip it *and* add a harness manifest together — a test
+   fails if you do one without the other, because otherwise the round loop stops
+   without saying so.
+3. **The manifest admits hosts the product does not fully work on.** It declares
+   PowerPointApi **1.4**; the product is whole only at **1.10**. Three tiers
+   exist and only the top has ever been tested — 1.10 (web: everything works),
+   1.8–1.9 (pie/doughnut/sunburst and any CAGR or difference arrow insert as a
+   flat picture), and ≤1.5 including Office LTSC (**no picture fallback at all**
+   — marks are simply missing). Raising `MinVersion` to 1.10 makes every promise
+   true and costs LTSC and pre-2026 builds. That is a reach-versus-correctness
+   trade and it is a product decision.
+4. **The default chart is the degraded case.** The pre-selected tile is
+   `stacked`, and its sample carries `cagr: { from: 0, to: 3 }` — an arrowhead,
+   which is exactly what is dropped below 1.10. So the first thing a new user
+   does, one click with no input, is the broken case on every host below 1.10.
+   Changing the default sample is the cheap half of decision 3.
+5. **Screenshots** remain a person's job — the slide canvas does not composite in
+   a headless browser. Unchanged from `STORE-LISTING.md`.
+
+### Verified fine, so nobody re-checks them
+
+Privacy and terms pages are live, specific and accurate — they disclose hosting
+logs and the Office.js CDN, and the "your data never leaves your device" claim
+holds: the shipped code contains exactly **one** network call,
+`fetch("/build.json")`, same-origin, sending nothing. The 300×300 store logo
+exists at the right dimensions. User-facing language is clean — 94 `note()`
+calls and 121 catalogue entries with no internal vocabulary leaking.
+
 ## Distribution beyond sideloading (later, optional)
 
 - **Org-wide (BESTSELLER)**: a Microsoft 365 admin deploys the manifest
