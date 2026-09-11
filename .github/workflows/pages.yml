@@ -4,8 +4,31 @@ name: Deploy Pages
 # ssf-chart.struktureretsundfornuft.dk). Office add-ins load their task pane
 # and icons over HTTPS from here; the production manifests point at this origin.
 # Separate from ci.yml so a docs/test change doesn't redeploy the site.
+#
+# IT USED TO DEPLOY WHETHER OR NOT THE TESTS PASSED, and it did so eighteen
+# times. This ran on `push: branches: [main]` with no dependency on CI at all —
+# its only `needs:` was its own `build` job — so a push with a red suite went
+# straight to the site a user loads the add-in from. Measured 2026-09-11 over
+# the last 100 CI runs on main: 18 were red, and Pages deployed successfully
+# for 18 of 18. Not a theoretical gap.
+#
+# Now it waits for CI to finish and deploys only when CI SUCCEEDED.
+#
+# THE COST, measured rather than guessed: CI on main runs a median 259s (p90
+# 270s) and the deploy itself a median 43s (p90 82s), so the site goes live
+# about five minutes after a push instead of about one. Both deploy waits
+# survive that with room — `scripts/await-deploy.mjs` allows 20 minutes by
+# default, and `round.mjs`'s own wait is 40 polls x 20s = 13.3 minutes, which
+# goes from roughly eight times the old latency to a little over twice the new
+# one. Nothing needed retuning; if that changes, those are the two numbers.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    # Filters on the branch of the TRIGGERING run, so a `pull_request` CI run
+    # from a feature branch does not deploy. Note that `workflow_run` only
+    # fires for a workflow file that exists on the DEFAULT branch — this file
+    # has to be on main to work at all, which it is.
     branches: [main]
   workflow_dispatch:
 
@@ -16,15 +39,57 @@ permissions:
   id-token: write
 
 # One deploy at a time; don't cancel an in-flight publish.
+#
+# `cancel-in-progress` STAYS FALSE, and the CI gate is a reason to say so
+# rather than to reconsider it: cancelling a Pages deployment is what cost this
+# site an afternoon on 2026-08-06 — see the timeout comment at the bottom of
+# this file, where the action's own timeout cancelled six consecutive deploys
+# GitHub was still working on.
+#
+# WHAT THAT LEAVES OPEN, now that a deploy waits ~4.5 minutes for CI: push A
+# then push B in quick succession and both CI runs pass, and nothing here
+# guarantees A's deploy finishes before B's. The site can end up on A — an
+# older commit, but a TESTED one. The window used to be about a minute and is
+# now about five, so this got likelier rather than newly possible. It is also
+# self-announcing: `round.mjs` refuses to run when HEAD and the deployed stamp
+# disagree, which is exactly this state. Re-run this workflow by hand to
+# settle it.
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
   build:
+    # THE GATE. `workflow_run` fires on `completed` whatever the outcome —
+    # failure, cancelled and timed_out all arrive here — so the conclusion has
+    # to be tested explicitly or this change would do nothing at all.
+    #
+    # The `workflow_dispatch` half keeps the hand crank working: a manual run
+    # carries no `workflow_run` payload, so that expression is empty and the
+    # job would never run without this. `ci.yml` explains at length why this
+    # repo keeps manual triggers — an automatic trigger silently failed to fire
+    # once and there was no way to ask for the check again.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
+      # THE COMMIT CI TESTED, NOT WHATEVER main POINTS AT NOW.
+      #
+      # This is the trap in `workflow_run` and it is silent. GitHub's own docs
+      # say that for this event `GITHUB_SHA` is the "Last commit on default
+      # branch" and `GITHUB_REF` is the "Default branch" — so an unpinned
+      # `actions/checkout` builds main's HEAD, not the commit that passed. Push
+      # B while CI for push A is still running and this would publish B, which
+      # nothing has tested: a worse version of the defect this file was changed
+      # to fix, and invisible, because the site would still serve something
+      # plausible.
+      #
+      # `|| github.ref` is for the manual path, where there is no triggering
+      # run and the dispatch ref is the right answer.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
