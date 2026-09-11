@@ -64,14 +64,38 @@ jobs:
     # failure, cancelled and timed_out all arrive here — so the conclusion has
     # to be tested explicitly or this change would do nothing at all.
     #
-    # The `workflow_dispatch` half keeps the hand crank working: a manual run
-    # carries no `workflow_run` payload, so that expression is empty and the
-    # job would never run without this. `ci.yml` explains at length why this
+    # AND TWO CONDITIONS THAT ARE NOT ABOUT THE TESTS AT ALL. The first draft
+    # of this file had only the conclusion check, and that combination — a
+    # `workflow_run` trigger plus a checkout pinned to the triggering commit —
+    # is the one GitHub's hardening guide names outright: "Workflows that use
+    # these triggers must not explicitly check out untrusted code, including
+    # from pull request forks."
+    #
+    # `ci.yml` runs on an unqualified `pull_request`, so it runs for FORK PRs,
+    # so a fork PR finishing CI fires this event. `branches: [main]` does not
+    # stop it: that filter matches `head_branch`, and a fork's default branch is
+    # called `main` too. Without the clauses below, anyone could open a PR from
+    # a fork, have this workflow check their commit out, run their lifecycle
+    # scripts through `npm ci`, and publish the result to the live site
+    # PowerPoint loads the add-in from.
+    #
+    # Two independent conditions, because one is a typo away from none: the
+    # triggering run must belong to THIS repository, and it must have been a
+    # push (or CI's own hand crank) rather than a `pull_request`.
+    #
+    # The `workflow_dispatch` clause comes first because a manual run of THIS
+    # file carries no `workflow_run` payload, so every expression about it is
+    # empty and the job would never run without it. `ci.yml` explains why this
     # repo keeps manual triggers — an automatic trigger silently failed to fire
-    # once and there was no way to ask for the check again.
+    # once and there was no way to ask for the check again. That argument is
+    # stronger here, not weaker: there are now TWO events in the chain that can
+    # fail to fire.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.event == 'push' ||
+      github.event.workflow_run.event == 'workflow_dispatch'))
     runs-on: ubuntu-latest
     steps:
       # THE COMMIT CI TESTED, NOT WHATEVER main POINTS AT NOW.
