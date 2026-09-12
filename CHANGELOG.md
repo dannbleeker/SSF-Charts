@@ -15,10 +15,11 @@ The release that stops PowerPoint falling over on a deck with more than one
 slide master. If you work from a corporate template, that is almost certainly
 your deck, and this is the entry to read.
 
-### Inserting a chart on its own slide crashed PowerPoint, and it was ours
+### Adding a slide crashed PowerPoint, and it was ours
 
-A chart too dense for the web host is offered a slide of its own. Making that
-slide asked for a layout without saying which master it belonged to — and
+Everything that adds a slide went through one call: the own-slide offer below,
+**Agenda slides**, and **the demo deck**. That call asked for a layout without
+saying which master it belonged to — and
 `AddSlideOptions` is explicit that a `layoutId` sent without a `slideMasterId`
 has to exist on the **default** master, which is whatever the previous slide
 uses. On a deck with one master that is always true, which is why this worked
@@ -42,14 +43,24 @@ from **the deck's own master** rather than whichever one came first — so a
 chart added to a template's second master no longer arrives styled from the
 first.
 
-### The own-slide offer now works at all
+### A too-dense chart is now offered a real choice
+
+A chart with more shapes than the web host will draw onto a busy slide used to
+be rasterised **before anyone was asked** — the offer then priced a picture,
+and so never fired. You are now asked, and the chart can go on a slide of its
+own as editable shapes rather than as a flat image. It stays re-editable:
+select it and the pane reloads its data.
 
 Two further faults in the same path, both of which made the offer useless
-rather than dangerous: it handed the host a slide id the host refuses, and it
-then targeted the new slide by that id instead of by its position. Both are
-fixed, and a too-dense chart now lands on its own slide **as editable shapes**
-— previously it was quietly rasterised before the choice was ever put to you,
-so the offer priced a picture and never fired.
+rather than dangerous, are fixed with it — it handed the host a slide id the
+host refuses, and then targeted the new slide by that id instead of by its
+position.
+
+- **A third button, "Insert as a picture"**, sits alongside "Put it on its own
+  slide" and "Add here anyway" — offered only where this PowerPoint can
+  rasterise, and never the default, because a picture is not editable.
+- **The "Insert as picture" tick is remembered** between charts instead of
+  resetting every time.
 
 ### Messages that dropped what you needed to know
 
