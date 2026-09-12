@@ -19,7 +19,23 @@ jobs:
     permissions:
       contents: write
     steps:
+      # FULL HISTORY, for the same reason `ci.yml` needs it, and this file did
+      # not get the fix when that one did.
+      #
+      # `backlog-health-table.test.ts` re-derives §0's table only for builds
+      # that contain the two-master fix, and it asks git which those are:
+      # `git log 6dfaa4b..HEAD`. A default checkout is shallow, that commit is
+      # not in the clone, and the command fails with "ambiguous argument
+      # '6dfaa4b..HEAD'". `ci.yml` carries `fetch-depth: 0` and a comment about
+      # the 26 hours the same failure cost there.
+      #
+      # The v0.6.0 release attempt of 2026-09-12 died here, on `npm test`,
+      # against a commit whose CI was green minutes earlier — because CI clones
+      # deep and this did not. One fix, two call sites, and only one of them got
+      # it: the defect this repo names more often than any other.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22

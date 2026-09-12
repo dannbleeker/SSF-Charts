@@ -15,6 +15,11 @@ The release that stops PowerPoint falling over on a deck with more than one
 slide master. If you work from a corporate template, that is almost certainly
 your deck, and this is the entry to read.
 
+**Nothing here changes how a chart is drawn.** The geometry, the label
+placement and the colours are untouched since 0.5.0, and that release's
+text-overlap work has no sequel in this one. Everything below is about getting a
+chart onto a slide, and about what the pane tells you while it does.
+
 ### Adding a slide crashed PowerPoint, and it was ours
 
 Everything that adds a slide went through one call: the own-slide offer below,
@@ -81,8 +86,11 @@ wins.
 ### Smaller, and one you may notice
 
 - **The shape budget rises from 90 to 105**, on the first evidence that ever
-  bore on it — so charts that previously tipped into a picture now insert as
-  shapes.
+  bore on it, and the effect is on YOUR insert rather than on the demo deck —
+  no demo item ever exceeded 90, so nothing there was gated or is un-gated now.
+  Counted per kind at three frame sizes, the newly admitted are **waffle** (103
+  shapes at every size), **sunburst** (at 320×220 and 480×300, still a picture
+  at 640×400) and **violin** (at 640×400). **Tile map stays gated** at 111–122.
 - **The Harvey ball, checkbox, process flow, KPI tile and table previews** are
   no longer unnamed images to a screen reader; each now carries a text
   alternative describing what it shows.
