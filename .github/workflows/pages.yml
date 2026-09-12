@@ -32,11 +32,24 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Least privilege for the Pages deployment.
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# NOTHING BY DEFAULT; each job asks for exactly what it uses.
+#
+# This was one workflow-wide grant of `contents: read` + `pages: write` +
+# `id-token: write`, which handed BOTH jobs the token that can publish the
+# site. `build` is the job that runs `npm ci`, and `npm ci` executes whatever
+# lifecycle scripts the dependency tree ships — so the job with third-party
+# code in it held the credential for the origin PowerPoint loads the add-in
+# from, and had no use for it.
+#
+# Split per job instead. `actions/deploy-pages`'s own README gives its
+# requirement as exactly two lines, `pages: write` and `id-token: write`, and
+# NOT `contents: read`; `build` needs only the `contents: read` its checkout
+# uses, because `actions/upload-pages-artifact` hands the artifact over on the
+# runtime token rather than this one.
+#
+# With `permissions: {}` here, a job added later that forgets its own block
+# gets nothing and fails loudly rather than inheriting the publish token.
+permissions: {}
 
 # One deploy at a time; don't cancel an in-flight publish.
 #
@@ -63,6 +76,21 @@ jobs:
     # THE GATE. `workflow_run` fires on `completed` whatever the outcome —
     # failure, cancelled and timed_out all arrive here — so the conclusion has
     # to be tested explicitly or this change would do nothing at all.
+    #
+    # THE WHOLE WORKFLOW'S CONCLUSION, NOT JUST `test`'S, AND THAT WAS CHECKED
+    # RATHER THAN ASSUMED. `ci.yml` has three jobs and one of them, `manifest`,
+    # calls a Microsoft service — so the obvious worry is that an outage over
+    # there stalls deployment here, and the obvious answer is a narrower gate
+    # that asks the jobs API about `test` alone. Measured 2026-09-12 across the
+    # last 60 CI runs on main: 18 were red, and every one of the twelve
+    # inspected reads `test=failure manifest=success release-skill=skipped`.
+    # `manifest` has never once been what made CI red.
+    #
+    # So the narrow gate would buy nothing and cost a second job, an
+    # `actions: read` grant and an API call on the deploy path — three new ways
+    # to fail, guarding against something that has not happened. Left alone
+    # deliberately. If `manifest` ever does start failing on its own, that
+    # measurement is the thing to re-run, not this comment to re-read.
     #
     # AND TWO CONDITIONS THAT ARE NOT ABOUT THE TESTS AT ALL. The first draft
     # of this file had only the conclusion check, and that combination — a
@@ -97,6 +125,10 @@ jobs:
       (github.event.workflow_run.event == 'push' ||
       github.event.workflow_run.event == 'workflow_dispatch'))
     runs-on: ubuntu-latest
+    # The checkout's read, and nothing else. This job runs third-party lifecycle
+    # scripts via `npm ci`; it must not be able to publish.
+    permissions:
+      contents: read
     steps:
       # THE COMMIT CI TESTED, NOT WHATEVER main POINTS AT NOW.
       #
@@ -127,6 +159,13 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # The publish credential lives HERE and only here. This job checks nothing
+    # out and runs no dependency code — it hands GitHub an artifact `build`
+    # already produced. `actions/deploy-pages` documents exactly these two and
+    # does not ask for `contents: read`.
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
