@@ -9,6 +9,79 @@ fact would produce a document nobody could trust.
 
 ## Unreleased
 
+## 0.6.0 — 2026-09-12
+
+The release that stops PowerPoint falling over on a deck with more than one
+slide master. If you work from a corporate template, that is almost certainly
+your deck, and this is the entry to read.
+
+### Inserting a chart on its own slide crashed PowerPoint, and it was ours
+
+A chart too dense for the web host is offered a slide of its own. Making that
+slide asked for a layout without saying which master it belonged to — and
+`AddSlideOptions` is explicit that a `layoutId` sent without a `slideMasterId`
+has to exist on the **default** master, which is whatever the previous slide
+uses. On a deck with one master that is always true, which is why this worked
+for months. On a deck with two it is an error, and PowerPoint's answer to a
+rejected add is not a message: it discards the revision, **resets your undo
+history and rolls the deck back**.
+
+Bucketed over 220 archived runs by how many masters the deck had:
+
+    1 master  /  1 layout   @ 16:9     9 of 182  =   5%
+    2 masters / 12 layouts  @ 16:9     4 of   4  = 100%
+    2 masters / 12 layouts  @ 4:3     27 of  30  =  90%
+
+Hold the deck fixed and the aspect ratio changes nothing; hold the ratio at
+16:9 and the deck moves it from 5% to 100%. This was filed as "the 4:3 crash"
+for two weeks and 4:3 was along for the ride, because that arm had only ever
+run on the two-master deck.
+
+The layout and its master are now sent together, and the added slide is built
+from **the deck's own master** rather than whichever one came first — so a
+chart added to a template's second master no longer arrives styled from the
+first.
+
+### The own-slide offer now works at all
+
+Two further faults in the same path, both of which made the offer useless
+rather than dangerous: it handed the host a slide id the host refuses, and it
+then targeted the new slide by that id instead of by its position. Both are
+fixed, and a too-dense chart now lands on its own slide **as editable shapes**
+— previously it was quietly rasterised before the choice was ever put to you,
+so the offer priced a picture and never fired.
+
+### Messages that dropped what you needed to know
+
+Four, all the same shape: the pane has one message slot and the last write
+wins.
+
+- **A setback mid-insert was destroyed** by the busy note that follows it, so
+  when your chosen route failed you were told only the outcome.
+- **Same Scale said one of the three things it had to say.** A run that both
+  rescued charts as pictures and degraded others showed only the degraded
+  clause — losing the rescued count, and with it the pointer to "Explode to
+  native shapes", which is the control that turns them back.
+- **The insert promised a door that Explode refused.** A chart inserted as a
+  picture said *"Explode to native shapes turns it back"* while Explode
+  declined on the very same test.
+- **The own-slide offer quoted the wrong number** when it explained itself.
+
+### Smaller, and one you may notice
+
+- **The shape budget rises from 90 to 105**, on the first evidence that ever
+  bore on it — so charts that previously tipped into a picture now insert as
+  shapes.
+- **The Harvey ball, checkbox, process flow, KPI tile and table previews** are
+  no longer unnamed images to a screen reader; each now carries a text
+  alternative describing what it shows.
+- **A frozen-host warning stopped pointing at a button you do not have.** The
+  60-second "PowerPoint has not answered" message ended by naming a download
+  that only exists after a test run.
+- **The add-in's high-resolution icon** now points at the 64×64 asset Office
+  asks for, in all four manifests, rather than an 80×80 one. Reinstall from
+  this release's `manifest-prod.xml` to pick it up.
+
 ## 0.5.0 — 2026-09-02
 
 The release the European paste fix has been waiting in. Eleven user-facing

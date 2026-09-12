@@ -1,6 +1,6 @@
 {
   "name": "ssf-charts",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Open-source think-cell-style chart add-in for PowerPoint (Office.js). Waterfall, Mekko, stacked/clustered columns, CAGR & difference arrows — rendered as native, editable PowerPoint shapes.",
   "type": "module",
   "license": "MIT",
