@@ -16,6 +16,25 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
+    // THE SAME 20s AS `vitest.config.ts`, AND IT HAS TO BE REPEATED HERE.
+    //
+    // This file does not extend that one. Stryker is pointed straight at it by
+    // `stryker.config.json`'s `vitest.configFile`, so it REPLACES the base
+    // config rather than merging with it — and the 20s default added on
+    // 2026-09-13 therefore did not reach the mutation run. That day's sweep
+    // failed in Stryker's INITIAL DRY RUN with "Test timed out in 5000ms" on
+    // `24 categories stays inside every frame`: the exact class of failure the
+    // base config had just been changed to stop, in the one place the change
+    // could not reach.
+    //
+    // Contention here is not incidental. Stryker spawns a test-runner process
+    // per core — four on the runner — and they share the box, which is the
+    // condition that pushes a multi-second test past a 5s ceiling.
+    //
+    // Stryker's own `timeoutMS: 30000` is a DIFFERENT dial: it bounds how long
+    // one mutant may run before being called timed-out. It does not govern
+    // vitest's per-test timeout, which is what fired here.
+    testTimeout: 20_000,
     exclude: [
       "**/node_modules/**",
       "**/dist/**",

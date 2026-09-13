@@ -20,18 +20,27 @@ export default defineConfig({
     // reason. That was right when it was one test.
     //
     // WHAT CHANGED. `quality-sweep.yml` runs the suite three times under
-    // deliberate CPU load and went red on 2026-08-31 and 2026-09-07 naming
-    // nothing — the job wrote failures to a json in /tmp on a runner that is
-    // then destroyed. Reproduced by hand on 2026-09-13 on a 4-core box, the
-    // same core count as the runner: every failure was a plain TIMEOUT, not one
+    // deliberate CPU load, and reproducing that on a 4-core box — the same core
+    // count as the runner — turns tests red purely by starving them: measured
+    // 2026-09-13, every failure was a plain TIMEOUT and not one was an
     // assertion failure. Nothing about the product was broken.
     //
-    // AND THE AFFECTED SET IS NOT FIXED. One run produced seven tests, the next
-    // six, and a third pulled in `backlog-health-table` which neither had. They
-    // are simply the tests whose idle cost sits closest to 5s — measured
-    // 2026-09-13, eleven of them are over 700ms and the archive walkers grow by
-    // one round file per round, forever. Patching the ones a given run happened
-    // to catch is fitting to a sample; the next run picks a different subset.
+    // AND THE AFFECTED SET IS NOT FIXED. One loaded run produced seven tests,
+    // the next six, a third a different subset again. They are simply the tests
+    // whose idle cost sits closest to 5s — eleven are over 700ms and the
+    // archive walkers grow by one round file per round, forever. Patching the
+    // ones a given run happened to catch is fitting to a sample.
+    //
+    // WHAT THIS DID *NOT* FIX, recorded because the first write-up of it here
+    // got the causation wrong. The sweep's reds on 2026-08-31 and 2026-09-07
+    // were NOT these timeouts. They were `backlog-health-table.test.ts` failing
+    // on a shallow clone — `fetch-depth: 0` was missing from that workflow, so
+    // `git log 6dfaa4b..HEAD` had no such commit. That is deterministic, has
+    // nothing to do with load, and is invisible to any local reproduction
+    // because a working clone HAS the history. Chasing it on a laptop produces
+    // a different failure and invites you to believe it is the same one. The
+    // timeouts below are a real fragility found on the way; they were not the
+    // outage.
     //
     // So the premise of the old rule — "a handful, individually nameable" — is
     // gone, and its cost is now a permanently red watchdog, which is a watchdog

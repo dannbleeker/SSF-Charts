@@ -62,17 +62,23 @@ describe("the round archive", () => {
    * number.
    *
    * What broke the premise is that the affected set stopped being nameable.
-   * `quality-sweep.yml` runs the suite three times under deliberate CPU load;
-   * it went red on 2026-08-31 and 2026-09-07 naming nothing, and reproducing it
-   * by hand on a 4-core box gave SEVEN timeouts on one run, six on the next,
-   * and a third that pulled in a test neither had caught. They are not a fixed
-   * list — they are whichever tests sit nearest the ceiling when the runner is
-   * contended, and this archive puts more of them there every round. Patching
-   * the ones a given run happened to catch is fitting to a sample.
+   * `quality-sweep.yml` runs the suite three times under deliberate CPU load,
+   * and reproducing that by hand on a 4-core box gave SEVEN timeouts on one
+   * run, six on the next, and a different subset on a third. They are not a
+   * fixed list — they are whichever tests sit nearest the ceiling when the
+   * machine is contended, and this archive puts more of them there every round.
+   * Patching the ones a given run happened to catch is fitting to a sample.
    *
    * So the default moved to 20 s in `vitest.config.ts`, where the trade is
    * argued in full. Every failure under load was a plain TIMEOUT; not one was
    * an assertion failure, so nothing about the product was ever broken.
+   *
+   * DO NOT READ THIS AS THE CAUSE OF THE SWEEP'S REDS. It was not, and the
+   * first version of this comment said it was. Those were
+   * `backlog-health-table.test.ts` on a shallow clone (`fetch-depth: 0` missing
+   * from that workflow), which is deterministic and load-independent. The
+   * timeouts were found while looking for it and are a genuine fragility in
+   * their own right; they are not the outage they were credited with.
    */
   it("has rounds in it", () => {
     expect(files.length, "the archive is empty — see rounds/README.md").toBeGreaterThan(0);

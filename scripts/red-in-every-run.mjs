@@ -11,10 +11,20 @@
  * Neither log names a single failing test, because the job ran vitest with
  * `--reporter=json --outputFile=...` and nothing else: every failure went into
  * a file in /tmp on a runner that is then destroyed, and the console got
- * "run N: RED". The diagnosis finally happened on 2026-09-13 by reproducing it
- * by hand on a 4-core box — the same core count as the runner — under 24
- * competing processes: seven tests, all of them plain TIMEOUTS (six at
- * vitest's 5000ms default, one at 30000ms), no assertion failures at all.
+ * "run N: RED".
+ *
+ * THE FIRST RUN AFTER THIS EXISTED NAMED IT IN ONE LINE, and it was not what
+ * anyone had guessed. `backlog-health-table.test.ts > reproduces every row at
+ * the round it claims`, failing 3 of 3 on `fatal: ambiguous argument
+ * '6dfaa4b..HEAD'` — the sweep's checkout was shallow and that workflow had
+ * never been given `fetch-depth: 0`. Deterministic, nothing to do with load.
+ *
+ * That is worth dwelling on, because the day was first spent on a different
+ * answer: reproducing the sweep's CPU load by hand on a 4-core box turned up
+ * seven timeouts, and they looked exactly like a cause. They were a real
+ * fragility and they were not the outage. A shallow-clone failure CANNOT be
+ * reproduced locally — a working clone has the history — so the local
+ * experiment could only ever find something else and offer it as the answer.
  *
  * WHAT THIS FILE CANNOT TELL YOU, AND WHY — measured, not assumed.
  *

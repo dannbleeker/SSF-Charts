@@ -26,7 +26,26 @@ jobs:
   flake:
     runs-on: ubuntu-latest
     steps:
+      # FULL HISTORY — THE THIRD CALL SITE OF ONE FIX, and the reason this job
+      # was red on 2026-08-31 and 2026-09-07.
+      #
+      # `backlog-health-table.test.ts` asks git which builds contain the
+      # two-master fix (`git log 6dfaa4b..HEAD`). A default checkout is shallow,
+      # that commit is not in the clone, and the test fails deterministically
+      # with "ambiguous argument '6dfaa4b..HEAD'". `ci.yml` has carried
+      # `fetch-depth: 0` for this all along; `release.yml` got it on 2026-09-12
+      # after the v0.6.0 release died on exactly this; this file never did.
+      #
+      # WORTH KNOWING HOW LONG IT HID. The job reported "every run was red in
+      # the same way" and nothing else, because it ran vitest with json output
+      # only — so two Mondays went by naming no test. It was named the first
+      # time the job ran after the reporter was fixed. A shallow-clone failure
+      # is also invisible to every local reproduction, because a working clone
+      # has the history: chasing this on a laptop finds a different failure and
+      # invites you to believe it is the same one.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -183,7 +202,18 @@ jobs:
   mutation:
     runs-on: ubuntu-latest
     steps:
+      # FULL HISTORY here too, defensively rather than on a diagnosis.
+      #
+      # `vitest.mutation.config.ts` does NOT exclude `backlog-health-table`, so
+      # Stryker's initial dry run executes the same test that needs
+      # `git log 6dfaa4b..HEAD` — and this checkout was shallow. On 2026-09-13
+      # the dry run reported only a timeout and not that failure, which is
+      # unexplained: either the sandbox still reached the real repo's git, or
+      # the run stopped at the first failure it met. A deep clone costs seconds
+      # and removes the question; leaving it costs a Monday to ask again.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
