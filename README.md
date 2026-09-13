@@ -6,7 +6,24 @@ SSF Charts gives you the charts consultants reach for think-cell to make — wat
 Mekko/Marimekko, stacked and clustered columns, 100% charts, lines and areas — with
 think-cell's signature annotations (**CAGR arrows, difference arrows, value lines,
 column totals, smart segment labels**), inserted into the slide as **native, fully
-editable PowerPoint shapes**, never pictures or opaque OLE objects.
+editable PowerPoint shapes** rather than an opaque OLE object.
+
+<!--
+  "NEVER PICTURES" WAS REMOVED FROM THE LINE ABOVE ON 2026-09-13, and it must not
+  come back unqualified. The same sentence was struck from docs/STORE-LISTING.md
+  on 2026-09-10 for the same reason and this copy was missed — one claim, two
+  call sites, which is this repo's most-repeated defect.
+
+  Two paths still produce a picture, and neither is a degradation:
+    - `wantsAutoPicture` rasterises a chart with more shapes than the host can
+      swallow. Nothing to do with requirement sets; it is the density guard.
+    - the user's own "insert as image" choice.
+  A third — a picture for marks the host could not draw — is genuinely gone now
+  the floor is 1.10, but it is not what made the sentence false.
+
+  "Native, editable shapes" is true and is what to say. "Never pictures" is a
+  promise the product does not keep.
+-->
 
 ![Demo gallery](docs/gallery.png)
 
@@ -21,8 +38,11 @@ editable PowerPoint shapes**, never pictures or opaque OLE objects.
      My Add-ins ▸ Upload My Add-in** → pick the manifest. (Desktop Windows/Mac:
      see the [publishing runbook](docs/PUBLISHING.md#phase-2--sideload-in-powerpoint-owner-agent-assists).)
   3. The **SSF Charts** group appears on the Home tab — open the pane and insert.
-  - Requires PowerPoint with the Office **PowerPointApi 1.4+** requirement set
-    (Windows 2207+, Mac 16.62+, or PowerPoint on the web).
+  - Requires PowerPoint with the Office **PowerPointApi 1.10+** requirement set:
+    **Microsoft 365 on Windows from Version 2601**, **Mac 16.105+**, or
+    PowerPoint on the web. **Not** volume-licensed/LTSC Office or iPad —
+    Microsoft lists 1.6 and later as _Not available_ there, so no update brings
+    them into range.
 - **Use it from Claude** (headless chart generation): the
   [`skill-latest`](../../releases/tag/skill-latest) release ships
   `ssf-charts.zip` — upload it under claude.ai → Settings → Capabilities
@@ -252,10 +272,19 @@ outside PowerPoint the **Download SVG** button replaces slide insertion.
 3. Open the **SSF Charts** button on the Home tab, pick a chart, paste data,
    and hit **Insert into slide**.
 
-Requires PowerPoint with **PowerPointApi 1.4+** (Microsoft 365 desktop or web).
-Grouping uses 1.8+ and shape rotation (arrowheads, pie wedges) 1.10+ when
-available; both degrade gracefully on older hosts. Marker symbols need only
-1.4 — they are preset geometry, not rotated shapes.
+Requires PowerPoint with **PowerPointApi 1.10+** — Microsoft 365 on Windows from
+Version 2601, Mac 16.105+, or PowerPoint on the web. Raised from 1.4 on
+2026-09-13.
+
+**Why the floor is high, since it costs reach.** Grouping needs 1.8, so below it
+a chart arrives as ~40 loose shapes rather than one object. Shape rotation needs
+1.10, and without it pie slices, doughnuts, sunbursts, radial bars and CAGR
+arrows cannot be drawn at all: measured over the 123 charts shipped here, 18
+lose ink and 9 lose their subject entirely. The add-in used to degrade — insert
+a complete picture and say so — and that path is gone with the floor, because on
+every host now admitted it can never trigger. The reasoning, including why a
+lower floor _enlarges_ rather than narrows what Microsoft certifies, is in
+`manifest.xml`.
 
 ## Datasheet conventions
 

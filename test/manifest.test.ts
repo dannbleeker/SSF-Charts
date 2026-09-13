@@ -51,6 +51,33 @@ describe("the add-in manifests", () => {
    * knowing what a release is, so it is written in `manifest.xml` where the
    * number lives.
    */
+  /**
+   * THE README HAS TO STATE THE FLOOR THE MANIFEST ACTUALLY ASKS FOR.
+   *
+   * It is the first thing a user reads and the only place most will look before
+   * trying to install. On 2026-09-13 it said **1.4+** in two passages — "Windows
+   * 2207+, Mac 16.62+" — while the shipped manifests asked for 1.10. That tells
+   * someone on Office 2021 the add-in works when it will not even appear in
+   * **My Add-ins**, which is the worst kind of wrong: silent, and blamed on the
+   * product.
+   *
+   * Nothing read the README before this, which is exactly why it drifted
+   * through two floor raises in one day.
+   */
+  it("keeps the README's stated PowerPointApi floor equal to the manifest's", () => {
+    const floor = /<Set\s+Name="PowerPointApi"\s+MinVersion="([\d.]+)"/.exec(read("manifest.xml"))?.[1];
+    const readme = read("README.md");
+    const claims = [...readme.matchAll(/PowerPointApi\s+\*{0,2}(\d+\.\d+)\+/g)].map((m) => m[1]);
+    expect(claims.length, "README no longer states a PowerPointApi floor at all").toBeGreaterThan(0);
+    for (const claimed of claims) {
+      expect(
+        claimed,
+        `README claims PowerPointApi ${claimed}+ but manifest.xml requires ${floor}. A user reads the ` +
+          `README and installs; the manifest decides whether they can. Update both together.`,
+      ).toBe(floor);
+    }
+  });
+
   it("gives all four manifests the same version, so a bump cannot land on half of them", () => {
     const versions = Object.fromEntries(
       MANIFESTS.map((name) => [name, /<Version>([^<]+)<\/Version>/.exec(read(name))?.[1]]),

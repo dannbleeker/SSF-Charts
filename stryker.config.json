@@ -7,6 +7,8 @@
   "mutate": ["src/core/**/*.ts", "!src/core/types.ts", "!src/core/samples.ts"],
   "coverageAnalysis": "perTest",
   "timeoutMS": 30000,
+  "dryRunTimeoutMinutes": 30,
+  "_comment_dryRunTimeoutMinutes": "Stryker's DEFAULT IS 5 MINUTES and this dry run needs 12. MEASURED 2026-09-13 on a 4-core box, once the earlier failures were cleared and it could finish at all: 'Initial test run succeeded. Ran 1803 tests in 12 minutes and 7 seconds'. On the GitHub runner it had been killed at exactly 5m00s with nothing but 'ERROR DryRunExecutor Initial test run timed out!'. This is a THIRD dial, separate from timeoutMS (which bounds one MUTANT) and from vitest's testTimeout in vitest.mutation.config.ts (which bounds one TEST), and it had been silently capping this job. The dry run instruments 43 files with 19,186 mutants and then runs the whole filtered suite once under perTest coverage, so twelve minutes is its honest cost rather than a symptom. 30 rather than 20: the measurement is from a developer box and a shared CI runner is routinely slower, so a 20 that is only 1.65x the local figure would be a cap set to fail on a bad afternoon — which is precisely the trap the 5 was.",
   "thresholds": {
     "high": 85,
     "low": 70,
