@@ -43,7 +43,19 @@ jobs:
           fail=0
           for run in 1 2 3; do
             echo "::group::run $run"
-            if npx vitest run --reporter=json --outputFile="/tmp/run-$run.json"; then
+            # BOTH reporters, and that is the whole point of this line. With
+            # `--reporter=json` alone every failure goes into the outputFile and
+            # NOTHING reaches the console — so a red run printed "run N: RED"
+            # and not one word about which test, while the json was left in /tmp
+            # on a runner that is then destroyed. This job was red on 2026-08-31
+            # and 2026-09-07 and neither log names a single failing test; the
+            # diagnosis had to be reproduced by hand on a 4-core box six days
+            # later. A watchdog that cannot say what it saw is not a watchdog.
+            #
+            # `--outputFile.json=` (not `--outputFile=`) is required once there
+            # is more than one reporter: the bare form has no reporter to bind
+            # to and the json lands nowhere.
+            if npx vitest run --reporter=default --reporter=json --outputFile.json="/tmp/run-$run.json"; then
               echo "run $run: green"
             else
               echo "run $run: RED"
@@ -73,9 +85,23 @@ jobs:
           if [ "$code" != "0" ] && [ "$code" != "3" ]; then exit "$code"; fi
           if [ "$fail" = "1" ] && [ "$code" = "0" ]; then
             echo "every run was red in the same way — that is a broken build, not a flake" >&2
+            # Name them. `flaky.mjs` is silent here by design — it reports
+            # DISAGREEMENT, and three identical reds disagree about nothing — so
+            # without this the job's last word is a verdict with no evidence.
+            node scripts/red-in-every-run.mjs /tmp/run-1.json /tmp/run-2.json /tmp/run-3.json || true
             exit 1
           fi
         id: hunt
+      # The json survives the runner either way. A red that is a TIMEOUT under
+      # saturation and a red that is a real assertion failure need different
+      # answers, and the console summary above gives the first line only.
+      - name: Keep the run reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flake-run-reports
+          path: /tmp/run-*.json
+          if-no-files-found: ignore
       - name: File or update the flake report
         if: steps.hunt.outputs.found == 'yes'
         env:
