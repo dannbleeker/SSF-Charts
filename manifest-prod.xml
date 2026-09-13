@@ -22,8 +22,38 @@
 
   <Requirements>
     <Sets DefaultMinVersion="1.1">
-      <!-- ShapeCollection.addGeometricShape / addLine / addTextBox -->
-      <Set Name="PowerPointApi" MinVersion="1.4" />
+      <!--
+        1.4 DRAWS A CHART; 1.8 IS WHERE ONE ARRIVES AS A CHART. Raised from 1.4
+        on 2026-09-13, deliberately, and this is the reasoning so nobody lowers
+        it back on reach grounds alone.
+
+        1.4 is what the shapes need (ShapeCollection.addGeometricShape / addLine
+        / addTextBox) and it is not enough. `Shape.group` needs 1.8, so below it
+        a chart lands as ~40 LOOSE SHAPES — and nothing tells the user: there is
+        no mention of 1.8 anywhere in the message catalogue, while the re-edit
+        path says "select an inserted chart group first", naming a group that
+        host cannot make. `canInsertPicture` is 1.8 too, so the picture fallback
+        for undrawable marks does not exist below it either.
+
+        WHAT IT COSTS, measured against Microsoft's update history on
+        2026-09-08: nothing on any serviced Microsoft 365 channel. Current
+        (2608, 20326.20144), Monthly Enterprise (2608/2607/2606) and
+        Semi-Annual Enterprise (2608/2607/2606) are ALL far above the 18730
+        that 1.8 needs — and above the 19610 that 1.10 needs. What this excludes
+        is volume-licensed/LTSC, which Microsoft lists "Not available" for 1.6
+        onward and which therefore can never reach 1.8 by updating, plus
+        out-of-support installs and Mac below 16.96.
+
+        AND NOT 1.10, though on Windows it would cost the same. 1.10 buys
+        rotation, so pie/doughnut/sunburst and CAGR arrows draw natively rather
+        than arriving as a complete picture with a message. That is a real
+        difference for exactly three of 25 chart kinds, and at 1.8 the outcome
+        is honest and whole. The extra exclusion 1.10 would add is Mac
+        16.96-16.104, which is a live, updating population. 1.8 is the lowest
+        floor at which this add-in is coherent; going higher buys polish at
+        someone's expense.
+      -->
+      <Set Name="PowerPointApi" MinVersion="1.8" />
     </Sets>
   </Requirements>
 

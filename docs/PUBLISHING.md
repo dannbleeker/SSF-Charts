@@ -743,8 +743,25 @@ returns 200. What follows is what those gates do not look at.
    what a user receives. Flip it *and* add a harness manifest together — a test
    fails if you do one without the other, because otherwise the round loop stops
    without saying so.
-3. **The manifest admits hosts the product does not fully work on.** It declares
-   PowerPointApi **1.4**; the product is whole only at **1.10**. Three tiers
+3. **DECIDED 2026-09-13 — the floor is now PowerPointApi 1.8**, raised from 1.4.
+   Not 1.10. The reasoning is in `manifest.xml` beside the number; the short
+   version is that **1.8 is the lowest floor at which this add-in is coherent**:
+   `Shape.group` needs it, so below it a chart is ~40 loose shapes with nothing
+   said about it, and `canInsertPicture` needs it too, so the fallback for marks
+   the host cannot draw does not exist either. 1.10 would buy native pie-family
+   and CAGR arrows for three of 25 kinds, at the cost of excluding Mac
+   16.96–16.104, which is a live updating population.
+
+   **The reach cost is nil on serviced Windows.** Microsoft's update history,
+   2026-09-08: Current (2608, 20326.20144), Monthly Enterprise and Semi-Annual
+   Enterprise are all far above the 18730 that 1.8 needs. What it excludes is
+   volume-licensed/LTSC — permanently, since 1.6 onward is "Not available"
+   there — plus out-of-support installs and Mac below 16.96.
+
+   `test/manifest.test.ts` now pins the floor to that argument. The original
+   framing of this decision follows.
+
+   It declared PowerPointApi **1.4**; the product is whole only at **1.10**. Three tiers
    exist and only the top has ever been tested — 1.10 (web: everything works),
    1.8–1.9 (pie/doughnut/sunburst and any CAGR or difference arrow insert as a
    flat picture), and ≤1.5 including Office LTSC (**no picture fallback at all**

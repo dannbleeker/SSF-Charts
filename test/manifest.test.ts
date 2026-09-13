@@ -35,6 +35,39 @@ describe("the add-in manifests", () => {
     expect(checkManifest(read(name), name)).toEqual([]);
   });
 
+  /**
+   * THE FLOOR IS 1.8 BECAUSE 1.4 SHIPS A CHART THAT IS NOT A CHART.
+   *
+   * `Shape.group` needs PowerPointApi 1.8. Below it a chart lands as ~40 loose
+   * shapes and NOTHING SAYS SO — there is no mention of 1.8 anywhere in the
+   * message catalogue, while the re-edit path tells the user to "select an
+   * inserted chart group first", naming a group that host cannot make.
+   * `canInsertPicture` is 1.8 as well, so the fallback for marks this host
+   * cannot draw does not exist below it either.
+   *
+   * The temptation is to lower it for reach. Measured against Microsoft's
+   * update history on 2026-09-08, there is no reach there to win: Current,
+   * Monthly Enterprise and Semi-Annual Enterprise are ALL above the build 1.8
+   * needs. What 1.4 buys is volume-licensed/LTSC, which is listed "Not
+   * available" for 1.6 onward and so can never be updated into a working state.
+   *
+   * This pins the number to the argument. Change both together or neither.
+   */
+  it("does not let the PowerPointApi floor slip below the version that can group a chart", () => {
+    for (const name of ["manifest.xml", "manifest-prod.xml"]) {
+      const xml = read(name);
+      const floor = /<Set\s+Name="PowerPointApi"\s+MinVersion="([\d.]+)"/.exec(xml)?.[1];
+      expect(floor, `${name}: no PowerPointApi requirement at all`).toBeDefined();
+      const [major, minor] = String(floor).split(".").map(Number);
+      expect(
+        major > 1 || minor >= 8,
+        `${name}: PowerPointApi floor is ${floor}. Below 1.8 there is no Shape.group and no picture ` +
+          `fallback, so a chart arrives as loose shapes with nothing said about it. If this is deliberate, ` +
+          `the sub-1.8 experience has to be fixed first — see the comment in manifest.xml.`,
+      ).toBe(true);
+    }
+  });
+
   it("would catch each of those rules being broken", () => {
     // The rules are only worth importing if they can still fail. Every branch
     // below is a thing this repo has actually shipped or nearly shipped.
