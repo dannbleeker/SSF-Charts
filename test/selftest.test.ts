@@ -85,6 +85,29 @@ import {
 
 afterEach(() => vi.unstubAllGlobals());
 
+/**
+ * `vi.waitFor` HAS ITS OWN TIMEOUT AND `testTimeout` DOES NOT GOVERN IT.
+ *
+ * Its default is **1000 ms**, independent of the 20 s in `vitest.config.ts`.
+ * That is the whole reason this constant exists, and it was found the hard way:
+ * raising `testTimeout` fixed the seven tests that were timing out under the
+ * quality sweep's CPU load and did nothing for these, because they do not time
+ * out — they fail an ASSERTION. When the wait expires, `waitFor` reports the
+ * last error its callback threw, so a scenario that simply had not got there
+ * yet surfaces as `expected 'scenario starting' to be 'visibility step'` or
+ * `expected 0 to be greater than 0`, which reads exactly like a broken product
+ * and is not one.
+ *
+ * Measured 2026-09-13: at 24 competing processes on a 4-core box, all three
+ * `vi.waitFor` sites in this file failed and nothing else here did. At the load
+ * the CI runner actually applies — 4 processes on 4 cores — the suite is green
+ * either way, so this is fixing a latent fragility rather than a live red.
+ *
+ * 15 s is a bound, not a surrender: these waits are for a scenario to reach its
+ * next traced step, which takes milliseconds when the machine is not starved.
+ */
+const SETTLE = { timeout: 15_000 } as const;
+
 const byName = (rs: ScenarioResult[]) => Object.fromEntries(rs.map((r) => [r.name, r]));
 
 const VISIBLE = "the chart is actually visible";
@@ -708,7 +731,7 @@ describe("the scenarios the selection API unlocked", () => {
     const run = runSelfTest("probe", "edit the chart YOU click");
     // Click only once the scenario is actually listening — the ordering that
     // exercises the handler rather than a lucky first read.
-    await vi.waitFor(() => expect(selectionHandlerCount()).toBeGreaterThan(0));
+    await vi.waitFor(() => expect(selectionHandlerCount()).toBeGreaterThan(0), SETTLE);
     const chart = (await listChartsInDeck()).charts[0];
     expect(chart, "no probe chart for the click to land on").toBeTruthy();
     userClicksShape(chart.target.shapeId);
@@ -740,7 +763,7 @@ describe("the scenarios the selection API unlocked", () => {
       // The probe charts only exist once the scenario is listening, and the
       // fault has to be armed AFTER reading them or it breaks the deck scan
       // rather than the selection read this test is about.
-      await vi.waitFor(() => expect(selectionHandlerCount()).toBeGreaterThan(0));
+      await vi.waitFor(() => expect(selectionHandlerCount()).toBeGreaterThan(0), SETTLE);
       const chart = (await listChartsInDeck()).charts[0];
       // A click, on a host that then refuses the shape-collection read. This
       // is the "e.load is not a function" shape a real web host produced.
@@ -1227,7 +1250,7 @@ describe("the scenarios the selection API unlocked", () => {
           .at(-1);
         expect(last?.message).toBe("visibility step");
         expect(last?.data?.what).toBe("rasterising a slide that already existed");
-      });
+      }, SETTLE);
       release();
       await run;
       // And every call is named, in the order the scenario makes them.

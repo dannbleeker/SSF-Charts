@@ -13,6 +13,19 @@ import { placeChart } from "../src/core/placement";
  * import/export box — so "load a chart" is covered end to end.
  */
 
+/**
+ * `vi.waitFor`'s own timeout, which defaults to 1000 ms and which `testTimeout`
+ * in `vitest.config.ts` does NOT govern. The full account is in
+ * `test/selftest.test.ts`, where three of these lost the race first.
+ *
+ * These five have not failed — they are given the same bound because they have
+ * the same mechanism, and a `waitFor` that expires does not report a timeout,
+ * it reports whatever its callback last threw. That reads as a broken product
+ * and is not one, which is precisely the confusion worth spending five
+ * arguments to avoid.
+ */
+const SETTLE = { timeout: 15_000 } as const;
+
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 async function bootPane(search = "") {
@@ -716,7 +729,7 @@ describe("busy-guard on host actions", () => {
     expect(insert.disabled, "primary acts on the same deck").toBe(true);
 
     release();
-    await vi.waitFor(() => expect(demo.disabled).toBe(false));
+    await vi.waitFor(() => expect(demo.disabled).toBe(false), SETTLE);
     expect(insert.disabled).toBe(false);
   });
 
@@ -730,7 +743,7 @@ describe("busy-guard on host actions", () => {
     await bootPane();
     const demo = $<HTMLButtonElement>("demo-insert");
     demo.click();
-    await vi.waitFor(() => expect(document.getElementById("host-note")!.textContent).toMatch(/^Failed:/));
+    await vi.waitFor(() => expect(document.getElementById("host-note")!.textContent).toMatch(/^Failed:/), SETTLE);
     // A failed action must not leave the pane permanently dead.
     expect(demo.disabled).toBe(false);
     expect($<HTMLButtonElement>("insert").disabled).toBe(false);
@@ -812,7 +825,7 @@ describe("status is pane-wide, and only claims what it knows", () => {
     // Indeterminate means NO width claim.
     expect(bar().querySelector("i")!.style.width).toBe("");
     release();
-    await vi.waitFor(() => expect(bar().hasAttribute("hidden")).toBe(true));
+    await vi.waitFor(() => expect(bar().hasAttribute("hidden")).toBe(true), SETTLE);
   });
 
   it("counts the seconds while the host works, and stops when it is done", async () => {
@@ -830,7 +843,7 @@ describe("status is pane-wide, and only claims what it knows", () => {
       expect(elapsed()).toBe("3s");
       release();
       await vi.advanceTimersByTimeAsync(10);
-      await vi.waitFor(() => expect(elapsed()).toBe(""));
+      await vi.waitFor(() => expect(elapsed()).toBe(""), SETTLE);
       // The ticker must not outlive the work.
       await vi.advanceTimersByTimeAsync(5_000);
       expect(elapsed()).toBe("");
@@ -848,7 +861,7 @@ describe("status is pane-wide, and only claims what it knows", () => {
     });
     await bootPane();
     $<HTMLButtonElement>("demo-insert").click();
-    await vi.waitFor(() => expect(noteEl().textContent).toMatch(/^Failed:/));
+    await vi.waitFor(() => expect(noteEl().textContent).toMatch(/^Failed:/), SETTLE);
     // The message stays; the "still working" signal must not.
     expect(strip().hasAttribute("hidden")).toBe(false);
     expect(bar().hasAttribute("hidden")).toBe(true);
