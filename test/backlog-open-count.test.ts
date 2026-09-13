@@ -102,7 +102,11 @@ describe("the backlog's open count", () => {
     // shape means "open item" here and "row" three screens down. What actually
     // separates them is POSITION, so that is what this pins.
     const ids = openIds(lines);
-    expect(ids, "section 1's real list").toEqual(["5"]);
+    // Was ["5"] until 2026-09-13, when the register was found a week stale: the
+    // publication work of 8-13 September was tracked in PUBLISHING.md and
+    // STORE-LISTING.md and never walked over here, so this list answered "one"
+    // to a question whose answer was four. 21-23 are the owner-gated remainder.
+    expect(ids, "section 1's real list").toEqual(["5", "21", "22", "23"]);
     expect(
       openIds([
         "## 1. Open",

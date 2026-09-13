@@ -77,6 +77,9 @@ describe("buildChart survives a large within-cap grid (no RangeError)", () => {
       },
     };
     expect(() => buildChart(cfg)).not.toThrow();
+    // 0.7 s idle, measured 2026-09-13 — a 1024 x 128 grid is large on purpose,
+    // that being the whole point. It has no timeout of its own: it is covered
+    // by the 20s default in `vitest.config.ts`, which that file explains.
   });
 
   it("radar: a large cells-scaled grid does not blow the argument list", () => {

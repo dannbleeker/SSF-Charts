@@ -111,6 +111,9 @@ describe("ooxml: grouping a slide's shapes", () => {
     expect(xml).not.toBe(slideXml(body));
     // …and the box it took is right: x from 0 to the last shape's right edge.
     expect(xml).toContain(`<a:off x="0" y="0"/><a:ext cx="${(n - 1) * 100 + 100}" cy="100"/>`);
+    // 0.8 s idle, measured 2026-09-13, building a deliberately oversized slide.
+    // Covered by the 20s default in `vitest.config.ts`, which explains why that
+    // default is not vitest's 5s.
   });
 });
 

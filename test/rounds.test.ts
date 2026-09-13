@@ -36,22 +36,62 @@ describe("the round archive", () => {
   // needs the same filter.
   const files = readdirSync(dir).filter((f) => /^\d{3}-.*\.json$/.test(f));
 
+  /**
+   * PARSED ONCE FOR THE WHOLE BLOCK, because two tests below each want every
+   * round and each used to read and parse the directory for itself.
+   *
+   * Measured 2026-09-13: 430 files, 93 MB, **660 ms per full parse**. Doing it
+   * twice spent 1.3 s turning the same bytes into the same shape.
+   *
+   * Lazy rather than eager: `has rounds in it` and the raw-bytes test below do
+   * not want parsed rounds, and a `describe` body runs even when a filter
+   * selects none of these tests.
+   */
+  let parsed: Record<string, any>[] | null = null;
+  const rounds = (): Record<string, any>[] => (parsed ??= files.map((f) => JSON.parse(readFileSync(dir + f, "utf8"))));
+
+  /**
+   * THIS FILE USED TO SAY "NAME THE TIMEOUT, NEVER RAISE IT GLOBALLY". THAT
+   * RULE WAS REVERSED ON 2026-09-13, and the reversal is recorded rather than
+   * quietly applied, because the rule was a good one and its reasoning still
+   * holds for the case it was written about.
+   *
+   * It was written when ONE test here outgrew vitest's 5 s default, and it said:
+   * a suite-wide bump hides the next test that is slow for a real reason. True,
+   * and it is why `reports on the NEWEST round` below still carries its own
+   * number.
+   *
+   * What broke the premise is that the affected set stopped being nameable.
+   * `quality-sweep.yml` runs the suite three times under deliberate CPU load;
+   * it went red on 2026-08-31 and 2026-09-07 naming nothing, and reproducing it
+   * by hand on a 4-core box gave SEVEN timeouts on one run, six on the next,
+   * and a third that pulled in a test neither had caught. They are not a fixed
+   * list — they are whichever tests sit nearest the ceiling when the runner is
+   * contended, and this archive puts more of them there every round. Patching
+   * the ones a given run happened to catch is fitting to a sample.
+   *
+   * So the default moved to 20 s in `vitest.config.ts`, where the trade is
+   * argued in full. Every failure under load was a plain TIMEOUT; not one was
+   * an assertion failure, so nothing about the product was ever broken.
+   */
   it("has rounds in it", () => {
     expect(files.length, "the archive is empty — see rounds/README.md").toBeGreaterThan(0);
   });
 
+  // 1.1 s idle over 430 files; shares the block's single parse.
   it("names every file for the build that round actually reported", () => {
-    for (const f of files) {
-      const round = JSON.parse(readFileSync(dir + f, "utf8"));
+    rounds().forEach((round, i) => {
+      const f = files[i];
       const build = String(round.build ?? "").split(" ")[0];
       expect(build, `${f} carries no build stamp`).toMatch(/^[0-9a-f]{7}$/);
       expect(f, `${f} is named for a build it does not carry (${build})`).toContain(build);
       expect(f, `${f} does not start with a round number`).toMatch(/^\d{3}-/);
-    }
+    });
   });
 
+  // 1.5 s idle: the pooling walks every round twice on top of the parse.
   it("keeps every round readable by the tools that pool them", () => {
-    const logs = files.map((f) => JSON.parse(readFileSync(dir + f, "utf8")));
+    const logs = rounds();
     for (const [i, log] of logs.entries()) {
       expect(Array.isArray(log?.trace?.entries), `${files[i]} has no trace entries`).toBe(true);
       expect(Array.isArray(log?.hostAnswers?.answers), `${files[i]} has no answer sheet`).toBe(true);
@@ -107,8 +147,26 @@ describe("the round archive", () => {
     //
     // Named explicitly rather than raised globally, because a suite-wide bump
     // would hide the next test that is slow for a REAL reason.
-  }, 30_000);
+    //
+    // RAISED 30s -> 60s on 2026-09-13, and the budget shrank exactly as this
+    // comment predicted it would. Measured idle that day: **5,972 ms** — the
+    // archive is 430 rounds now, against the 116 the 30s was chosen for, and
+    // this is the one test here whose cost cannot be shared down, because it
+    // deliberately goes through the CLI and each of its two spawns parses the
+    // whole directory in a fresh process. If it ever needs raising again, make
+    // the test stop spawning twice instead.
+    //
+    // The paragraph above about not raising globally no longer describes what
+    // this repo does — the default moved to 20s the same day, and the block at
+    // the top of this file says why. It is kept because THIS test is still the
+    // exception the old rule was written for: at ~6s idle it is nearly three
+    // times the next slowest test in the suite, and a ceiling sized for it would
+    // be no ceiling at all for anything else.
+  }, 60_000);
 
+  // 0.8 s idle. Cannot use the shared parse: it is looking at the RAW bytes,
+  // and a parsed round would have already turned the base64 it hunts for into
+  // a string field it cannot distinguish from any other.
   it("does not carry the slide images, which are half the bytes", () => {
     for (const f of files) {
       const raw = readFileSync(dir + f, "utf8");

@@ -58,13 +58,26 @@ org-wide admin deploy (see `PUBLISHING.md` "Distribution beyond sideloading").
 > `npm run mac:webkit` prints it, and the recipe is `buildChart` over
 > `examples/showcase.json` counting `wedge` and `arrowhead` nodes.
 >
-> 1.10 needs Windows M365 2601, Mac 16.105, and is **not available at all on
-> volume-licensed perpetual/LTSC**. The manifest floor was 1.4 (Windows 2207 /
-> Mac 16.62) when this was written and is 1.8 (Windows 2504 / Mac 16.96) since
-> 2026-09-13, which retires the "ordinary corporate build" version of this
-> rejection on Windows — every serviced M365 channel is above 1.10 — but NOT on
-> Mac, where 16.96–16.104 still installs and still gets the picture. That
-> window is the whole remaining exposure and it is argued in `PUBLISHING.md`.
+> **THE GROUND UNDER THIS NOTE MOVED ON 2026-09-13, AND THE BAN IS NOW THE
+> OWNER'S TO LIFT RATHER THAN A STANDING FACT.** The floor went 1.4 → 1.8 →
+> **1.10** that day. 1.10 is exactly the set that carries `Shape.rotation`, so
+> no host the manifest now admits can take the undrawable-marks path at all:
+> `canRotate()` is true everywhere, `marksThisHostWillDrop` always returns
+> empty, and `pictureForUndrawableMarks` is unreachable. On every platform
+> Microsoft will now certify, a chart arrives as native shapes.
+>
+> So the sentence is no longer false. It is also **not automatically restored**:
+> whoever puts it back must say it in words the OTHER two picture paths do not
+> contradict — the density rescue (`wantsAutoPicture`, which rasterises a chart
+> with more shapes than the host can swallow, and has nothing to do with
+> requirement sets) and the user's own "insert as image" choice. "Never flat
+> pictures" is still wrong for those two. Something like *"charts arrive as
+> native, editable PowerPoint shapes"* is true and does not promise that no
+> picture can ever appear.
+>
+> Kept rather than deleted because the reasoning is the valuable part: the
+> claim was struck for a real reason, and it is being reconsidered because the
+> product changed, not because anyone got tired of the constraint.
 >
 > The BEHAVIOUR is good and worth describing plainly rather than hiding: the
 > user gets a complete chart plus a message naming what would otherwise be
@@ -108,12 +121,24 @@ consulting charts, CAGR, editable charts, data visualization
 - Optional short demo video.
 
 ## Submission checklist
-- [ ] Partner Center account created (free for Office Store apps).
+- [x] Partner Center account created (free for Office Store apps). **Confirmed
+      by the owner 2026-09-13.**
 - [x] `manifest-prod.xml` validated: `npx office-addin-manifest validate manifest-prod.xml`
       — **all four manifests pass** as of 2026-08-27 (both PowerPoint, both Excel).
 - [ ] Add-in works on **every** platform the manifest claims (web + Windows +
       Mac — testers check all of them). Do Phase 2 validation first.
-- [ ] Privacy + Terms pages live (they build to `/privacy.html`, `/terms.html`).
+      **Web: 425+ archived rounds. Windows: one reading, 2026-09-13,
+      `docs/evidence/windows-desktop-2026-09-13.json`. Mac: the HOST surface is
+      still unmeasured and the owner has no access to one** — what exists is
+      `docs/evidence/mac-webkit-2026-09-13.json`, the chart engine on WebKit
+      (Mac's engine family), 148/148 identical to Node. That removes the
+      parse-and-format class of failure and nothing about Office.js.
+      The 1.10 floor narrows what is being claimed: every certified host now
+      runs the same code path, rather than Mac alone running the picture
+      fallback.
+- [x] Privacy + Terms pages live (they build to `/privacy.html`, `/terms.html`).
+      **Verified 2026-09-13: both return 200, as do all 17 URLs in
+      `manifest-prod.xml`.**
 - [ ] Listing copy above is trademark-clean; screenshots contain no competitor marks.
 - [ ] Value is demonstrable **without a login** (SSF Charts needs none — good).
 - [ ] Submit → respond to Microsoft validation feedback (days–weeks).

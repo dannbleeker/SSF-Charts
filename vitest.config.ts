@@ -11,6 +11,34 @@ export default defineConfig({
     // See test/setup.ts: a fake host has no lag to settle, so no suite pays the
     // real host's settle delay.
     setupFiles: ["test/setup.ts"],
+    // 20s rather than vitest's 5s default, and this REVERSES A RULE this repo
+    // wrote down, so here is why.
+    //
+    // The rule, stated in `test/rounds.test.ts` when one test first outgrew the
+    // default: name the timeout on the slow test, never raise it globally,
+    // because a suite-wide bump hides the next test that is slow for a REAL
+    // reason. That was right when it was one test.
+    //
+    // WHAT CHANGED. `quality-sweep.yml` runs the suite three times under
+    // deliberate CPU load and went red on 2026-08-31 and 2026-09-07 naming
+    // nothing — the job wrote failures to a json in /tmp on a runner that is
+    // then destroyed. Reproduced by hand on 2026-09-13 on a 4-core box, the
+    // same core count as the runner: every failure was a plain TIMEOUT, not one
+    // assertion failure. Nothing about the product was broken.
+    //
+    // AND THE AFFECTED SET IS NOT FIXED. One run produced seven tests, the next
+    // six, and a third pulled in `backlog-health-table` which neither had. They
+    // are simply the tests whose idle cost sits closest to 5s — measured
+    // 2026-09-13, eleven of them are over 700ms and the archive walkers grow by
+    // one round file per round, forever. Patching the ones a given run happened
+    // to catch is fitting to a sample; the next run picks a different subset.
+    //
+    // So the premise of the old rule — "a handful, individually nameable" — is
+    // gone, and its cost is now a permanently red watchdog, which is a watchdog
+    // nobody reads. 20s is ~8x the slowest ordinary test here (2.2s) so a real
+    // regression of several times still trips, while 2x contention no longer
+    // does. The one test that genuinely needs more says so at its own site.
+    testTimeout: 20_000,
     coverage: {
       provider: "v8",
       // src plus the one skill script that is pure and importable: pptx-paint.mjs

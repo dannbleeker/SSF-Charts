@@ -7378,31 +7378,34 @@ export async function reconcileDeck(
 }
 
 /**
- * `Shape.rotation` is PowerPointApi **1.10**, and the manifests admit hosts from
- * **1.8** (raised from 1.4 on 2026-09-13) — so it must be GATED, not merely
- * wrapped in try/catch.
+ * `Shape.rotation` is PowerPointApi **1.10**, and since 2026-09-13 so is the
+ * manifest floor — so on every host the manifest now admits this is **always
+ * true**, and the branches below it are unreachable.
  *
- * Wrapping catches nothing: Office.js proxy setters do not throw synchronously.
- * The assignment is a queued command the host rejects at the NEXT
- * `context.sync()`, and that sync carries the whole batch — so on a 1.8–1.9 host
- * a single rotated shape took down every pie, doughnut, sunburst, gauge,
- * arrowhead and diagonal line with it, instead of degrading. This is exactly the
- * reasoning `wantsAltText` already applies to `altTextDescription` (same 1.10
- * set); rotation simply never got the same treatment.
+ * IT STAYS ANYWAY, and deliberately. The gate is what made the degradation
+ * safe, and the reasoning has to survive the floor moving: wrapping catches
+ * nothing, because Office.js proxy setters do not throw synchronously. The
+ * assignment is a queued command the host rejects at the NEXT `context.sync()`,
+ * and that sync carries the whole batch — so on a 1.8–1.9 host a single rotated
+ * shape took down every pie, doughnut, sunburst, gauge, arrowhead and diagonal
+ * line with it, instead of degrading. Delete the gate and a future floor
+ * change silently re-arms that. `wantsAltText` applies the same reasoning to
+ * `altTextDescription` from the same 1.10 set.
  *
- * **THE GAP IS NOW EXACTLY ONE PLATFORM, AND IT IS THE UNMEASURED ONE.** At a
- * 1.8 floor the only hosts that can install AND answer `false` here are **Mac
- * 16.96 through 16.104** (2025-04-15 to 2025-12-16): the web reports 1.10,
- * every serviced Windows M365 channel is past the 2601 that 1.10 needs, and
- * volume-licensed/LTSC and iPad cannot install at 1.8 at all. So every branch
- * below this gate — the wedge fan bailing out, `marksThisHostWillDrop`, the
- * whole `pictureForUndrawableMarks` path — is now reachable ONLY on Mac, which
- * is the one platform with zero readings and a different engine (WKWebView /
- * JavaScriptCore, where Windows and the web are both Chromium).
+ * **WHY THE FLOOR MOVED, because it is the opposite of the obvious reason.**
+ * At the 1.8 floor the only hosts that could install AND answer `false` here
+ * were **Mac 16.96 through 16.104** — the web reports 1.10, every serviced
+ * Windows channel is past 2601, and volume-licensed/LTSC and iPad cannot
+ * install at either floor. That made every branch below this gate — the wedge
+ * fan bailing out, `marksThisHostWillDrop`, the whole
+ * `pictureForUndrawableMarks` path — Mac-only code on the one platform with
+ * zero readings and a different engine (WKWebView / JavaScriptCore, where
+ * Windows and the web are both Chromium). A lower floor did not hedge the Mac
+ * risk, it concentrated it. At 1.10 every certified platform runs the path that
+ * 425+ web rounds and the Windows desktop reading actually measured.
  *
- * Raising the floor to 1.10 would make all of it unreachable. That is a
- * product decision, not a code one; until it is made this stays live, untested,
- * and is the reason `npm run mac:webkit` exists.
+ * The tests for this gate drive `supports()` directly rather than the shipped
+ * floor, so they still mean something now that the floor answers for them.
  */
 const canRotate = (): boolean => supports("1.10");
 
@@ -7445,16 +7448,26 @@ export function marksThisHostWillDrop(scene: Scene): { what: string[]; nodes: nu
  * True when the host can paint pixels into a shape: `ShapeFill.setImage` is
  * PowerPointApi **1.8** (@types/office-js: "Sets the fill formatting of the
  * shape to an image. This changes the fill type to `PictureAndTexture`") and the
- * manifests admit hosts from **1.8** since 2026-09-13. Same gate-not-wrap
+ * manifests admit hosts from **1.10** since 2026-09-13. Same gate-not-wrap
  * reasoning as `canRotate`.
  *
- * **AT THE CURRENT FLOOR THIS IS ALWAYS TRUE**, because the floor and the
- * requirement are the same number. It is kept rather than inlined for the
- * reason the gate was written: the floor is a manifest value that has already
- * moved once, and a gate that is presently constant is free, whereas
- * rediscovering why the picture fallback vanished would not be. Its tests
- * therefore drive `supports()` directly instead of relying on the shipped
- * floor — see `test/office-render.test.ts`.
+ * **AT THE CURRENT FLOOR THIS IS ALWAYS TRUE**, and now with room to spare —
+ * the floor is 1.10 and the requirement is 1.8. It is kept rather than inlined
+ * for the reason the gate was written: the floor is a manifest value that has
+ * moved twice in one day, and a gate that is presently constant is free,
+ * whereas rediscovering why the picture fallback vanished would not be. Its
+ * tests drive `supports()` directly instead of relying on the shipped floor —
+ * see `test/office-render.test.ts`.
+ *
+ * ONE of its callers goes unreachable with the floor, and it is worth being
+ * precise about which. The UNDRAWABLE-MARKS path (`app.ts`, beside
+ * `marksThisHostWillDrop`) cannot fire any more: at a 1.10 floor `canRotate()`
+ * is always true, so that function always returns empty. Everything else stays
+ * live — the DENSITY rescue in `wantsAutoPicture`, which rasterises a chart
+ * with too many shapes for the host to swallow and has nothing to do with
+ * requirement sets, and the user-requested "insert as image" path, which is a
+ * choice rather than a fallback. Do not read "the picture fallback is gone" off
+ * the floor change; only one of the three reasons to make a picture is.
  *
  * Exported so a caller can skip a pointless rasterisation AND say so: an image
  * insert that silently became native shapes is the failure mode that would be

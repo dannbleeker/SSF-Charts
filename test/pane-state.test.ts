@@ -272,6 +272,9 @@ describe("task pane — loading a chart config", () => {
     }
     expect(lost, "dropped on import — the next re-save destroys them").toEqual([]);
     expect(changed, "altered on the way through").toEqual([]);
+    // 2.2 s idle, measured 2026-09-13, and the slowest ordinary test in the
+    // suite — it boots the real pane module and walks every top-level key. It
+    // is the number the 20s default in `vitest.config.ts` was sized against.
   });
 
   /**

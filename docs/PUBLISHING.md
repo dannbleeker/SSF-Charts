@@ -743,23 +743,42 @@ returns 200. What follows is what those gates do not look at.
    what a user receives. Flip it *and* add a harness manifest together — a test
    fails if you do one without the other, because otherwise the round loop stops
    without saying so.
-3. **DECIDED 2026-09-13 — the floor is now PowerPointApi 1.8**, raised from 1.4.
-   Not 1.10. The reasoning is in `manifest.xml` beside the number; the short
-   version is that **1.8 is the lowest floor at which this add-in is coherent**:
-   `Shape.group` needs it, so below it a chart is ~40 loose shapes with nothing
-   said about it, and `canInsertPicture` needs it too, so the fallback for marks
-   the host cannot draw does not exist either. 1.10 would buy native pie-family
-   and CAGR arrows for three of 25 kinds, at the cost of excluding Mac
-   16.96–16.104, which is a live updating population.
+3. **SETTLED 2026-09-13 — the floor is PowerPointApi 1.10.** It moved twice that
+   day: 1.4 → 1.8 in the morning, then **1.8 → 1.10 on the owner's approval**
+   the same evening. The full reasoning sits in `manifest.xml` beside the number
+   and `test/manifest.test.ts` pins the number to it.
 
-   **The reach cost is nil on serviced Windows.** Microsoft's update history,
-   2026-09-08: Current (2608, 20326.20144), Monthly Enterprise and Semi-Annual
-   Enterprise are all far above the 18730 that 1.8 needs. What it excludes is
-   volume-licensed/LTSC — permanently, since 1.6 onward is "Not available"
-   there — plus out-of-support installs and Mac below 16.96.
+   **What made 1.8 wrong is the opposite of the obvious thing.** There is no way
+   to scope an add-in by platform: `<Host Name="Presentation" />` is web +
+   Windows + Mac + iPad as one unit, Microsoft says so outright, and
+   office-js#6658 — open, from a publisher stuck on exactly this — names the
+   mechanism: **Partner Center auto-derives the certified platform list from the
+   `<Requirements>` block.** Certification policy 1120.3 then reads "Add-ins must
+   work across all platforms that support methods defined in the Requirements
+   element... Add-ins must support Office on web and Mac applications compatible
+   with the APIs specified in the manifest."
 
-   `test/manifest.test.ts` now pins the floor to that argument. The original
-   framing of this decision follows.
+   So a lower floor does not hedge. **It enlarges the surface being certified.**
+   At 1.8 the only hosts that could install *and* lack `Shape.rotation` were Mac
+   16.96–16.104 — the web reports 1.10, every serviced Windows channel is past
+   2601, and LTSC (capped at 1.5) and iPad (capped at 1.1) cannot install at
+   either floor. That made the whole picture-fallback path **Mac-only code on the
+   one platform with zero readings**. At 1.10 it is unreachable everywhere, so
+   every certified platform runs the path that 425+ web rounds and the Windows
+   desktop reading actually measured.
+
+   The morning's argument for stopping at 1.8 was that 1.10 would exclude "Mac
+   16.96–16.104, a live updating population". That was wrong on its own terms: a
+   Mac that is updating passed 16.105 in January 2026, the current release is
+   16.112.4, and Microsoft's own page says **"Only the most recently released
+   version listed below is supported."**
+
+   **The reach cost is nil.** Every serviced Microsoft 365 channel and retail
+   Office 2024 sit on 2606–2608 against the 2601 that 1.10 needs, and Mac is on
+   16.112.4 against 16.105. What it excludes — permanently, since no update can
+   reach it — is volume-licensed/LTSC and iPad.
+
+   The original framing of this decision follows.
 
    It declared PowerPointApi **1.4**; the product is whole only at **1.10**. Three tiers
    exist and only the top has ever been tested — 1.10 (web: everything works),

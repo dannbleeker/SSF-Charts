@@ -9,6 +9,51 @@ fact would produce a document nobody could trust.
 
 ## Unreleased
 
+## 0.6.1 — 2026-09-13
+
+**This release changes who can install SSF Charts, and that is the whole
+entry.** No chart is drawn differently and no pane control moved. If the add-in
+already works for you, nothing here is visible.
+
+### The required Office version went up: PowerPointApi 1.4 → 1.10
+
+The manifest now asks for **PowerPointApi 1.10**. In practice: Microsoft 365 on
+Windows from **Version 2601**, Office on the web (always), and **Mac 16.105** or
+later. Retail Office 2024 qualifies on the same train.
+
+**It is no longer installable on volume-licensed/LTSC Office, or on iPad.**
+Microsoft lists 1.6 and later as *Not available* on volume-licensed builds —
+LTSC tops out at 1.5 and iPad at 1.1 — so no update can bring either into a
+working state.
+
+**Why raise it, when the old floor let more people in.** Below 1.10 PowerPoint
+cannot rotate a shape, and this engine draws pie slices, doughnuts, sunbursts,
+radial bars and CAGR arrows by rotating shapes. Measured across the 123 charts
+this project ships: **18 lose ink and 9 lose their subject entirely** — every
+pie, every doughnut, every sunburst and the radial-bar radar arrived as a flat
+picture with an explanatory message instead of editable shapes. Below 1.8 it was
+worse again: no `Shape.group`, so a chart landed as about forty loose shapes.
+The old floor was 1.4, which admitted all of that.
+
+Nobody on a serviced Microsoft 365 channel loses access: every supported Windows
+channel is on 2606 or later against the 2601 required, and the current Mac
+release is 16.112.4 against 16.105.
+
+**The floor also turns out to be the only lever there is.** An Office add-in
+cannot declare which *platforms* it supports — one `<Host>` entry means web,
+Windows, Mac and iPad together, and the store derives the platforms it certifies
+from the requirements block. So a lower floor does not widen your options, it
+widens what has to work everywhere. The reasoning is kept in full in
+`manifest.xml`.
+
+### Also
+
+- The store listing's count of affected charts was published as 8 and is 9. The
+  radial-bar radar had been filed with the charts that lose only their
+  annotations; its eight bars are eight of the shapes that cannot be drawn. The
+  figure is now re-derived by a test rather than remembered.
+- `HighResolutionIconUrl` points at the 64px icon rather than the 32px one.
+
 ## 0.6.0 — 2026-09-12
 
 The release that stops PowerPoint falling over on a deck with more than one

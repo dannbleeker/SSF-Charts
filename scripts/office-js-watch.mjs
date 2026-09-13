@@ -237,6 +237,16 @@ export const KNOWN_ISSUES = {
     "Our shape of it is adjacent but not identical: `the re-read before grouping came back empty` is an EMPTY array, not a throw, and the " +
     "empty/threw split is traced precisely so the next round says which. No fix available; the recovery paths are the exposure management.",
   2714: "setSelectedDataAsync converts points to pixels. NO EXPOSURE — this repo never calls it. Checked, not assumed.",
+  6658:
+    "There is no supported way to declare PLATFORM scope in an add-in manifest, and the reporter calls it a Marketplace certification " +
+    "blocker. Open, `Type: product question`, last activity 2026-06-04 — Microsoft has not treated it as a defect, so do not expect a " +
+    'mechanism to arrive. NOT A BUG WE HIT AT RUNTIME; it is why this repo\'s manifest floor is what it is. `<Host Name="Presentation" />` ' +
+    "means web + Windows + Mac + iPad as ONE unit and cannot be narrowed, and the issue names the consequence: Partner Center AUTO-DERIVES " +
+    'the certified platform list from the `<Requirements>` block. With certification policy 1120.3 ("Add-ins must work across all platforms ' +
+    'that support methods defined in the Requirements element"), that inverts the usual instinct — a LOWER MinVersion does not hedge, it ' +
+    "enlarges the surface Microsoft tests. It is the argument behind raising PowerPointApi 1.4 -> 1.8 -> 1.10 on 2026-09-13; see the comment " +
+    "in manifest.xml. The reporter's own attempt to narrow the block instead produced `No Supported Office Products`, so that escape does " +
+    "not work either.",
 };
 
 /** Lower-cased haystack for one issue. */

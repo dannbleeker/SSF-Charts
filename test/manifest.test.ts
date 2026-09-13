@@ -36,34 +36,71 @@ describe("the add-in manifests", () => {
   });
 
   /**
-   * THE FLOOR IS 1.8 BECAUSE 1.4 SHIPS A CHART THAT IS NOT A CHART.
+   * ALL FOUR CARRY THE SAME `<Version>`, and this is a cross-manifest rule so it
+   * cannot live in `manifest-rules.mjs`, which checks one file at a time.
    *
-   * `Shape.group` needs PowerPointApi 1.8. Below it a chart lands as ~40 loose
-   * shapes and NOTHING SAYS SO — there is no mention of 1.8 anywhere in the
-   * message catalogue, while the re-edit path tells the user to "select an
-   * inserted chart group first", naming a group that host cannot make.
-   * `canInsertPicture` is 1.8 as well, so the fallback for marks this host
-   * cannot draw does not exist below it either.
+   * Two hazards, both met on 2026-09-13. The first: `<Version>` sat at 1.0.0.0
+   * across v0.4.0, v0.5.0 and v0.6.0 while the manifests themselves changed —
+   * and a centrally-deployed or sideloaded add-in refreshes on the strength of
+   * that number, so a changed manifest can go on serving the cached one. The
+   * second, within a minute of fixing the first: the PowerPoint pair was bumped
+   * to 1.0.1.0 and the Excel pair was left behind, because the two have
+   * separate source files and only one was edited.
+   *
+   * This catches the second. Nothing can catch the first automatically without
+   * knowing what a release is, so it is written in `manifest.xml` where the
+   * number lives.
+   */
+  it("gives all four manifests the same version, so a bump cannot land on half of them", () => {
+    const versions = Object.fromEntries(
+      MANIFESTS.map((name) => [name, /<Version>([^<]+)<\/Version>/.exec(read(name))?.[1]]),
+    );
+    const distinct = [...new Set(Object.values(versions))];
+    expect(distinct, `the manifests disagree about the version: ${JSON.stringify(versions)}`).toHaveLength(1);
+  });
+
+  /**
+   * THE FLOOR IS 1.10 BECAUSE BELOW IT NINE SHIPPED CHARTS LOSE THEIR SUBJECT.
+   *
+   * Raised 1.4 -> 1.8 -> 1.10 on 2026-09-13. 1.8 is where `Shape.group` and
+   * `canInsertPicture` arrive, so below it a chart lands as ~40 loose shapes
+   * with nothing said about it. 1.10 is where `Shape.rotation` arrives, and
+   * without it `addWedgeFan` and the arrowhead case trace and return nothing:
+   * 18 of the 123 shipped showcase charts lose ink and 9 lose their subject
+   * entirely. `test/below-1-10-census.test.ts` re-derives that rather than
+   * citing it, which is how the published figure was caught at 8.
+   *
+   * THE FLOOR IS ALSO THE ONLY PLATFORM LEVER, and this part reads backwards.
+   * An add-in cannot be scoped by platform — `<Host Name="Presentation" />` is
+   * web + Windows + Mac + iPad as one unit — and Partner Center derives the
+   * certified platform list from this Requirements block (office-js#6658).
+   * Certification policy 1120.3: "Add-ins must work across all platforms that
+   * support methods defined in the Requirements element". So lowering the floor
+   * does not hedge, it ENLARGES what must be certified. At 1.8 the only hosts
+   * that could install AND lack rotation were Mac 16.96-16.104, which made the
+   * picture fallback Mac-only code on the one platform never measured.
    *
    * The temptation is to lower it for reach. Measured against Microsoft's
-   * update history on 2026-09-08, there is no reach there to win: Current,
-   * Monthly Enterprise and Semi-Annual Enterprise are ALL above the build 1.8
-   * needs. What 1.4 buys is volume-licensed/LTSC, which is listed "Not
-   * available" for 1.6 onward and so can never be updated into a working state.
+   * update history on 2026-09-13, there is no reach to win: every serviced
+   * Microsoft 365 channel and retail Office 2024 sit on 2606-2608 against the
+   * 2601 that 1.10 needs, and Mac is on 16.112.4 against 16.105. What a lower
+   * floor buys is volume-licensed/LTSC (capped at 1.5) and iPad (capped at
+   * 1.1), neither of which can ever be updated into a working state.
    *
    * This pins the number to the argument. Change both together or neither.
    */
-  it("does not let the PowerPointApi floor slip below the version that can group a chart", () => {
+  it("does not let the PowerPointApi floor slip below the version that draws every chart whole", () => {
     for (const name of ["manifest.xml", "manifest-prod.xml"]) {
       const xml = read(name);
       const floor = /<Set\s+Name="PowerPointApi"\s+MinVersion="([\d.]+)"/.exec(xml)?.[1];
       expect(floor, `${name}: no PowerPointApi requirement at all`).toBeDefined();
       const [major, minor] = String(floor).split(".").map(Number);
       expect(
-        major > 1 || minor >= 8,
-        `${name}: PowerPointApi floor is ${floor}. Below 1.8 there is no Shape.group and no picture ` +
-          `fallback, so a chart arrives as loose shapes with nothing said about it. If this is deliberate, ` +
-          `the sub-1.8 experience has to be fixed first — see the comment in manifest.xml.`,
+        major > 1 || minor >= 10,
+        `${name}: PowerPointApi floor is ${floor}. Below 1.10 there is no Shape.rotation, so 9 of the ` +
+          `123 shipped charts lose their subject; below 1.8 there is no Shape.group either and a chart ` +
+          `arrives as loose shapes. Lowering this also ENLARGES the platform set Microsoft certifies — ` +
+          `see the comment in manifest.xml.`,
       ).toBe(true);
     }
   });
