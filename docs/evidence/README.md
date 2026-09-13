@@ -43,6 +43,44 @@ headers; they say what a passing arm would have meant.
 why they name `Presentation72`, a throwaway, and why nothing here should be
 pointed at a deck anyone cares about.
 
+## `windows-desktop-first-run.mjs`, `windows-desktop-2026-09-13.json`
+
+**The first reading this project has taken on any host but the web.** All 430
+archived rounds report `platform: OfficeOnline`; Microsoft's validator says a
+submission is tested on Windows and Mac too, so the two things the store listing
+claims there had never been measured — that the host supports what the product
+needs, and that a chart arrives as native shapes rather than a picture.
+
+Both, on AITEST, Office 16.0.20326.20144, Current Channel:
+
+    platform                      PC
+    PowerPointApi 1.1 … 1.10      all true
+    the default chart inserted    1 shape, msoGroup, `PowerChart`, 40 items
+    pictures on the slide         0
+
+The chart is the pane's own default, and that is the point rather than
+convenience: `stacked` ships `decorations.cagr`, a CAGR arrow is an `arrowhead`
+node, and an arrowhead is exactly what `marksThisHostWillDrop` drops when
+`canRotate()` is false. So the default chart is the one that would have exposed
+a picture fallback, and it did not.
+
+**Verified with COM, not from the pane's message.** "Scaled to fit the space
+left on the slide" is what a SUCCESSFUL picture insert says too; only counting
+the shapes tells them apart. The script says so and prints the one-liner.
+
+WHAT IT DOES NOT COVER, so it is not over-read: Mac, which the manifest also
+claims and which remains unmeasured; volume-licensed/LTSC Windows, where
+Microsoft lists 1.6 through 1.10 as **Not available** and which this machine
+cannot represent because no update reaches it; any build below 19610.20002, the
+1.10 minimum — this is one host in the good tier; and anything beyond a single
+insert of one kind. **n = 1.**
+
+**It needs a person once, and that is structural rather than an oversight.**
+Adding an add-in from a Shared Folder catalog is UI-only — no COM, no command
+line — and the CDP route cannot bootstrap itself, because the WebView only
+spawns when the ribbon button is clicked. The script's header carries the four
+clicks and the launch flag.
+
 ## `bound-empty-read.mjs`, `empty-read-6-trials.jsonl`
 
 Draft D's measurement: how long a shape drawn on a freshly added slide stays

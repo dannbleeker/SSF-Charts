@@ -762,10 +762,19 @@ returns 200. What follows is what those gates do not look at.
    ordinary up-to-date Windows desktop should get native shapes and not the
    picture fallback.
 
-   Both are inferences from the published table and the build number.
-   `Office.context.requirements.isSetSupported('PowerPointApi', '1.10')` from
-   inside the pane is the measurement, and it has still never been taken on any
-   host but the web — see the Windows-test note below.
+   **The second of those is now MEASURED rather than inferred, 2026-09-13.**
+   `isSetSupported('PowerPointApi', '1.10')` returned `true` on that machine,
+   along with every set from 1.1 up, and a chart carrying a CAGR arrow inserted
+   as native shapes. So the top tier is confirmed to work on Windows and this
+   decision is no longer about it.
+
+   **What that leaves is the bottom tier, and it is the one that cannot be
+   tested.** LTSC is listed "Not available" for 1.6 onward, so no machine can be
+   brought up to it and no measurement will ever come back from one. Deciding
+   the floor is therefore a judgement about who the add-in is for, not a gap
+   waiting on evidence: **1.10 excludes LTSC permanently; 1.4 keeps it and keeps
+   the promise false there.** Middle tier (1.8–1.9) remains unmeasured and is
+   reachable — a Windows machine between builds 18730 and 19610 would settle it.
 4. **The default chart is the degraded case.** The pre-selected tile is
    `stacked`, and its sample carries `cagr: { from: 0, to: 3 }` — an arrowhead,
    which is exactly what is dropped below 1.10. So the first thing a new user
@@ -773,9 +782,19 @@ returns 200. What follows is what those gates do not look at.
    Changing the default sample is the cheap half of decision 3.
 5. **Screenshots** remain a person's job — the slide canvas does not composite in
    a headless browser. Unchanged from `STORE-LISTING.md`.
-6. **The Windows test is staged and four clicks from running.** Microsoft's
-   validator says it will test this add-in on Windows and Mac; all 430 archived
-   rounds are PowerPoint on the web, every `platform` value `OfficeOnline`.
+6. **DONE 2026-09-13 — the Windows test ran, and it passed.** `platform: PC`,
+   Office 16.0.20326.20144, **PowerPointApi 1.1 through 1.10 all true**, and the
+   pane's default chart — the one carrying a CAGR arrow, which is exactly the
+   mark dropped below 1.10 — inserted as **one `msoGroup` named `PowerChart`
+   holding 40 shapes, with zero pictures on the slide**. Native editable shapes,
+   which is what the listing claims. Verified with COM rather than from the
+   pane's message, because a successful picture insert says the same thing.
+
+   Full record and how to re-run: `docs/evidence/windows-desktop-first-run.mjs`
+   and `windows-desktop-2026-09-13.json`. **n = 1**, one host in the good tier,
+   one chart kind — it does not cover Mac, LTSC, or any build below 19610.20002.
+
+   Retained below because the preconditions still apply to the next run:
 
    Done on AITEST 2026-09-13: SSF Charts' manifest is in the trusted catalog
    (`C:\OfficeAddins\ssf-charts-manifest-prod.xml`, taken from the **v0.6.0

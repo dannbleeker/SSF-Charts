@@ -1,0 +1,49 @@
+{
+  "what": "The first reading this project has taken on any host but PowerPoint on the web.",
+  "taken": "2026-09-13T09:01Z",
+  "machine": "AITEST, console session, Office Current Channel x64",
+  "paneBuild": "3dec65b · 2026-09-13 08:42Z",
+  "manifest": {
+    "source": "v0.6.0 release asset, sha-verified byte-identical to the repo copy",
+    "sha256": "7F1B80E72C4C34FB0888B5F5DFB2B79E54B1BCFD9EAD07E7F313B14D30B9CD1A",
+    "catalog": "\\\\AITEST\\OfficeAddins\\ssf-charts-manifest-prod.xml"
+  },
+  "office": {
+    "host": "PowerPoint",
+    "platform": "PC",
+    "version": "16.0.20326.20144"
+  },
+  "requirementSets": {
+    "PowerPointApi 1.1": true,
+    "PowerPointApi 1.2": true,
+    "PowerPointApi 1.3": true,
+    "PowerPointApi 1.4": true,
+    "PowerPointApi 1.5": true,
+    "PowerPointApi 1.6": true,
+    "PowerPointApi 1.7": true,
+    "PowerPointApi 1.8": true,
+    "PowerPointApi 1.9": true,
+    "PowerPointApi 1.10": true
+  },
+  "insert": {
+    "chart": "the pane default — `stacked`, \"Revenue by segment\", carrying decorations.cagr {from:0,to:3}",
+    "whyThatChart": "the CAGR arrow is an arrowhead node, which is exactly what `marksThisHostWillDrop` drops when canRotate() is false — so the default chart is the one that would expose a picture fallback",
+    "paneSaid": "Scaled to fit the space left on the slide — drag or resize it as you like.",
+    "elapsedApprox": "~2s",
+    "landedAs": {
+      "shapesOnSlide": 1,
+      "msoType": 6,
+      "msoTypeMeaning": "msoGroup",
+      "groupName": "PowerChart",
+      "groupItems": 40,
+      "pictures": 0
+    }
+  },
+  "conclusion": "Native editable shapes, not a picture, on a current Windows desktop — the claim the store listing makes. Verified with COM rather than from the pane's message, because a picture insert also reports success.",
+  "doesNotCover": [
+    "Mac, which the manifest also claims and which has never been measured.",
+    "Volume-licensed/LTSC Windows, where Microsoft lists 1.6 through 1.10 as Not available — this machine cannot represent it and no update reaches it.",
+    "Any Windows build below 19610.20002, the 1.10 minimum. This is one host at 20326.20144, i.e. the good tier.",
+    "Anything beyond a single insert of one chart kind: no battery, no repeat, n=1."
+  ]
+}
