@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "fs";
 import type { ChartConfig } from "../src/core/types";
 import { buildChart, clampDim } from "../src/core/chart";
@@ -25,6 +25,53 @@ import { placeChart } from "../src/core/placement";
  * arguments to avoid.
  */
 const SETTLE = { timeout: 15_000 } as const;
+
+/**
+ * LET THE PANE'S LAST DEBOUNCED RENDER FIRE BEFORE JSDOM GOES AWAY.
+ *
+ * `renderPreview()` coalesces onto an 80 ms trailing timer (`app.ts`), and its
+ * callback ends in `maybeAutoUpdate()`, which reads `document`. Any test whose
+ * final act schedules one leaves it armed. Vitest then finishes the FILE, tears
+ * down the jsdom environment, and the timer fires into a world with no
+ * `document` at all:
+ *
+ *     Uncaught Exception
+ *     ReferenceError: document is not defined
+ *       at $ (src/taskpane/app.ts:545)
+ *       at maybeAutoUpdate (src/taskpane/app.ts:3184)
+ *       at Timeout.renderPreviewNow (src/taskpane/app.ts:1674)
+ *
+ * Vitest reports that as an unhandled error and exits NON-ZERO while reporting
+ * every test passed — which is how it stayed invisible. It surfaced on
+ * 2026-09-13 in the quality sweep, in ONE of three runs: the race is between an
+ * 80 ms timer and the end of the file, so it needs the machine to be busy.
+ *
+ * NOT A PRODUCT BUG. In a real pane the document outlives the module, so the
+ * callback always has one; this is a test-harness lifetime, not a defect. That
+ * is also why the fix is here and not a guard in `app.ts` — a
+ * `typeof document === "undefined"` check in `$` would buy this at the price of
+ * hiding the next real one.
+ *
+ * Waiting once at the END is enough, and is why this is `afterAll` rather than
+ * `afterEach`: a timer left by an earlier test fires harmlessly during a later
+ * one, while the document still exists. Only the last one outlives anything.
+ *
+ * **REASONED FROM THE STACK TRACE, NOT PROVEN LOCALLY**, and that is worth
+ * saying rather than leaving to be assumed. This repo's rule is that a fix
+ * should be shown to be needed by removing it and watching the failure return.
+ * That was attempted on 2026-09-13: three runs of this file on a 4-core box
+ * under twelve competing processes, with this wait disabled, produced no
+ * unhandled error at all. The race did not reproduce here. What stands behind
+ * the fix is the trace — which names this timer, this callback and this file
+ * unambiguously — and not an experiment.
+ *
+ * The honest test is the next quality-sweep run. If `Unhandled Errors` shows up
+ * there again with this wait in place, the diagnosis is wrong and the trace is
+ * pointing at a symptom; do not simply lengthen the wait.
+ */
+afterAll(async () => {
+  await new Promise((r) => setTimeout(r, 250));
+});
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 

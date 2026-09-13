@@ -60,6 +60,7 @@ jobs:
         run: |
           for i in 1 2 3 4; do yes > /dev/null & done
           fail=0
+          reds=0
           for run in 1 2 3; do
             echo "::group::run $run"
             # BOTH reporters, and that is the whole point of this line. With
@@ -84,6 +85,7 @@ jobs:
             else
               echo "run $run: RED"
               fail=1
+              reds=$((reds + 1))
             fi
             echo "::endgroup::"
           done
@@ -107,11 +109,34 @@ jobs:
           # not be filed as one.
           if [ "$code" = "3" ]; then echo "found=yes" >> "$GITHUB_OUTPUT"; fi
           if [ "$code" != "0" ] && [ "$code" != "3" ]; then exit "$code"; fi
+          # THE VERDICT HAS TO SAY WHICH OF TWO THINGS IT SAW, and until
+          # 2026-09-13 it said the wrong one out loud. The old branch fired on
+          # "any run was red AND no test disagreed" and announced "every run was
+          # red in the same way". Those are not the same claim: on 2026-09-13
+          # exactly ONE of three runs was red, the other two green, and the job
+          # still printed that sentence. Anyone reading the log was told the
+          # build was broken when what had actually happened was a flake.
+          #
+          # The cause is that vitest can exit NON-ZERO with every test passing —
+          # an unhandled error outside a test does it. `flaky.mjs` compares
+          # test RESULTS, so it correctly finds no disagreement, and the
+          # run-level failure falls into a branch built for a different shape.
+          # That is precisely what hid a real one: a leaked 80 ms timer in
+          # `pane-state.test.ts` firing after jsdom was torn down.
           if [ "$fail" = "1" ] && [ "$code" = "0" ]; then
-            echo "every run was red in the same way — that is a broken build, not a flake" >&2
-            # Name them. `flaky.mjs` is silent here by design — it reports
-            # DISAGREEMENT, and three identical reds disagree about nothing — so
-            # without this the job's last word is a verdict with no evidence.
+            if [ "$reds" -ge 3 ]; then
+              echo "all $reds runs were red and no test disagreed — a broken build, not a flake" >&2
+            else
+              echo "$reds of 3 runs were red while every TEST passed in all of them." >&2
+              echo "That is a flake at the RUN level, not a broken build: vitest exits non-zero" >&2
+              echo "on an unhandled error outside a test. Look for 'Unhandled Errors' in the" >&2
+              echo "run logs above — a timer or promise outliving the file that scheduled it." >&2
+            fi
+            # Name any test that was red in every run. `flaky.mjs` is silent
+            # there by design — it reports DISAGREEMENT, and identical reds
+            # disagree about nothing — so without this the job's last word is a
+            # verdict with no evidence. It prints "no per-test detail" when the
+            # failure was not a test at all, which is itself the clue.
             node scripts/red-in-every-run.mjs /tmp/run-1.json /tmp/run-2.json /tmp/run-3.json || true
             exit 1
           fi
