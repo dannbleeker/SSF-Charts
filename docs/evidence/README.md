@@ -81,6 +81,44 @@ line — and the CDP route cannot bootstrap itself, because the WebView only
 spawns when the ribbon button is clicked. The script's header carries the four
 clicks and the launch flag.
 
+## `mac-webkit-2026-09-13.json` (harness: `scripts/mac-webkit.mjs`)
+
+**The first execution of this code on a non-Chromium engine — and it is not a
+Mac.** The owner has no access to one, so the engine was brought to the code.
+
+Microsoft's own table says Office on Mac runs add-ins in **Safari with
+WKWebView**, while Office on Windows uses Edge WebView2 and Office on the web
+uses the host browser. Every reading this project holds — 430+ web rounds and
+the one Windows desktop file above — is therefore Chromium. Mac was not merely
+an unclicked platform: it was the only ENGINE FAMILY on which not one line had
+ever run.
+
+`npm run mac:webkit` builds all 123 showcase charts and all 25 kind samples
+twice, in Node and in Playwright's WebKit, and diffs a per-node geometry digest
+and every text label. **148 of 148 agree, byte for byte.** The two things it was
+built to catch, both real risks found by reading the source rather than guessed:
+
+- **`Intl.NumberFormat`** formats every number label in every chart, and
+  JavaScriptCore's ICU is not V8's. Zero divergences.
+- **Regex lookbehind**, in `src/render/svg.ts:17` and `src/core/format.ts:462`.
+  Safari gained it only in 16.4, and an unsupported lookbehind is a SyntaxError
+  at PARSE time — it does not throw where it is used, it takes the whole module
+  down. That is the blank-pane failure mode, and the likeliest way a Mac review
+  fails. Supported.
+
+**WHAT IT IS NOT.** There is no Office.js here, no host, no slide. Everything
+past scene construction — every `context.sync()`, `Shape.group`, the picture
+fallback — is untouched, and that is precisely the surface a Mac would test.
+It is also Playwright's WebKit, i.e. Safari 26.5, so it measures the CURRENT
+engine and says nothing about the oldest WKWebView the manifest admits. **This
+is a floor under the Mac claim, not a substitute for measuring one.**
+
+It also RE-DERIVES the below-1.10 counts rather than citing them, which is how
+the published figure was caught wrong: 18 of 123 lose ink, **9** lose their
+subject, not 8. Showcase #107 is a radar whose eight radial bars are eight
+`wedge` nodes, filed for a fortnight under the charts that lose only arrows —
+and it has no arrows at all.
+
 ## `bound-empty-read.mjs`, `empty-read-6-trials.jsonl`
 
 Draft D's measurement: how long a shape drawn on a freshly added slide stays

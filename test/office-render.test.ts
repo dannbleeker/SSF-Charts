@@ -970,7 +970,9 @@ describe("scene node mapping", () => {
     expect(taggedShape(slide)!.tagStore.get(CHART_TAG)).toBe("cfg");
   });
 
-  // Shape.rotation is PowerPointApi 1.10 and the manifests admit hosts from 1.4.
+  // Shape.rotation is PowerPointApi 1.10 and the manifests admit hosts from 1.8.
+  // This test drives supports() directly rather than the shipped floor, so it
+  // keeps meaning if the floor moves to 1.10 and the gate goes constant.
   // A try/catch around the assignment catches NOTHING on a real host: Office.js
   // proxy setters do not throw synchronously — the host rejects the queued
   // command at the next context.sync(), which carries the whole batch. So the
@@ -3122,9 +3124,12 @@ describe("Office round-trips do not scale with the chart count", () => {
   });
 
   it("falls back to native shapes on a host without PowerPointApi 1.8", async () => {
-    // setImage is 1.8 and the manifests admit hosts from 1.4, so this must be
-    // GATED, not attempted-and-caught: a queued command the host rejects takes
-    // the whole sync with it. The chart must still land, as shapes.
+    // setImage is 1.8 and the manifests admit hosts from 1.8 since 2026-09-13,
+    // so no host the manifest now admits can take this branch. It is still
+    // GATED, not attempted-and-caught — a queued command the host rejects takes
+    // the whole sync with it — and this test still drives supports() directly,
+    // which is what keeps it a test of the gate rather than of the floor.
+    // The chart must still land, as shapes.
     const NODES = 12;
     const scene = {
       width: 480,

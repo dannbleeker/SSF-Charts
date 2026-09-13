@@ -48,15 +48,23 @@ org-wide admin deploy (see `PUBLISHING.md` "Distribution beyond sideloading").
 > user so: *"This PowerPoint cannot draw … — that needs a newer Office
 > (PowerPointApi 1.10). Inserted as a picture so it is complete; it stays an
 > image here."* (`pictureForUndrawableMarks`, `src/taskpane/app.ts`). The repo's
-> own measurement: **18 of 123 shipped charts lose ink below 1.10 and 8 lose
-> their subject entirely** — pie 4/4, doughnut 2/2, sunburst 2/2.
+> own measurement: **18 of 123 shipped charts lose ink below 1.10 and 9 lose
+> their subject entirely** — pie 4/4, doughnut 2/2, sunburst 2/2, and the
+> radial-bar radar, showcase #107, whose eight bars ARE eight wedges.
+>
+> **That ninth was published as an 8 until 2026-09-13.** Radar was filed under
+> the charts that "lose annotation arrows and keep their marks"; it has no
+> arrows at all. The count is now re-derivable rather than remembered —
+> `npm run mac:webkit` prints it, and the recipe is `buildChart` over
+> `examples/showcase.json` counting `wedge` and `arrowhead` nodes.
 >
 > 1.10 needs Windows M365 2601, Mac 16.105, and is **not available at all on
-> volume-licensed perpetual/LTSC**, while the manifest claims support down to
-> 1.4 (Windows 2207 / Mac 16.62). So a validator on an ordinary corporate build
-> inserts a pie chart and gets an image. "Functionality does not match the offer
-> description" is the ordinary AppSource rejection, and this was the shortest
-> path to it.
+> volume-licensed perpetual/LTSC**. The manifest floor was 1.4 (Windows 2207 /
+> Mac 16.62) when this was written and is 1.8 (Windows 2504 / Mac 16.96) since
+> 2026-09-13, which retires the "ordinary corporate build" version of this
+> rejection on Windows — every serviced M365 channel is above 1.10 — but NOT on
+> Mac, where 16.96–16.104 still installs and still gets the picture. That
+> window is the whole remaining exposure and it is argued in `PUBLISHING.md`.
 >
 > The BEHAVIOUR is good and worth describing plainly rather than hiding: the
 > user gets a complete chart plus a message naming what would otherwise be

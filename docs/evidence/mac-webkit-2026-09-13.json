@@ -1,0 +1,38 @@
+{
+  "what": "The first execution of this project's code on a non-Chromium engine. Not a Mac.",
+  "taken": "2026-09-13T14:20Z",
+  "why": "Microsoft's browsers-used-by-office-web-add-ins table says Office on Mac runs add-ins in Safari with WKWebView. Every reading this project holds is Chromium: 430+ web rounds, and the one Windows desktop reading, which is Edge WebView2. Mac was therefore not just an unclicked platform but the only engine family never executed on. The owner has no access to a Mac (stated 2026-09-13), so the engine was brought to the code instead of the code to the host.",
+  "harness": "scripts/mac-webkit.mjs — npm run mac:webkit",
+  "engine": {
+    "via": "Playwright WebKit, installed with `npx playwright-core install webkit`",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5 Safari/605.1.15",
+    "regexLookbehind": "supported"
+  },
+  "method": "buildChart over all 123 examples/showcase.json entries plus all 25 CHART_KINDS sample configs, in Node and in WebKit, comparing a per-node digest (geometry rounded to 1e-6) and, separately, every text label verbatim.",
+  "result": {
+    "cases": 148,
+    "geometryDivergences": 0,
+    "textDivergences": 0,
+    "uncaughtPageErrors": 0,
+    "moduleLoaded": true
+  },
+  "thingsItWasBuiltToCatch": [
+    "Intl.NumberFormat differences — every number label in every chart is formatted through src/core/format.ts, and JavaScriptCore's ICU is not V8's. Zero divergences across 148 scenes.",
+    "Regex lookbehind — src/render/svg.ts:17 and src/core/format.ts:462 both use it, Safari only gained it in 16.4, and an unsupported lookbehind is a SyntaxError at PARSE time that takes the whole module down. That is the blank-pane failure mode. Supported here.",
+    "Any uncaught error on module load. None."
+  ],
+  "alsoRederived": {
+    "note": "The below-1.10 counts are computed by this harness rather than cited, which is how the published figure was found wrong.",
+    "loseInk": "18 of 123",
+    "loseSubject": "9 of 123 — pie 4/4, doughnut 2/2, sunburst 2/2, radar 1/5",
+    "loseAnnotationOnly": "9 of 123 — gantt 4/7, stacked 3/14, waterfall 1/6, scatter 1/8",
+    "correction": "Published as 8 until 2026-09-13. Showcase #107 is a radar with bars:true whose eight radial bars are eight `wedge` nodes; it had been filed under the charts that keep their marks and lose their arrows, and it has no arrows at all."
+  },
+  "doesNotCover": [
+    "PowerPoint on Mac. There is no Office.js here, no host, no slide. Everything past scene construction — every context.sync(), Shape.group, the picture fallback — is untouched. This says the geometry and the labels agree, NOT that the add-in works on a Mac.",
+    "Old WebKit. Playwright's WebKit tracks trunk; this is Safari 26.5. It measures the CURRENT engine and says nothing about the oldest WKWebView the manifest admits (Mac 16.96, April 2025).",
+    "Rendering, layout and CSS of the task pane itself. Only the chart engine ran.",
+    "n = 1 engine, one build, one machine."
+  ],
+  "conclusion": "The chart engine is engine-portable: WebKit and V8 produce byte-identical geometry and labels across every shipped chart. That removes the cheapest and most likely class of Mac failure — a module that will not parse, or numbers that format differently — and leaves the Office.js host surface as the entire remaining Mac risk. It is a floor under the Mac claim, not a substitute for measuring one."
+}

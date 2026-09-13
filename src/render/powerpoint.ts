@@ -7379,15 +7379,30 @@ export async function reconcileDeck(
 
 /**
  * `Shape.rotation` is PowerPointApi **1.10**, and the manifests admit hosts from
- * 1.4 — so it must be GATED, not merely wrapped in try/catch.
+ * **1.8** (raised from 1.4 on 2026-09-13) — so it must be GATED, not merely
+ * wrapped in try/catch.
  *
  * Wrapping catches nothing: Office.js proxy setters do not throw synchronously.
  * The assignment is a queued command the host rejects at the NEXT
- * `context.sync()`, and that sync carries the whole batch — so on a 1.4–1.9 host
+ * `context.sync()`, and that sync carries the whole batch — so on a 1.8–1.9 host
  * a single rotated shape took down every pie, doughnut, sunburst, gauge,
  * arrowhead and diagonal line with it, instead of degrading. This is exactly the
  * reasoning `wantsAltText` already applies to `altTextDescription` (same 1.10
  * set); rotation simply never got the same treatment.
+ *
+ * **THE GAP IS NOW EXACTLY ONE PLATFORM, AND IT IS THE UNMEASURED ONE.** At a
+ * 1.8 floor the only hosts that can install AND answer `false` here are **Mac
+ * 16.96 through 16.104** (2025-04-15 to 2025-12-16): the web reports 1.10,
+ * every serviced Windows M365 channel is past the 2601 that 1.10 needs, and
+ * volume-licensed/LTSC and iPad cannot install at 1.8 at all. So every branch
+ * below this gate — the wedge fan bailing out, `marksThisHostWillDrop`, the
+ * whole `pictureForUndrawableMarks` path — is now reachable ONLY on Mac, which
+ * is the one platform with zero readings and a different engine (WKWebView /
+ * JavaScriptCore, where Windows and the web are both Chromium).
+ *
+ * Raising the floor to 1.10 would make all of it unreachable. That is a
+ * product decision, not a code one; until it is made this stays live, untested,
+ * and is the reason `npm run mac:webkit` exists.
  */
 const canRotate = (): boolean => supports("1.10");
 
@@ -7430,7 +7445,16 @@ export function marksThisHostWillDrop(scene: Scene): { what: string[]; nodes: nu
  * True when the host can paint pixels into a shape: `ShapeFill.setImage` is
  * PowerPointApi **1.8** (@types/office-js: "Sets the fill formatting of the
  * shape to an image. This changes the fill type to `PictureAndTexture`") and the
- * manifests admit hosts from 1.4. Same gate-not-wrap reasoning as `canRotate`.
+ * manifests admit hosts from **1.8** since 2026-09-13. Same gate-not-wrap
+ * reasoning as `canRotate`.
+ *
+ * **AT THE CURRENT FLOOR THIS IS ALWAYS TRUE**, because the floor and the
+ * requirement are the same number. It is kept rather than inlined for the
+ * reason the gate was written: the floor is a manifest value that has already
+ * moved once, and a gate that is presently constant is free, whereas
+ * rediscovering why the picture fallback vanished would not be. Its tests
+ * therefore drive `supports()` directly instead of relying on the shipped
+ * floor — see `test/office-render.test.ts`.
  *
  * Exported so a caller can skip a pointless rasterisation AND say so: an image
  * insert that silently became native shapes is the failure mode that would be
@@ -7514,9 +7538,12 @@ function wantsPicture(opts: InsertOptions, scene: Scene): boolean {
  * The requirement set is deliberately probed rather than asserted: Microsoft's
  * own docs disagree about which set carries this method (the 1.2 "what's new"
  * page announces slide insertion; the API reference cites 1.5), and the
- * manifests admit hosts from 1.4. So: check the method actually exists on the
- * proxy, and treat any host that lacks it as a fallback case rather than an
- * error.
+ * manifests admit hosts from **1.8** since 2026-09-13 — which is above both
+ * candidates, so the disagreement no longer bites at the shipped floor. The
+ * probe stays anyway: it was written because the DOCS disagree, and raising a
+ * floor does not settle a documentation conflict. Check the method actually
+ * exists on the proxy, and treat any host that lacks it as a fallback case
+ * rather than an error.
  */
 export function canInsertSlidesFromBase64(): boolean {
   return isPowerPointHost() && (supports("1.5") || supports("1.2"));
