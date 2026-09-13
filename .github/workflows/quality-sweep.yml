@@ -71,9 +71,14 @@ jobs:
             # diagnosis had to be reproduced by hand on a 4-core box six days
             # later. A watchdog that cannot say what it saw is not a watchdog.
             #
-            # `--outputFile.json=` (not `--outputFile=`) is required once there
-            # is more than one reporter: the bare form has no reporter to bind
-            # to and the json lands nowhere.
+            # `--outputFile.json=` names the reporter the path belongs to. A
+            # bare `--outputFile=` ALSO works here — measured on vitest 4.1.11
+            # with these exact two reporters, the file is written either way, so
+            # `ci.yml`'s bare spelling is not a latent bug. An earlier version of
+            # this comment asserted the bare form "lands nowhere"; that was
+            # assumed from the docs and is wrong. The dotted form is kept only
+            # because it says out loud which reporter is being aimed at, which
+            # matters more the moment a third reporter appears.
             if npx vitest run --reporter=default --reporter=json --outputFile.json="/tmp/run-$run.json"; then
               echo "run $run: green"
             else
