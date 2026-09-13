@@ -751,6 +751,21 @@ returns 200. What follows is what those gates do not look at.
    — marks are simply missing). Raising `MinVersion` to 1.10 makes every promise
    true and costs LTSC and pre-2026 builds. That is a reach-versus-correctness
    trade and it is a product decision.
+
+   **Two numbers that sharpen it, measured 2026-09-13 on AITEST — the first
+   Windows evidence this project has.** Microsoft's requirement-set table
+   (ms.date 2025-12-16) gives PowerPointApi **1.10** as Windows M365 **Version
+   2601, build 19610.20002**, and lists **1.6 through 1.10 as "Not available"**
+   on volume-licensed perpetual/LTSC. So LTSC is not a build behind — it is
+   capped below 1.6 permanently, and no update reaches it. AITEST's own
+   PowerPoint is **16.0.20326.20144** (Current Channel), past 19610, so an
+   ordinary up-to-date Windows desktop should get native shapes and not the
+   picture fallback.
+
+   Both are inferences from the published table and the build number.
+   `Office.context.requirements.isSetSupported('PowerPointApi', '1.10')` from
+   inside the pane is the measurement, and it has still never been taken on any
+   host but the web — see the Windows-test note below.
 4. **The default chart is the degraded case.** The pre-selected tile is
    `stacked`, and its sample carries `cagr: { from: 0, to: 3 }` — an arrowhead,
    which is exactly what is dropped below 1.10. So the first thing a new user
@@ -758,6 +773,26 @@ returns 200. What follows is what those gates do not look at.
    Changing the default sample is the cheap half of decision 3.
 5. **Screenshots** remain a person's job — the slide canvas does not composite in
    a headless browser. Unchanged from `STORE-LISTING.md`.
+6. **The Windows test is staged and four clicks from running.** Microsoft's
+   validator says it will test this add-in on Windows and Mac; all 430 archived
+   rounds are PowerPoint on the web, every `platform` value `OfficeOnline`.
+
+   Done on AITEST 2026-09-13: SSF Charts' manifest is in the trusted catalog
+   (`C:\OfficeAddins\ssf-charts-manifest-prod.xml`, taken from the **v0.6.0
+   release asset** and sha-verified against the repo copy, so the test is of what
+   a user installs), and PowerPoint is running with
+   `--remote-debugging-port=9444` set process-scoped.
+
+   What is left needs a person at the screen: **Home → Add-ins → More Add-ins →
+   SHARED FOLDER → SSF Charts → Add**, then open the pane once. That spawns the
+   WebView and the pane can then be driven over CDP with no further UI
+   permission. **Do not restart PowerPoint first** — the debugging flag is on
+   that process only.
+
+   Note that the add-in was NOT already sideloaded here, contrary to how the
+   AITEST notes read: the catalog's bare `manifest-prod.xml` is **SSF Merge**, a
+   different add-in with a different Id and origin. Check the `<Id>`, not the
+   filename — three add-ins here ship a file called `manifest-prod.xml`.
 
 ### Verified fine, so nobody re-checks them
 
