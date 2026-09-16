@@ -164,8 +164,12 @@ consulting charts, CAGR, editable charts, data visualization
       runs the same code path, rather than Mac alone running the picture
       fallback.
 - [x] Privacy + Terms pages live (they build to `/privacy.html`, `/terms.html`).
-      **Verified 2026-09-13: both return 200, as do all 17 URLs in
-      `manifest-prod.xml`.**
+      **Re-verified 2026-09-16: both return 200, as do all 18 URLs across BOTH
+      prod manifests.** It said 17 and `manifest-prod.xml`, which undercounted
+      by one and named one file: the count predates the Excel companion's
+      `src/excel/excel.html`, and a listing that ships two manifests has to
+      check both. Re-run it with:
+      `grep -ohE 'https://[^"<> ]+' manifest-prod.xml manifest-excel-prod.xml | sed 's/&amp;/\&/g' | sort -u`
 - [ ] Listing copy above is trademark-clean; screenshots contain no competitor marks.
 - [ ] Value is demonstrable **without a login** (SSF Charts needs none — good).
 - [ ] Submit → respond to Microsoft validation feedback (days–weeks).

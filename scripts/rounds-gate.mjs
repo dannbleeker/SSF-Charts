@@ -1064,12 +1064,39 @@ if (isMain(import.meta.url, process.argv[1])) {
     // Printed as a sequence and never as a failure: the gate's own rule is that
     // it does not cry wolf on a host whose mood swings, and this is a reason to
     // read the round rather than a verdict on the build.
+    //
+    // THE CAUSAL CLAIM CAME OFF THIS LINE ON 2026-09-16, MEASURED. It used to
+    // end `<- N above 6, so a chart was left as loose shapes`, and across the
+    // last twelve rounds that fired, ELEVEN were benign:
+    //
+    //     all shapes named `PowerChart`      8 rounds   grouped charts
+    //     `Title 1`, `Subtitle 2`            3 rounds   layout placeholders
+    //     `PowerChart` + `category-0`, …     1 round    round 449, the real thing
+    //
+    // `PowerChart` is `GROUP_NAME` in `powerpoint.ts` and is used there as a
+    // LOOKUP KEY, so a grouped chart is ONE shape by that name — and eight
+    // grouped charts on one slide count eight, exactly like one chart that
+    // failed to group. The comment above assumed only the failure could reach
+    // eight. It cannot tell them apart, because a count cannot.
+    //
+    // AND NAMES CANNOT EITHER, which is why this prints rather than tests.
+    // Round 457 holds a full set of loose parts — `title, category-0..3,
+    // seg-0-0..seg-1-3, baseline, series-label-0/1` — on its title slide, and
+    // that is the `explode a degraded picture` scenario doing precisely its job.
+    // An exploded chart and a chart that failed to group leave identical slides.
+    //
+    // What CAN answer it is two lines above: the grouping counter, attempts
+    // against refusals, straight from the trace. So this reports the shape of
+    // the deck and points there instead of guessing at a cause.
     const fullest = poolFullestSlide(rounds);
     if (fullest.length) {
       const over = fullest.filter((n) => n > CLEAN_SLIDE_CEILING).length;
       console.log(
         `    fullest slide per round, last ${fullest.length}: [${fullest.join(",")}]` +
-          (over ? `  <- ${over} above ${CLEAN_SLIDE_CEILING}, so a chart was left as loose shapes` : ""),
+          (over
+            ? `  <- ${over} above ${CLEAN_SLIDE_CEILING}. Could be grouped charts, placeholders or an` +
+              ` explode; the grouping line above is what says whether one FAILED to group.`
+            : ""),
       );
     }
     if (now.refused > 0)

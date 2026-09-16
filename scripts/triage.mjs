@@ -2280,12 +2280,37 @@ export function poolFullestSlide(logs, n = RECENT_IN_A_ROW) {
 }
 
 /**
- * Above this many shapes on one slide, a chart did not group.
+ * Above this many shapes on one slide, the deck is worth LOOKING at.
+ *
+ * It used to say "a chart did not group", and that was wrong — corrected
+ * 2026-09-16 against the archive rather than by argument.
  *
  * Five is what a clean round's fullest slide holds — one grouped chart per
  * probe slide, and the four one-batch charts the rasterise scenario adds beside
- * one of them. A loose chart contributes eight or more on its own, so there is
- * no near-miss band to argue about.
+ * one of them. The old reasoning went on: "a loose chart contributes eight or
+ * more on its own, so there is no near-miss band to argue about". The premise
+ * is sound and the INFERENCE does not follow, because three different things
+ * reach eight:
+ *
+ *   eight grouped charts      eight shapes named `PowerChart` — `GROUP_NAME` is
+ *                             a LOOKUP KEY in powerpoint.ts, so a grouped chart
+ *                             is ONE shape by that name. Rounds 443-455: eight
+ *                             such rounds, every one benign.
+ *   a title slide             `Title 1`, `Subtitle 2` and friends. Three rounds.
+ *   an exploded chart         `explode a degraded picture` turns a picture into
+ *                             native shapes ON PURPOSE. Round 457's title slide
+ *                             holds `title, category-0..3, seg-0-0..seg-1-3,
+ *                             baseline, series-label-0/1` for exactly that
+ *                             reason.
+ *
+ * Only round 449 in that window was the real thing. Eleven of twelve firings
+ * were benign, so a count here is a 92% false alarm — and NAMES cannot save it
+ * either, since an exploded chart and a chart that failed to group leave a slide
+ * that is identical in both count and naming.
+ *
+ * The question has a direct answer elsewhere: the grouping counter, attempts
+ * against refusals, read from the trace. Use that. This constant now only says
+ * "unusual enough to read the round".
  */
 export const CLEAN_SLIDE_CEILING = 6;
 

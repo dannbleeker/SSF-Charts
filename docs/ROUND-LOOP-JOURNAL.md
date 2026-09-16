@@ -8364,3 +8364,122 @@ raises and before the version bump. Now byte-identical to the repo's
 `manifest-prod.xml`: `1.0.1.0` / floor `1.10`. SSF Charts is staged in that
 catalog and has never been ADDED in PowerPoint, so nothing was consuming the
 stale copy; this only means the add-in is the real one whenever it is added.
+## Rounds 455 and 456 — b82048a — 19 of 19, twice — THE FIRST ROUNDS ON A RELEASED BUILD
+
+`deployed == HEAD == the bytes inside v0.6.1`, verified before the first round
+and unbroken through both. Six commits separate the tag from HEAD and none
+touches the shipped bundle, so these are the first rounds in 432 that are
+evidence about **what a user installs** rather than about a working tree.
+
+    455   19/19   0 skipped   895 trace entries, 0 dropped   3 attempts
+    456   19/19   0 skipped   905 trace entries, 0 dropped   5 attempts
+    both  112 of 112 probe questions answered · host PowerPoint · OfficeOnline
+          requirement sets 1.1 … 1.10
+
+**The pair is the point and the asymmetry is the finding.** 456 needed five
+attempts and four recoveries — `deck-dirty+pane-closed`, `browser-gone`,
+`pane-closed` twice — to produce a verdict identical to 455's three-attempt run.
+Read alone, either round says "the host is calm". It was not: three browser
+deaths in one session (mid-round at 827s and 1074s, plus a gone browser at the
+start) and one crash whose file never arrived. The driver absorbed all of it.
+
+### 1. Mine — the deck, and a heuristic that cries wolf
+
+Round 455's fullest slide holds 8 shapes and the gate printed its standing line,
+`<- 8 above 6, so a chart was left as loose shapes`. **It had not been.** All
+eight are named `PowerChart`, which is the GROUP name — eight grouped charts on
+one slide, exactly what `same scale across the deck` is supposed to leave.
+
+Measured across the last twelve rounds whose fullest slide exceeded six:
+
+    all `PowerChart`                    8 rounds   benign (grouped charts)
+    `Title 1`, `Subtitle 2`, `title`    3 rounds   benign (layout placeholders)
+    `PowerChart` + `category-0`, …      1 round    REAL — round 449
+
+Eleven of twelve were benign: a false-positive rate of 92% on a line that states
+a conclusion rather than raising a question. Round 449 is what the real thing
+looks like — four `PowerChart` groups beside `title, category-0, category-1,
+seg-0-0, seg-0-1, baseline, series-label-0`, one chart left as its parts.
+
+**So the count is the wrong test.** A slide of N `PowerChart` groups is clean at
+any N; a slide is dirty when loose CHART-PART names appear at top level. That
+test is also strictly more sensitive — a five-shape slide hiding one stray
+`category-0` passes the count test and fails the name test.
+
+### 2. Research — nothing upstream to ask
+
+No unexplained host behaviour in either round. `shape-proxy-survives-one-sync`
+still answers `threw` and `shapes-items-count-honest` still `short-3`; both are
+long-declared divergences, not news.
+
+### 3. Instrument — `sideloadAddIn` gives up on a dialog that merely loads slowly
+
+**The loop cannot survive a browser death unattended, and that is one line.**
+A web sideload does not survive the browser process, so every mid-round death
+ends with `addin-missing`, which is deliberately outside `RECOVERABLE_STOPS`.
+`sideloadAddIn` exists to put it back and walks Add-ins ▸ More Add-ins ▸
+MY ADD-INS ▸ Manage My Add-ins ▸ Upload My Add-in. It failed here at
+`no 'Manage My Add-ins' control`, twice, and the cycle stopped.
+
+It is not a rename. **The Office Add-ins dialog's content panel intermittently
+fails to load**, and when it does none of its controls exist — Microsoft ships a
+`Retry` button in that dialog for exactly this. Established three ways on
+2026-09-16: it failed on an empty panel; clicking `Retry` by hand made
+`Manage My Add-ins` appear immediately, and the walk completed from there; and
+later in the same session the walk succeeded unaided, which is what
+intermittent means.
+
+The walk needs a retry rung: absent control + present `Retry` → click, look
+again. Without it a night ends on the first flaky dialog after any browser
+death, and there were three deaths in three hours.
+
+### 4. Fix — batched, deliberately, and this is mechanical rather than tidy
+
+Both fixes are `scripts/` and neither is committed while a cycle runs.
+`cycle.mjs` invokes `rounds-gate.mjs` after every round, so an edit mid-cycle is
+picked up half-written by the next round; and any push moves HEAD, Pages
+redeploys, and `round.mjs` refuses `site-behind` until the stamp catches up. A
+commit at hour three does not risk the window, it stops the loop.
+
+### 5. Doctrine — what a round can and cannot see
+
+**A round cannot test the manifest floor, and the plan for this window said it
+could.** `supports()` is `Office.context.requirements.isSetSupported(...)`
+(`powerpoint.ts:9734`): it reads what the HOST advertises, and PowerPoint on the
+web has reported `1.1 … 1.10` since long before the floor moved to 1.10. The
+floor governs INSTALLABILITY and is invisible here. Both these rounds report the
+full set, and would have done so at a floor of 1.4.
+
+It is a desk-check instead, and it was re-done rather than restated on
+2026-09-16: the lowest SUPPORTED Windows channel is 2606 against the 2601 that
+1.10 needs, and Mac is 16.112.4 against 16.105. The floor holds on today's
+numbers.
+
+**And 19/19 still says nothing about the one thing that changed.** The only
+Office.js-reaching behaviour difference between the last round-validated build
+(`454303d`) and v0.6.1 is `desc` in `src/core/elements.ts` — eleven additions
+flowing `scene.desc → opts.altText → Shape.altTextDescription`, a 1.10 write, at
+three call sites. The manifest ships five Elements deep-link buttons. **No
+scenario touches Elements at all**, so the green verdict and the changed code do
+not overlap anywhere.
+
+### Round 457 — the 4:3 leg, and what it taught about the heuristic above
+
+19/19 as well, at 720x540 from `pageSetup`, on five attempts with four
+recoveries. The 4:3 arm is the one the archive puts at **31.1% crashes per
+attempt** against 16:9's 3.6%, and it behaved like it: a browser death at
+1074s, a deck still holding seven slides from the last round (swept, not
+refused), and a crashed run whose file never arrived.
+
+**It also refuted the fix that was about to be written for §1.** The plan was to
+replace the count test with a NAME test — loose chart-part names mean an
+ungrouped chart. Round 457's title slide holds `Title 1, Subtitle 2` beside
+`title, category-0..3, seg-0-0..seg-1-3, baseline, series-label-0/1`: a complete
+set of loose parts. That is not a failure. It is `explode a degraded picture`
+doing its job, and it passed.
+
+So an exploded chart and a chart that failed to group leave slides that are
+identical in count AND in naming. The heuristic cannot be repaired by looking
+harder at the deck, because the deck does not hold the answer. What does is the
+grouping counter the gate already prints — 20 of 20 attempts grouped, 0 refused.
+The line now reports the shape of the deck and points there, and claims nothing.

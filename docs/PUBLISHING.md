@@ -778,6 +778,24 @@ returns 200. What follows is what those gates do not look at.
    16.112.4 against 16.105. What it excludes — permanently, since no update can
    reach it — is volume-licensed/LTSC and iPad.
 
+   **RE-VERIFIED 2026-09-16 against Microsoft's live pages, not restated.** This
+   decision rests on version numbers that rot, and a floor argued from a stale
+   table is a floor argued from nothing. Read again that day:
+
+       Current Channel              2608 (20326.20144)
+       Monthly Enterprise           2608 / 2607 / 2606
+       Semi-Annual Enterprise       2608 / 2607 / 2606
+       lowest SUPPORTED anywhere    2606        vs 2601 required
+       Mac                          16.112.4    vs 16.105 required
+                                    "Only the most recently released version
+                                     listed below is supported."
+
+   Nothing had moved since 2026-09-13. Re-run it before submission rather than
+   quoting this block; if a channel ever drops below 2601 the floor is wrong and
+   that is submission-blocking. **And a round cannot do this check** — see the
+   note under the round loop: `supports()` reads what the HOST advertises, and
+   the web host reported 1.1 through 1.10 long before the floor moved.
+
    The original framing of this decision follows.
 
    It declared PowerPointApi **1.4**; the product is whole only at **1.10**. Three tiers

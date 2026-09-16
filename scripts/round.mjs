@@ -819,7 +819,35 @@ export async function sideloadAddIn(sh, sleep, manifest = MANIFEST_PATH) {
   click(mine);
   await sleep(5000);
 
-  const manage = step("Manage My Add-ins", /button "Manage My Add-ins"/);
+  // THE DIALOG'S PANEL LOADS INTERMITTENTLY, AND MICROSOFT SHIPS THE REMEDY.
+  //
+  // On 2026-09-16 this walk gave up twice at `no 'Manage My Add-ins' control`
+  // and stopped the cycle — `addin-missing` is outside `RECOVERABLE_STOPS`, so
+  // that is a night ended. The control had not been renamed. The Office Add-ins
+  // dialog opens its chrome (`tab "MY ADD-INS"`, `tab "STORE"`) and then loads
+  // its CONTENTS into an iframe, and when that load fails the iframe is empty:
+  // no `Manage My Add-ins`, no add-in list, and a `button "Retry"` sitting there
+  // because Microsoft expects this.
+  //
+  // Established three ways that day rather than inferred:
+  //   - the walk failed on an empty panel, and a snapshot showed the iframe bare
+  //   - clicking `Retry` BY HAND made `Manage My Add-ins` appear at once, and
+  //     the rest of the walk completed from there — the add-in came back
+  //   - later the same session the walk succeeded UNAIDED, which is what
+  //     intermittent means and is why "it was renamed" was never the answer
+  //
+  // One retry, not a loop: a panel that fails twice is not the flake this is
+  // for, and `giveUp` still dismisses whatever is open on every exit.
+  let manage = step("Manage My Add-ins", /button "Manage My Add-ins"/);
+  if (!manage) {
+    const retry = step("Retry", /button "Retry"/);
+    if (retry) {
+      console.log("  the add-ins dialog came up empty — clicking its Retry and looking again");
+      click(retry);
+      await sleep(6000);
+      manage = step("Manage My Add-ins", /button "Manage My Add-ins"/);
+    }
+  }
   if (!manage) return giveUp("no `Manage My Add-ins` control");
   click(manage);
   await sleep(5000);
