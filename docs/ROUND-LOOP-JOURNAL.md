@@ -8314,3 +8314,53 @@ it never varied from, and a POSITIONAL GUESS section that counted foreign picks
 without counting the guard that refused them. Both cost a trip through the
 archive to answer a question the tool was already holding the answer to. Both now
 print it.
+
+## Window 2026-09-16 — 24 autonomous hours — the one window where a round means what everyone assumed it meant
+
+**Preconditions, recorded because this window's whole value rests on them.**
+
+    tree clean                                    yes
+    HEAD                                          1f186b1
+    https://ssf-chart.../build.json               1f186b1 · 2026-09-13 14:18Z
+    git diff --name-only v0.6.1..HEAD -- src manifest.xml manifest-prod.xml vite.config.ts
+                                                  (empty)
+
+**deployed == HEAD == the bytes inside v0.6.1.** Six commits separate the tag
+from HEAD and not one of them touches the shipped bundle: they are tests, docs,
+CI and Stryker config. So a round run in this window is evidence about **what a
+user actually installs**, which no round in the 454-round archive has ever been.
+The archive stops at 454 / `454303d` / 2026-09-10; v0.6.1 has zero rounds.
+
+**THE FREEZE, for the length of the window.** Nothing under `src/`,
+`manifest*.xml` or `vite.config.ts` is committed. Commits to `scripts/`,
+`test/` and `docs/` are batched BETWEEN cycles, never during one. The reason is
+mechanical rather than tidy: a push moves HEAD, Pages redeploys, and
+`round.mjs` refuses with `site-behind` until the stamp catches up — so a commit
+at hour three does not merely risk the property above, it stops the loop. An
+agent that "fixes something small" mid-cycle spends the rest of the window
+measuring a build nobody can ship.
+
+**A CORRECTION, made before any round ran rather than after.** The plan for this
+window claimed the 1.10 floor gave rounds a new invariant to confirm — that
+`canRotate()` is now always true, so the picture fallback can never fire. That
+is not something a round can see. `supports()` is
+`Office.context.requirements.isSetSupported(...)` (`powerpoint.ts:9734`): it
+reads what the HOST advertises, and PowerPoint on the web has reported
+`[1.1 … 1.10]` since long before the floor moved. The manifest floor governs
+INSTALLABILITY and is invisible to this instrument. It can only be desk-checked
+against Microsoft's version tables, which is a separate block of this window and
+not a round.
+
+**Six rounds, capped, and the cap is the point.** The archive says novelty has
+plateaued — "nothing new in the trace — 140 known signature(s)" three legs
+running, and nine identical rounds on `eba1c4d` returned all-zero skipped and
+all-zero failed. Six rounds mined through the five-part gate beat thirty
+archived and unread. Rounds 7-30 would produce p-values nobody reads, on a
+question the archive already answers.
+
+**Staged manifest refreshed first.** `C:\OfficeAddins\ssf-charts-manifest-prod.xml`
+held `Version 1.0.0.0` / floor `1.4`, dated 2026-09-13 09:24 — before both floor
+raises and before the version bump. Now byte-identical to the repo's
+`manifest-prod.xml`: `1.0.1.0` / floor `1.10`. SSF Charts is staged in that
+catalog and has never been ADDED in PowerPoint, so nothing was consuming the
+stale copy; this only means the add-in is the real one whenever it is added.
