@@ -1,22 +1,40 @@
 /**
- * IS IT THE TEXT BOXES? The hypothesis behind BACKLOG item 24, tested.
+ * WHY DOES `table` NOT DRAW? A bench for BACKLOG item 24 — and a record of two
+ * hypotheses it has already killed.
  *
  * `table` is the one Elements button that does not draw on PowerPoint on the
- * web. The pane names the failure itself, four times across 2026-09-17 and
- * twice consecutively on a machine that had just run a clean three-leg cycle:
+ * web. The pane names the failure itself, five times now, the last of them on a
+ * host answering a bare read in 141ms where the other four Elements drew in
+ * 11-43s and this bench completed 16 of 16 trials:
  *
  *   Failed: PowerPoint did not respond while drawing shapes 1-10 of 23 (45s)
  *   | at=drawing the chart's shapes
  *
- * IT IS NOT SHAPE COUNT. `harvey` is 24 shapes and finishes in 11 seconds;
- * `table` is 23 and dies on its first batch of ten. `SHAPES_PER_SYNC` is 10, so
- * both send the host the same number of shapes in the same first sync. What
- * differs is COMPOSITION — harvey's first ten are `harvey-ring` plus nine
- * `harvey-fill-*`, every one a geometric shape; the table's are `rule-top`,
- * `rule-header` and EIGHT `cell-text-*`, i.e. eight `addTextBox` calls.
+ * So it is DETERMINISTIC, not the host's weather. That much is settled.
  *
- * That is a hypothesis with one supporting comparison, on one host, where
- * nothing was varied deliberately. This varies it.
+ * WHAT THIS BENCH HAS ESTABLISHED, in order:
+ *
+ *   1. COMPOSITION — REFUTED. Ten text boxes against ten rectangles is 571ms
+ *      against 419ms, 1.3x. Not a cause.
+ *   2. STATEMENT COUNT — SUPPORTED, AND IT IS NOT THE ANSWER. The same ten
+ *      shapes styled the way `addText` styles them cost 1641ms against 498ms
+ *      unstyled: 3.4x for identical geometry. `SHAPES_PER_SYNC` counts SHAPES
+ *      and the cost is statements, which is worth knowing on its own. But
+ *      1.6 seconds is not the 45 the table dies at, so it explains a cost and
+ *      not a failure.
+ *   3. THE EMPTY CORNER CELL — REFUTED. `buildTableScene` emits a text node for
+ *      every cell including the blank one at 0,0, and the failed insert's own
+ *      shapes read back with `cell-text-0-0` carrying `""`. No other Element has
+ *      one. Adding exactly that to the styled batch: 1628ms against 1641ms.
+ *      Nothing.
+ *
+ * SO THE CAUSE IS NOT IN THE SHAPES. The table's first batch, reproduced as
+ * faithfully as this bench can reproduce it, completes in 1.6 seconds; the real
+ * one does not complete in 45. The difference is something the renderer does
+ * around the adds — the slide reference it draws onto, the names it sets, the
+ * box geometry, or something outside `addText` entirely. The next arm should
+ * close one of those, and the one after that should stop modelling and
+ * instrument the real path instead.
  *
  * WHY IT IS A SEPARATE SCRIPT AND NOT A HOST-PROBE QUESTION. `host-probe.ts`
  * ships, and its questions run in every round; a question earns that cost by
@@ -51,8 +69,63 @@ export const BATCH = 10;
  */
 export const KINDS = [
   { kind: "rect", what: "10 geometric rectangles — harvey's first batch in kind" },
-  { kind: "text", what: "10 text boxes" },
-  { kind: "mixed", what: "2 lines + 8 text boxes — the table's real first batch" },
+  { kind: "text", what: "10 BARE text boxes — addTextBox and nothing else" },
+  { kind: "mixed", what: "2 lines + 8 bare text boxes — the table's batch in SHAPES" },
+  {
+    kind: "styled",
+    what: "2 lines + 8 text boxes STYLED the way addText styles them — the table's batch in STATEMENTS",
+  },
+  { kind: "empty", what: "the styled batch with ONE empty string — the table's batch EXACTLY, corner cell and all" },
+];
+
+/**
+ * Which pair the verdict turns on, and what it is a hypothesis ABOUT.
+ *
+ * Declared rather than hard-coded into `summarise` because this file has now
+ * carried three hypotheses and will carry more: composition (refuted at 1.3x),
+ * statement count (supported at 3.4x, and 1.6s is not the 45s the table dies
+ * at, so it explains a cost and not the failure), and now the empty cell.
+ *
+ * `test` against `control` must differ in ONE thing. Here that is the text of a
+ * single box: `cell-text-0-0`, the blank corner of the table header, is the one
+ * `addTextBox("")` in the first batch, and no other Element has one.
+ */
+export const HYPOTHESIS = {
+  test: "empty",
+  control: "styled",
+  about: "an empty-string text box",
+  soWhat: "the table's first batch is the styled batch plus one empty cell, and only the table has one",
+};
+
+/**
+ * The properties `addText` sets on every text node, in its order.
+ *
+ * THE POINT OF THE FOURTH KIND, and the reason the first three refuted the
+ * wrong hypothesis. `SHAPES_PER_SYNC` counts SHAPES; this repo has already
+ * measured that a whole text node is **20 statements** and a rect **7**
+ * (`docs/BACKLOG.md`, the in-place update work). So the table's first batch and
+ * harvey's first batch are both "ten shapes" and are ~174 and ~70 statements —
+ * two and a half times apart in the quantity that actually crosses to the host.
+ *
+ * A bare `addTextBox` is one statement, which is why `text` and `mixed` came
+ * back at 555ms and 505ms and refuted composition. They were not the table's
+ * batch; they were its shape COUNT wearing its name. This kind is the batch.
+ */
+export const STYLED_STATEMENTS = [
+  "sh2.fill.clear()",
+  "sh2.lineFormat.visible = false",
+  "tf.wordWrap = false",
+  "tf.autoSizeSetting = PowerPoint.ShapeAutoSize.autoSizeNone",
+  "tf.leftMargin = 0",
+  "tf.rightMargin = 0",
+  "tf.topMargin = 0",
+  "tf.bottomMargin = 0",
+  "tf.verticalAlignment = PowerPoint.TextVerticalAlignment.middle",
+  "font.size = 11",
+  'font.color = "#1A202C"',
+  "font.bold = false",
+  'font.name = "Segoe UI"',
+  "tf.textRange.paragraphFormat.horizontalAlignment = PowerPoint.ParagraphHorizontalAlignment.left",
 ];
 
 /**
@@ -80,12 +153,26 @@ export const trialScript = (kind, n = BATCH, budgetMs = TRIAL_BUDGET_MS) => {
   const addRect = `sh.addGeometricShape(PowerPoint.GeometricShapeType.rectangle, ${box})`;
   // `mixed` reproduces rule-top/rule-header plus eight cell texts: the first two
   // are lines, the rest text, which is the order `buildTableScene` emits.
+  const rule = "sh.addLine(PowerPoint.ConnectorType.straight, { left: 20, top: 20 + i * 30, width: 900, height: 0.5 })";
+  const styledBody = (text) =>
+    `{ const sh2 = sh.addTextBox(${text}, ${box}); const tf = sh2.textFrame; const font = tf.textRange.font; ` +
+    STYLED_STATEMENTS.join("; ") +
+    "; }";
+  const styledText = styledBody('"cell " + i');
+  // The corner cell, and only it: `buildTableScene` emits a text node for every
+  // cell including the blank one at 0,0. Everything else in this batch is
+  // identical to `styled`, so the pair differs in one string.
+  const emptyText = `if (i === 2) ${styledBody('""')} else ${styledBody('"cell " + i')}`;
   const body =
     kind === "text"
       ? `for (let i = 0; i < ${n}; i++) { ${addText}; }`
       : kind === "rect"
         ? `for (let i = 0; i < ${n}; i++) { ${addRect}; }`
-        : `for (let i = 0; i < ${n}; i++) { if (i < 2) { sh.addLine(PowerPoint.ConnectorType.straight, { left: 20, top: 20 + i * 30, width: 900, height: 0.5 }); } else { ${addText}; } }`;
+        : kind === "styled"
+          ? `for (let i = 0; i < ${n}; i++) { if (i < 2) { ${rule}; } else ${styledText} }`
+          : kind === "empty"
+            ? `for (let i = 0; i < ${n}; i++) { if (i < 2) { ${rule}; } else { ${emptyText} } }`
+            : `for (let i = 0; i < ${n}; i++) { if (i < 2) { ${rule}; } else { ${addText}; } }`;
   return (
     "async () => { const t0 = Date.now(); try { " +
     "await Promise.race([ PowerPoint.run(async (c) => { " +
@@ -175,29 +262,41 @@ export function summarise(results) {
       medianMs: median(done.map((r) => r.ms)),
     };
   }
-  const rect = by.rect;
-  const text = by.text;
-  const thin = KINDS.some((k) => by[k.kind].completed < 2);
+  // `styled` AGAINST `mixed` IS THE COMPARISON, because they are the same ten
+  // shapes in the same composition and differ ONLY in the property writes —
+  // which is the statement count. `rect` and `text` stay as the controls that
+  // showed shape count and composition were not the variable.
+  // The declared pair, differing in one thing. See HYPOTHESIS.
+  const control = by[HYPOTHESIS.control];
+  const test = by[HYPOTHESIS.test];
+  const thin = KINDS.some((k) => by[k.kind].completed < 2 && k.kind !== HYPOTHESIS.test);
   let verdict;
-  if (text.completed === 0 && rect.completed >= 2)
+  if (test.completed === 0 && control.completed >= 2)
     verdict = {
       code: 0,
-      says: "STRONGER THAN SLOWER: every text-box batch failed to complete while the rectangles did. The composition claim holds in its sharpest form.",
+      says:
+        `STRONGER THAN SLOWER: no \`${HYPOTHESIS.test}\` batch completed while \`${HYPOTHESIS.control}\` — the same ` +
+        `batch without ${HYPOTHESIS.about} — completed ${control.completed}/${control.trials} at ${control.medianMs}ms. ` +
+        `The cause is ${HYPOTHESIS.about}, and ${HYPOTHESIS.soWhat}.`,
     };
-  else if (thin)
+  else if (thin || test.completed < 2)
     verdict = {
       code: 2,
       says: "NOT ENOUGH COMPLETED TRIALS to compare. Fewer than two of some kind finished; re-run on a host that is answering.",
     };
-  else if (text.medianMs > rect.medianMs * 2)
+  else if (test.medianMs > control.medianMs * 2)
     verdict = {
       code: 0,
-      says: `SUPPORTED: text ${text.medianMs}ms against rect ${rect.medianMs}ms for the same batch size, a ${(text.medianMs / rect.medianMs).toFixed(1)}x difference.`,
+      says:
+        `SUPPORTED: \`${HYPOTHESIS.test}\` ${test.medianMs}ms against \`${HYPOTHESIS.control}\` ${control.medianMs}ms — ` +
+        `${(test.medianMs / control.medianMs).toFixed(1)}x, and the batches differ only in ${HYPOTHESIS.about}.`,
     };
   else
     verdict = {
       code: 1,
-      says: `REFUTED: text ${text.medianMs}ms against rect ${rect.medianMs}ms is not the gap the hypothesis needs. Composition is not what makes the table's batch fail — look elsewhere.`,
+      says:
+        `REFUTED: \`${HYPOTHESIS.test}\` ${test.medianMs}ms against \`${HYPOTHESIS.control}\` ${control.medianMs}ms is not ` +
+        `the gap the hypothesis needs. ${HYPOTHESIS.about} is not what makes the table's batch fail — look elsewhere.`,
     };
   return { by, verdict };
 }
