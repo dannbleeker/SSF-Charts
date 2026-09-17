@@ -63,6 +63,14 @@ const DIR = "C:\\devtools\\SSF-Charts\\.pw-session";
  */
 export const GROUP_NAME = "PowerChart";
 
+/**
+ * How long an insert must have been quiet before "it has stopped changing" is
+ * believed. See `settle` — the gap between the draw sync and the grouping sync
+ * is a window in which a finished-looking set of loose parts is the middle of
+ * an insert, and this is the floor under how long that window is allowed to be.
+ */
+export const QUIESCE_FLOOR_MS = 24_000;
+
 export const ELEMENTS = [
   { el: "harvey", expect: /harvey/i },
   { el: "check", expect: /checkbox/i },
@@ -160,6 +168,17 @@ export function judge({ el, expect }, before, after, clicked) {
     // Measured on 2026-09-17: a slide holding four correct descriptions on four
     // `PowerChart` groups, and beside them sixty loose parts from inserts that
     // never grouped. This probe called that 5 of 5 failing to describe.
+    // AND "NEVER GROUPED" IS NOT SOMETHING THIS CAN SEE. The first version of
+    // this branch said it was, and the evidence file said it after that: loose
+    // parts with no group were reported as the grouping refusal. They are
+    // equally a draw that STOPPED — `SHAPES_PER_SYNC` is 10, so a 23-shape
+    // element whose host went quiet after the first batch leaves exactly this.
+    // The table element's ten parts on 2026-09-17 were read as a refusal and
+    // were the first sync of a draw the pane had already reported dying in.
+    //
+    // So the verdict names the OBSERVATION — no group formed — and lists the
+    // two causes without choosing. The pane's own status line is what chooses,
+    // and this probe does not read it.
     const grouped = added.some((s) => s.name === GROUP_NAME);
     return {
       el,
@@ -168,7 +187,7 @@ export function judge({ el, expect }, before, after, clicked) {
       ungrouped: !grouped,
       why: grouped
         ? `${added.length} shape(s) landed and grouped, and the group carries no altTextDescription`
-        : `${added.length} loose shape(s) landed and NEVER GROUPED — the description has nowhere to live, so this is the grouping refusal, not the 1.10 write`,
+        : `${added.length} loose shape(s) landed and NO GROUP FORMED, so there was nowhere to write the description — either the host refused to group, or the draw stopped before it got there. Read the pane's status line to tell those apart; this cannot.`,
       added: added.length,
     };
   }
@@ -241,7 +260,11 @@ export function summarise(results) {
     failed,
     ungrouped: of("ungrouped"),
     undescribed: of("undescribed", "mismatched"),
-    absent: of("nothing-landed", "button"),
+    absent: of("nothing-landed"),
+    // Kept apart from `absent`: "the pane would not offer the button" and "the
+    // click was taken and nothing followed" were printed under one line that
+    // asserted the click had been accepted, which is false of the first.
+    unclickable: of("button"),
     unasked,
     code: failed.length ? 1 : unasked.length ? 2 : 0,
   };
@@ -339,34 +362,68 @@ async function main() {
    */
   const settle = async (before, budgetMs = 60_000) => {
     const started = Date.now();
-    const had = new Set((before ?? []).map((s) => s.id));
+    // NO DIFF IS POSSIBLE WITHOUT A BEFORE. `before ?? []` made every shape on
+    // the slide look new, so the first read satisfied "something was added" and
+    // the quiesce test compared a set that never changes — it stopped about 5s
+    // after the click and handed `judge` a full slide as the added set. `judge`
+    // marks a null `before` silent whatever comes back, so there is nothing to
+    // wait for: take one read for the record and go.
+    if (!Array.isArray(before)) {
+      await sleep(4000);
+      return { after: readAlt(pw("eval", readAltScript(), ref)), waitedMs: Date.now() - started, settled: false };
+    }
+    const had = new Set(before.map((s) => s.id));
     let last = null;
     let previousIds = null;
+    let stable = 0;
+    let settled = false;
     while (Date.now() - started < budgetMs) {
       await sleep(4000);
       const seen = readAlt(pw("eval", readAltScript(), ref));
       if (!Array.isArray(seen)) continue;
       last = seen;
       const added = seen.filter((s) => !had.has(s.id));
-      if (added.some((s) => String(s.alt ?? "").trim())) break;
+      // The terminal state: a description arrived. More waiting cannot unset it.
+      if (added.some((s) => String(s.alt ?? "").trim())) {
+        settled = true;
+        break;
+      }
       const ids = added
         .map((s) => s.id)
         .sort()
         .join(",");
-      if (added.length && previousIds === ids) break;
+      stable = added.length && previousIds === ids ? stable + 1 : 0;
       previousIds = ids;
+      // QUIESCENCE NEEDS MORE THAN TWO READS, and a floor under the clock.
+      //
+      // The renderer commits the parts on one sync, re-reads, and only then
+      // commits `addGroup` + the name + the alt text on a SECOND sync. Between
+      // those an outside reader sees a stable set of loose parts and no group —
+      // identical to a grouping refusal. Two consecutive reads is 8 seconds, and
+      // this host's own evidence file records reads stalling 45-60s, so 8s was
+      // inside the ordinary gap rather than past it. Three stable reads AND 24
+      // seconds elapsed is still far short of the budget and no longer sits in
+      // the middle of a normal insert.
+      if (stable >= 2 && Date.now() - started >= QUIESCE_FLOOR_MS) {
+        settled = true;
+        break;
+      }
     }
-    return { after: last, waitedMs: Date.now() - started };
+    return { after: last, waitedMs: Date.now() - started, settled };
   };
   const results = [];
   for (const spec of ELEMENTS) {
     const before = readAlt(pw("eval", readAltScript(), ref));
     const clicked = /"?(clicked|disabled|no-button)"?/.exec(pw("eval", clickElementScript(spec.el), ref))?.[1] ?? "?";
-    const { after, waitedMs } = await settle(before);
+    const { after, waitedMs, settled } = await settle(before);
     const verdict = judge(spec, before, after, clicked);
     results.push(verdict);
     const mark = verdict.ok ? "ok  " : verdict.silent ? "----" : "FAIL";
-    const secs = `${Math.round(waitedMs / 1000)}s`;
+    // SAY WHETHER THE SLIDE HAD STOPPED CHANGING. Without it, a verdict read off
+    // the last successful read of a budget that ran out looks exactly like one
+    // read off a finished insert — which is how "no group formed" gets reported
+    // for an element that was still being drawn.
+    const secs = `${Math.round(waitedMs / 1000)}s${settled ? "" : ", STILL CHANGING when the budget ran out"}`;
     const said = verdict.ok ? `${JSON.stringify(verdict.alt)} (${secs})` : `${verdict.why} (waited ${secs})`;
     console.log(`  ${mark} ${spec.el.padEnd(7)} ${said}`);
   }
@@ -379,16 +436,23 @@ async function main() {
     console.log("`altTextDescription`.");
     process.exit(2);
   }
-  const { carried, ungrouped, undescribed, absent, unasked, code } = summarise(results);
+  const { carried, ungrouped, undescribed, absent, unclickable, unasked, code } = summarise(results);
   console.log(`${carried.length} of ${results.length} elements carried an altTextDescription.`);
   if (unasked.length) {
     console.log(`${unasked.length} were never asked — the host went quiet on ${unasked.join(", ")}.`);
     console.log("Those are not verdicts. Re-run until every element has been asked once.");
   }
   if (ungrouped.length) {
-    console.log(`${ungrouped.length} never grouped: ${ungrouped.join(", ")}.`);
-    console.log("Their parts landed loose, so there was no group to describe. That is the host");
-    console.log("refusing to group — the gate's `grouping` line, not the 1.10 write.");
+    console.log(`${ungrouped.length} produced no group: ${ungrouped.join(", ")}.`);
+    console.log("Their parts landed loose, so there was nowhere to write a description. Either the");
+    console.log("host refused to group or the draw stopped before grouping — READ THE PANE'S STATUS");
+    console.log("LINE, which says which. Both look identical from a shape list, and on 2026-09-17");
+    console.log("one sync's worth of a stalled 23-shape table was recorded as a grouping refusal.");
+  }
+  if (unclickable.length) {
+    console.log(`${unclickable.length} could not be clicked at all: ${unclickable.join(", ")}.`);
+    console.log("The pane offered no usable button, so nothing was asked of the host. This is the");
+    console.log("pane, not the 1.10 write — check the Elements tab rendered.");
   }
   if (absent.length) {
     console.log(`${absent.length} put nothing on the slide: ${absent.join(", ")}.`);

@@ -252,10 +252,16 @@ export const KNOWN_ISSUES = {
     "property is applied. Closed COMPLETED. THE MOST EXPENSIVE ENTRY IN THIS SWEEP, because it named the axis our own check " +
     "omitted: `an update follows a moved chart` moved a probe chart 60pt across and 40pt down and then compared x ALONE, " +
     "from the day it was written — the move check and the drift check after the redraw, both. A host doing exactly what " +
-    "this issue describes would have been reported as 19 of 19 for as long as it did it. Fixed 2026-09-17: both assertions " +
-    "read both axes now, and the fake host grew `faults.ignoresTopWrites` so the hole cannot come back unnoticed — without " +
-    "the y clause that fault passes, with the message `moved 60x40pt and the update redrew it there, so the origin round " +
-    "trip held`. `moveShapeBy` is the call, and it sets left and top in one sync.",
+    "this issue describes would have been reported as 19 of 19 for as long as it did it. `moveShapeBy` is the call, and it " +
+    "sets left and top in one sync. Fixed 2026-09-17, then fixed AGAIN the same day after a review found the first fix " +
+    "inert: adding the y clause to the existing `skipped: true` return bought nothing, because `scenarioBlame` answers " +
+    "`not-run` for anything skipped and `describeSelfTest` drops it out of `ran` — the headline came back `17 of 17 " +
+    "scenarios passed · 2 skipped (host cannot run them)` with `selfTestNeedsAttention` FALSE, which the pane paints " +
+    "green. The two cases are now split on the evidence that separates them: NEITHER axis moved is a skip (nothing was " +
+    "measured), ONE axis moved is a failure (the host answered, and the answer was wrong). Guarded from both ends — " +
+    "`faults.ignoresTopWrites` drives the partial move and asserts it is NOT skipped; `faults.ignoresLeftWrites` beside " +
+    "it drives the declined move and asserts it IS; and `judgeOriginHeld` is exported so the redraw half can be tested " +
+    "directly, which no fault can reach because the fake builds a shape's position from its creation box.",
   6948:
     "PowerPoint `customXmlParts.getByNamespace(...).getItemOrNullObject` THROWS for an id that is not there, instead of " +
     "returning a null object the way Excel and Word do. Open, `Needs: triage`, desktop. CORROBORATION FOR THIS REPO'S OWN " +
@@ -268,14 +274,19 @@ export const KNOWN_ISSUES = {
   4121:
     "`addLine` comes out bent when the box handed to it has a zero height or width, and the workaround Microsoft gave is to " +
     "RE-ASSIGN the dimension after creation (`const line = shapes.addLine(..., {height: 0, ...}); line.height = 0;`). Closed " +
-    "for inactivity, not fixed. EXPOSED BY CONSTRUCTION AND NOT OBSERVED: `addSegment` takes its `addLine` branch precisely " +
-    "when `w < 0.5 || h < 0.5`, which is every axis, gridline, rule and table divider this add-in draws, and it never " +
-    "re-assigns. Nothing in the archive reports a bent rule and the showcase deck renders straight ones — but the showcase " +
-    "is written by our own OOXML writer and never goes near `addLine`, so it is not evidence either way. Recorded with the " +
-    "workaround attached: if a bent axis is ever reported, the fix is one line and is already written down.",
+    "for inactivity, not fixed. NOT EXPOSED, AND AN EARLIER VERSION OF THIS ENTRY SAID IT WAS — corrected 2026-09-17 by a " +
+    "review that read the code the entry was describing. `addSegment` clamps before it calls anything: the box is " +
+    "`{ width: Math.max(w, 0.5), height: Math.max(h, 0.5) }` (`powerpoint.ts:11794`, unchanged since 78afcc9 on " +
+    "2026-07-06), seven lines above the branch, and `powerpoint.ts:11839` is the ONLY `shapes.addLine` call site in `src/`. " +
+    "So no zero dimension is ever handed to `addLine` and the issue's trigger cannot occur. The struck claim also " +
+    'misquoted the branch: it is `w < 0.5 || h < 0.5 || dashStyle !== "none" || !canRotate()`, not the first pair alone. ' +
+    "What the entry got right and keeps: a horizontal rule really does reach `addLine` with a 0.5pt height, the workaround " +
+    "if this ever bites is one re-assignment after creation, and the showcase deck is NOT evidence either way because it " +
+    "is written by our own OOXML writer and never goes near `addLine`.",
   4222:
     "`getSelectedShapes()` sometimes answers an EMPTY array while a shape is selected on the slide, web and desktop. Closed " +
-    "COMPLETED. Live exposure on the pane's newest path: `editSelectedChart` reads the selection the user made with a click, " +
+    "COMPLETED. Live exposure on the pane's newest path: `loadChartFromSelection` (`powerpoint.ts:3565`) reads the " +
+    "selection the user made with a click, " +
     "and an empty answer there is indistinguishable from 'nothing is selected' — the user clicks a chart, presses Edit, and " +
     "is told to select a chart. Already reported rather than swallowed (`edit the chart the user selected` is routine and " +
     "says which of the two it saw), and no retry is added on the strength of a closed issue: the rule here is that a " +
@@ -289,7 +300,8 @@ export const KNOWN_ISSUES = {
   3715:
     "`insertSlidesFromBase64` loses CENTRE ALIGNMENT on inserted text boxes. PowerPoint, web and desktop. Closed COMPLETED. " +
     "NO EXPOSURE ON THE PATH WE TAKE, and the distinction is one argument wide: the repro passes " +
-    "`formatting: useDestinationTheme`, and `insertDeckFromBase64` defaults to `KeepSourceFormatting` at both call sites. " +
+    "`formatting: useDestinationTheme`, and both of our call sites use `KeepSourceFormatting` — the `insertSlidesFromPptx` " +
+    "wrapper defaults to it (`powerpoint.ts:7626`) and `replaceSlideWithDeck` passes it explicitly (`powerpoint.ts:9575`). " +
     "Centred text is not incidental here — every chart title the fast path ships is centred — so if that default is ever " +
     "changed to follow the deck's theme, this issue is the cost of doing it. Checked rather than assumed on 2026-09-17.",
   6130:

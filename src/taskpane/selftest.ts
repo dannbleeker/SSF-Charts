@@ -1302,6 +1302,46 @@ export function updateLossNote(what: string, refusalsDuring: number, stillOnSlid
  * selection subsystem, and risking that to simulate a drag would cost more than
  * the check is worth.
  */
+/**
+ * Did the redraw keep the chart where the user left it?
+ *
+ * A chart that kept its origin redraws at the moved position; one that lost it
+ * snaps back to where it was first inserted, which is the symptom a user would
+ * report as "it jumped". Both axes, for the same reason the move check reads
+ * both: a chart that redrew at the right x and the ORIGINAL y has jumped too.
+ *
+ * EXPORTED SO IT CAN BE TESTED, in the manner of `elapsedLabel` above. Not a
+ * tidying: this decision was reachable from no test at all, because the only
+ * fault that models office-js#6183 (`ignoresTopWrites`) makes the scenario
+ * return at the move check long before it gets here — and the fake builds a
+ * shape's position from its creation box rather than through the setter, so no
+ * write-dropping fault can perturb a redraw. A review on 2026-09-17 demonstrated
+ * the hole by mutation: putting `worst` back to `Math.abs(drift.x)` left all 158
+ * tests in `selftest.test.ts` green. Half of "both assertions read both axes"
+ * could be reverted in silence. It cannot now.
+ *
+ * `worst` is Chebyshev — the largest single-axis error — because the tolerance
+ * it is compared against is quoted per axis. `snappedBack` compares Euclidean
+ * distances, which is the 2D form of the question it always asked: is the
+ * redrawn chart nearer to where it STARTED than to where it was moved to?
+ */
+export function judgeOriginHeld(
+  before: { left: number; top: number },
+  atMoved: { left?: number; top?: number },
+  redrawn: { left?: number; top?: number },
+): { drift: { x: number; y: number }; worst: number; snappedBack: boolean } {
+  const drift = {
+    x: Math.round((redrawn.left ?? 0) - (atMoved.left ?? 0)),
+    y: Math.round((redrawn.top ?? 0) - (atMoved.top ?? 0)),
+  };
+  const wasAt = Math.hypot((redrawn.left ?? 0) - before.left, (redrawn.top ?? 0) - before.top);
+  return {
+    drift,
+    worst: Math.max(Math.abs(drift.x), Math.abs(drift.y)),
+    snappedBack: wasAt < Math.hypot(drift.x, drift.y),
+  };
+}
+
 const dragThenUpdate: Scenario = async (prefix) => {
   const { found, blind, gap } = await probeCharts(prefix);
   const chart = leastLoadedChart(found, shapesDrawnOn);
@@ -1341,12 +1381,36 @@ const dragThenUpdate: Scenario = async (prefix) => {
   // not update left and top properties of selected shape simultaneously — only
   // the left property is updated". A check blind to the axis an upstream issue
   // names would report 19 of 19 while the defect shipped.
+  //
+  // AND A HALF-APPLIED MOVE IS NOT A SKIP. Adding the y clause to the existing
+  // `skipped: true` return was worth nothing: `scenarioBlame` answers "not-run"
+  // for anything skipped before it ever reads `ok`, `describeSelfTest` drops it
+  // out of `ran`, and the headline came back "17 of 17 scenarios passed · 2
+  // skipped (host cannot run them)" with `selfTestNeedsAttention` FALSE. The
+  // pane paints that green. Measured against `faults.ignoresTopWrites`, not
+  // reasoned about — and it is this file's own house defect, the one every
+  // other comment here is about: a check that cannot tell "the host would not
+  // answer" from "the host answered wrongly" reports the second as the first.
+  //
+  // So the two are split on the evidence that separates them. NEITHER axis
+  // moved: the host declined the move, nothing was measured, and the skip is
+  // honest — that is the case the original return was written for. ONE axis
+  // moved: the host took the call and applied half of it, which is an ANSWER,
+  // and a wrong one. It has to reach the failure column or nobody will look.
   const shifted = { x: Math.round(atMoved.target.left - before.left), y: Math.round(atMoved.target.top - before.top) };
-  if (Math.abs(shifted.x - DX) > 2 || Math.abs(shifted.y - DY) > 2)
+  const landed = { x: Math.abs(shifted.x - DX) <= 2, y: Math.abs(shifted.y - DY) <= 2 };
+  if (!landed.x && !landed.y)
     return {
       ok: false,
       skipped: true,
-      detail: `the move did not land (moved ${shifted.x}x${shifted.y}pt, wanted ${DX}x${DY}pt)`,
+      detail: `the host did not move the chart at all (moved ${shifted.x}x${shifted.y}pt, wanted ${DX}x${DY}pt), so the drag round trip is untested`,
+    };
+  if (!landed.x || !landed.y)
+    return {
+      ok: false,
+      detail:
+        `the host applied only PART of the move: ${shifted.x}x${shifted.y}pt against ${DX}x${DY}pt asked for. ` +
+        `The call was taken and one axis was dropped — office-js#6183. Not a skip: the host answered, and the answer was wrong.`,
     };
 
   const next = { ...atMoved.cfg, title: `${atMoved.cfg.title} (moved)` };
@@ -1358,19 +1422,7 @@ const dragThenUpdate: Scenario = async (prefix) => {
   if (!redrawn || typeof redrawn.target.left !== "number" || typeof redrawn.target.top !== "number")
     return { ok: false, detail: "the moved chart is no longer re-editable — its config did not survive the redraw" };
 
-  // THE ASSERTION. A chart that kept its origin redraws where the user left it;
-  // one that lost it snaps back to where it was first inserted, which is the
-  // symptom a user would report as "it jumped".
-  //
-  // On both axes for the same reason the move above is: a chart that redrew at
-  // the right x and the ORIGINAL y has jumped, and the user would say so.
-  const drift = {
-    x: Math.round(redrawn.target.left - atMoved.target.left),
-    y: Math.round(redrawn.target.top - atMoved.target.top),
-  };
-  const worst = Math.max(Math.abs(drift.x), Math.abs(drift.y));
-  const wasAt = Math.hypot(redrawn.target.left - before.left, redrawn.target.top - before.top);
-  const snappedBack = wasAt < Math.hypot(drift.x, drift.y);
+  const { drift, worst, snappedBack } = judgeOriginHeld(before, atMoved.target, redrawn.target);
   return {
     ok: worst <= 2,
     detail: snappedBack

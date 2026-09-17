@@ -274,6 +274,16 @@ export const faults = {
    */
   ignoresTopWrites: false,
   /**
+   * Take a write to `shape.left` and keep the old value. The sibling of
+   * `ignoresTopWrites`, and it exists for the OTHER half of the split in
+   * `dragThenUpdate`: with both set, the host declines the move entirely, which
+   * is a scenario that measured nothing and must stay a SKIP. A partial move is
+   * a wrong answer; no move at all is no answer. Without a fault for the second
+   * case, nothing stops a later edit turning every declined move into a red
+   * line against the product.
+   */
+  ignoresLeftWrites: false,
+  /**
    * Refuse this many `shape.load("id,left,top")` calls outright.
    *
    * The one load that asks WHERE a chart landed. See the shape's `load` for
@@ -1218,6 +1228,8 @@ export function makeShape(
       return ownLeft;
     },
     set left(v: number) {
+      // See faults.ignoresLeftWrites — the sibling of ignoresTopWrites.
+      if (faults.ignoresLeftWrites) return;
       ownLeft = v;
     },
     get top() {

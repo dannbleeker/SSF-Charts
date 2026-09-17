@@ -118,6 +118,9 @@ describe("what the Elements probe concludes", () => {
     const bare = judge(harvey, [], [shape("2", GROUP_NAME, "")], "clicked");
     const s = summarise([none, loose, bare]);
     expect(s.absent).toEqual(["harvey"]);
+    // A button the pane never offered is not "the click was accepted".
+    expect(summarise([judge(harvey, [], [], "disabled")]).unclickable).toEqual(["harvey"]);
+    expect(summarise([judge(harvey, [], [], "disabled")]).absent).toEqual([]);
     expect(s.ungrouped).toEqual(["harvey"]);
     expect(s.undescribed).toEqual(["harvey"]);
     // All three are still failures. Naming the cause must not excuse any of them.
@@ -157,7 +160,16 @@ describe("what the Elements probe concludes", () => {
     const loose = judge(harvey, [], [shape("2", "harvey-ring"), shape("3", "harvey-fill-f0")], "clicked");
     expect(loose.ok).toBe(false);
     expect(loose.ungrouped).toBe(true);
-    expect(loose.why).toMatch(/NEVER GROUPED/);
+    expect(loose.why).toMatch(/NO GROUP FORMED/);
+    // AND IT MUST NOT PICK A CAUSE. Loose parts with no group are equally an
+    // insert the host refused to group and a draw that stopped before reaching
+    // the grouping sync — `SHAPES_PER_SYNC` is 10, so a stalled 23-shape table
+    // leaves exactly this. The first version of this message asserted the
+    // refusal, and the evidence file then repeated it about a table whose ten
+    // parts were one sync of a draw the pane had already reported dying in.
+    expect(loose.why, "names both causes").toMatch(/refused to group/);
+    expect(loose.why, "names both causes").toMatch(/draw stopped/);
+    expect(loose.why, "does not assert one of them").not.toMatch(/this is the grouping refusal/);
 
     // The other side: the group DID form and carries nothing. That one really
     // is the regression this probe exists for, and must not be excused.

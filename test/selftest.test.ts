@@ -41,6 +41,7 @@ import {
   runSelfTest,
   describeSelfTest,
   scenarioBlame,
+  judgeOriginHeld,
   selfTestNeedsAttention,
   setSelfTestRasterizer,
   SCENARIO_NAMES,
@@ -580,12 +581,85 @@ describe("the scenarios the selection API unlocked", () => {
     vi.unstubAllGlobals();
     installHost([makeSlide("s1")]);
     faults.ignoresTopWrites = true;
-    const bad = byName(await runSelfTest("probe"))["an update follows a moved chart"];
+    const all = await runSelfTest("probe");
+    const bad = byName(all)["an update follows a moved chart"];
     faults.ignoresTopWrites = false;
     expect(bad.ok, `reported ok against a host that drops every write to top: ${bad.detail}`).toBe(false);
     // It says what it saw, including the axis that did not move, so the next
     // reader is not left guessing which half failed.
-    expect(bad.detail).toMatch(/wanted 60x40pt/);
+    expect(bad.detail).toMatch(/wanted 60x40pt|against 60x40pt/);
+
+    // AND IT MUST REACH THE FAILURE COLUMN. `expect(ok).toBe(false)` alone is
+    // true of every SKIP in this file, and the first version of this test
+    // asserted only that — against a scenario that returned `skipped: true`.
+    // The run then reported "17 of 17 scenarios passed · 2 skipped (host cannot
+    // run them)" and the pane painted it green, because `selfTestNeedsAttention`
+    // ignores a non-blind skip. The test passed and the defect was invisible.
+    //
+    // These three lines are the ones that were missing. The sibling test at
+    // `selects the wrong shape` has carried the first of them all along.
+    expect(bad.skipped, "filed as a capability gap rather than a wrong answer").toBeFalsy();
+    expect(scenarioBlame(bad), "a skipped scenario is blamed `not-run` and never read again").not.toBe("not-run");
+    expect(selfTestNeedsAttention(all), "the run reported nothing to look at").toBe(true);
+    // The headline names it, rather than counting it in "N skipped (host cannot
+    // run them)". Before the split it read "17 of 17 scenarios passed · 2
+    // skipped (host cannot run them)".
+    const said = describeSelfTest(all);
+    expect(said, said).toMatch(/an update follows a moved chart/);
+    expect(said, said).not.toMatch(/no defects of ours/);
+  });
+
+  it("judges the redraw on BOTH axes, not just x", () => {
+    // The half of `an update follows a moved chart` no fault can reach: the
+    // fake builds a shape's position from its creation box rather than through
+    // the setter, so nothing that drops writes can perturb a redraw. Until this
+    // test, putting `worst` back to `Math.abs(drift.x)` left all 158 tests in
+    // this file green — half of "both assertions read both axes" was revertible
+    // in silence.
+    const before = { left: 100, top: 200 };
+    const atMoved = { left: 160, top: 240 };
+
+    // Redrawn exactly where it was left: held, on both axes.
+    expect(judgeOriginHeld(before, atMoved, { left: 160, top: 240 })).toMatchObject({ worst: 0, snappedBack: false });
+
+    // The office-js#6183 shape of it — right x, ORIGINAL y. `worst` must see the
+    // 40pt an x-only check would miss.
+    const halfHeld = judgeOriginHeld(before, atMoved, { left: 160, top: 200 });
+    expect(halfHeld.drift).toEqual({ x: 0, y: -40 });
+    expect(halfHeld.worst, "x agreed, so an x-only check calls this held").toBe(40);
+
+    // The mirror: right y, original x. Symmetry is the point — an x-only check
+    // catches this one and misses the one above.
+    expect(judgeOriginHeld(before, atMoved, { left: 100, top: 240 }).worst).toBe(60);
+
+    // A full snap back to the insert point is named as such.
+    expect(judgeOriginHeld(before, atMoved, { left: 100, top: 200 }).snappedBack).toBe(true);
+
+    // Within tolerance is not a snap-back — the two must never both hold, or a
+    // passing run would carry the "it jumped" message.
+    const near = judgeOriginHeld(before, atMoved, { left: 161, top: 239 });
+    expect(near.worst).toBeLessThanOrEqual(2);
+    expect(near.snappedBack).toBe(false);
+  });
+
+  it("still SKIPS when the host declines the move outright", async () => {
+    // The other half of the split, and the reason the skip exists at all. A
+    // host that moves the chart on NEITHER axis has answered nothing, and
+    // calling that a defect would put a red line against the product for a
+    // host that declined to participate. Only a PARTIAL move is a wrong answer.
+    //
+    vi.unstubAllGlobals();
+    installHost([makeSlide("s1")]);
+    faults.ignoresTopWrites = true;
+    faults.ignoresLeftWrites = true;
+    const all = await runSelfTest("probe");
+    const declined = byName(all)["an update follows a moved chart"];
+    faults.ignoresTopWrites = false;
+    faults.ignoresLeftWrites = false;
+    expect(declined.ok).toBe(false);
+    expect(declined.skipped, `a declined move must stay a skip: ${declined.detail}`).toBe(true);
+    expect(declined.detail).toMatch(/did not move the chart at all/);
+    expect(scenarioBlame(declined)).toBe("not-run");
   });
 
   it("calls a host that stops answering after a select a known limitation, not a failure", async () => {

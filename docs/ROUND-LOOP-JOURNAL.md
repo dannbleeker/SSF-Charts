@@ -8624,9 +8624,49 @@ and not `top`). If this host does what that issue describes, that scenario goes
 red on the next finished round, and **that would be a true finding rather than a
 regression** — the scenario compared x alone from the day it was written, so a
 chart travelling half the distance the user asked for has been reported as 19 of
-19 for the whole archive. It is proven at the unit level: `faults.ignoresTopWrites`
-models the host, and without the new y clause that fault passes with "the origin
-round trip held". What is missing is the host's own answer.
+19 for the whole archive. What is missing is the host's own answer.
+
+> **THE PARAGRAPH ABOVE WAS FALSE WHEN IT WAS WRITTEN, AND IS TRUE NOW ONLY
+> BECAUSE THE CODE CHANGED UNDER IT.** An adversarial review of the same day's
+> diff drove `runSelfTest` against `faults.ignoresTopWrites` and measured what a
+> round would actually say:
+>
+>     ok=false, skipped=true, blame="not-run", selfTestNeedsAttention=false
+>     "Self-test — no defects of ours · 17 of 17 scenarios passed · 2 skipped
+>      (host cannot run them)."
+>
+> It did not go red. The y clause had been added to a return that already
+> carried `skipped: true`, and `scenarioBlame` answers `not-run` for anything
+> skipped before it ever reads `ok`; `describeSelfTest` then drops it out of
+> `ran` and files it beside `explode a degraded picture — no rasteriser`. The
+> pane paints that green. **The change moved the defect from the pass column to
+> the skip column, and I reported it as a move to the failure column.**
+>
+> This file is largely a record of one mistake made in new places, and that is
+> the mistake: a verdict that cannot tell "the host would not answer" from "the
+> host answered wrongly". I wrote the cure for it into `elements-probe.mjs` the
+> same afternoon, under a comment saying exactly that, and then shipped the
+> disease into `selftest.ts` four hours later.
+>
+> Fixed by splitting on the evidence that separates the two. NEITHER axis moved
+> → the host declined, nothing was measured, the skip is honest and is what the
+> original return was written for. ONE axis moved → the call was taken and half
+> applied, which is an answer; it now reaches the failure column as
+> `1 defect(s) of ours: an update follows a moved chart`.
+>
+> **And the test could not have caught it.** It asserted `expect(bad.ok).toBe(false)`
+> — true of every skip in the file. The sibling test twenty lines above has
+> carried `expect(bad.skipped, "reported as skipped rather than broken").toBeFalsy()`
+> all along, and I did not copy the one line that mattered. It now asserts the
+> skip flag, the blame, `selfTestNeedsAttention`, and the headline text; a second
+> test pins the other half through `faults.ignoresLeftWrites`, so a declined move
+> cannot be turned into a red line against the product either.
+>
+> One more hole the same review found: the redraw-drift half was reachable by no
+> test at all, because the fake builds a shape's position from its creation box
+> and no write-dropping fault can perturb a redraw. Reverting `worst` to
+> `Math.abs(drift.x)` left all 158 tests green. `judgeOriginHeld` is now exported
+> and tested directly, and that mutation fails.
 
 **One correction, made here rather than left standing.** Mid-recovery I reported
 that the browser death had taken the web sideload with it. It had not. The check
@@ -8637,13 +8677,25 @@ absent command. After the driver widened to 4632px the command was there. The
 recovery was widen, reopen the pane, clean the deck; no sideload was needed or
 performed.
 
-**A driver gap found while reading, and deliberately NOT changed tonight.** The
-"present but stale" sideload path in `needsSideload` requires `sightings >= 2`,
-and `commandWithoutPane` is a module-level counter that resets with the process.
-`recover` polls readiness inside one process and can reach it; a hand-run
-`node scripts/round.mjs` gets exactly one sighting and returns, so that path is
-unreachable from a single invocation. That is defensible for a pre-flight check
-— but it means a stale pane will never self-heal for someone running rounds by
-hand, and the refusal they see is `could not read the pane's build stamp`, which
-does not hint that a re-sideload is what they need. Written down rather than
-fixed at the end of a long session on a host that has failed four ways.
+**A driver observation, and the first version of it was wrong in both halves.**
+The "present but stale" sideload path in `needsSideload` requires
+`sightings >= 2`. What this entry said was that `recover` reaches it and a single
+invocation cannot. Neither is true, and a review checked both:
+
+- **`recover` never touches it.** It does not read readiness at all; the only
+  `commandWithoutPane++` is at `round.mjs:2121`, inside `attempt`.
+- **A single invocation reaches it fine — with `--retry`.** `main`'s
+  `for (let n = 0; ; n++)` loop at `round.mjs:4091` re-enters `attempt` up to
+  `max + 1` times in ONE process, calling `recover` between tries;
+  `commandWithoutPane` is module-level and survives that, and `pane-stale` and
+  `pane-closed` are both in `RECOVERABLE_STOPS`, so `shouldRetry` says yes to
+  the refusal a stale pane produces.
+
+**What is actually true is narrower and is about the DEFAULT.** `--retry`
+defaults to 0 (`round.mjs:4049`), so a bare `node scripts/round.mjs` — which is
+what was run three times tonight — makes exactly one attempt, records one
+sighting, and returns. The self-heal is there; it is simply not armed unless you
+ask for it, and the refusal that comes back, `could not read the pane's build
+stamp`, does not hint that `--retry 1` would have walked the sideload. Left
+unchanged: the fix is a documentation or default question, not a bug, and this
+is the end of a long session on a host that has failed four ways.
