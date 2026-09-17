@@ -98,15 +98,33 @@ export const clickElementScript = (el) =>
   `const b = document.getElementById(${JSON.stringify(el + "-insert")}); ` +
   'if (!b) return "no-button"; if (b.disabled) return "disabled"; b.click(); return "clicked"; }';
 
-/** `alt:[...]` -> the array, or null when the host refused. */
+/**
+ * `alt:[...]` -> the array, or null when the host refused.
+ *
+ * THE CLI ESCAPES THE QUOTES IT PRINTS. `--raw` returns the eval's string with
+ * `"` as `\"`, so the payload arrives as `[{\"id\":\"1\",...}]` and `JSON.parse`
+ * throws on it. Unescaped on 2026-09-17 after all five elements reported "the
+ * host would not list the slide" while the host was answering perfectly — the
+ * same slide read back four described shapes when asked by hand.
+ *
+ * That is this probe's own third self-inflicted wound in one session, and the
+ * worst of them: the other two refused to measure, and this one reported a
+ * FAILURE against a product that was working. A parser that cannot read the
+ * answer says the same thing as a feature that was never written.
+ */
 export function readAlt(out) {
-  const m = /alt:(\[.*\])/s.exec(String(out ?? ""));
-  if (!m) return null;
-  try {
-    return JSON.parse(m[1]);
-  } catch {
-    return null;
+  const m = /alt:(\[.*?\])\s*"?\s*$|alt:(\[.*\])/s.exec(String(out ?? ""));
+  const body = m?.[1] ?? m?.[2];
+  if (!body) return null;
+  for (const candidate of [body, body.replace(/\\"/g, '"')]) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // try the next spelling
+    }
   }
+  return null;
 }
 
 /**
@@ -138,10 +156,61 @@ async function main() {
     console.error("PLAYWRIGHT_CLI_JS is not set — nothing below was measured.");
     process.exit(2);
   }
-  const paneOut = pw("find", "--regex", '/tab "Chart"/');
-  const ref = /\[ref=([a-z0-9]+)\]/.exec(paneOut)?.[1];
+  // ANY OF THE PANE'S OWN TABS WILL DO, because the ref is only used to say
+  // WHICH FRAME to evaluate in — it is never clicked or read.
+  //
+  // This anchored on `tab "Chart"` alone, copied from `round.mjs`'s readiness
+  // check, and found nothing on 2026-09-17 against a pane that was open and
+  // healthy: the tabs on screen were `Elements`, `Agenda`, `Automation`. The
+  // driver's anchor works for the driver and is not a general way to find this
+  // pane. Reported as `no pane on screen`, which was false and would have sent
+  // the next reader to restart a browser that was fine.
+  //
+  // `Elements` first because it is the tab this probe needs open anyway.
+  // TWO TRAPS HERE, BOTH DOCUMENTED IN `round.mjs`'s `refFor`, AND THIS FILE
+  // WALKED INTO BOTH on 2026-09-17 by copying the SHAPE of that call without
+  // reading what it does.
+  //
+  //   1. `find` takes PLAIN TEXT. `--regex '/tab "Elements"/'` matches nothing,
+  //      while `find "Elements"` returns the line. The driver passes a JS regex
+  //      as a SECOND argument to `refFor` and applies it to the output itself;
+  //      it is not a CLI flag.
+  //   2. Take the ref from the MATCHING LINE, never the first ref in the
+  //      output. `find` prints the whole frame hierarchy above its hit, so the
+  //      first ref is the OUTER iframe — evaluating against it lands in the
+  //      OneDrive document, where `PowerPoint` is undefined, and every question
+  //      after that gets a confident wrong answer.
+  //
+  // Either bug alone produces "no pane" or "nothing landed" against a pane that
+  // is open and working, which is indistinguishable from the defect this probe
+  // exists to report.
+  const anchors = [/tab "Elements"/, /tab "Chart"/, /tab "Automation"/, /tab "Agenda"/];
+  let ref = null;
+  for (const pattern of anchors) {
+    const line = pw("find", String(pattern.source).replace(/^tab "|"$/g, ""))
+      .split("\n")
+      .find((l) => pattern.test(l));
+    ref = line ? (/ref=([a-z0-9]+)/.exec(line)?.[1] ?? null) : null;
+    if (ref) break;
+  }
   if (!ref) {
-    console.error("no pane on screen — open the deck and the add-in first. Nothing was measured.");
+    console.error(
+      `no pane frame found — looked for ${anchors.map((a) => a.source).join(", ")}. Open the deck and the add-in first. Nothing was measured.`,
+    );
+    process.exit(2);
+  }
+  // PROVE THE FRAME BEFORE TRUSTING IT. A ref that resolves to the wrong frame
+  // answers every later question with a plausible wrong answer — no Office, no
+  // buttons, and a verdict that reads as "the product did not insert anything".
+  const probe = pw(
+    "eval",
+    "() => (typeof PowerPoint !== 'undefined' ? 'office' : 'no-office') + '|' + (document.getElementById('harvey-insert') ? 'pane' : 'no-pane')",
+    ref,
+  );
+  if (!/office\|pane/.test(probe)) {
+    console.error(
+      `the frame found is not the add-in pane (${/(\w+\|\w+)/.exec(probe)?.[1] ?? "?"}). Nothing was measured.`,
+    );
     process.exit(2);
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

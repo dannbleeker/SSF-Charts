@@ -1,0 +1,32 @@
+{
+  "what": "The first host evidence for the only Office.js-reaching behaviour change in v0.6.1.",
+  "taken": "2026-09-17T10:40Z",
+  "build": "0fde152, whose shipped bytes are identical to v0.6.1 — `git diff v0.6.1..HEAD -- src manifest*.xml vite.config.ts` is empty",
+  "host": "PowerPoint on the web, pane stamp 0fde152, deck Presentation64",
+  "why": "`src/core/elements.ts` gained `desc` on all five builders between 454303d (the last round-validated build before the release) and v0.6.1, and `scene.desc` flows `-> opts.altText -> Shape.altTextDescription` at three call sites in powerpoint.ts. That is a PowerPointApi 1.10 write. No scenario in selftest.ts touches Elements — grep it for harvey/kpiCard/elements and the count is 0 — so rounds 455-459 were green five times without ever asking. The manifest ships five ribbon deep links straight at these buttons, which is what a certification tester clicks first.",
+  "method": "Clicked each element's own button by DOM id inside the pane's frame (all five share the accessible name \"Insert\", so a name lookup cannot tell them apart), then read the selected slide back through Office.js with `items/altTextDescription` NAMED in the load.",
+  "result": {
+    "describedShapesOnSlide": "5 of 52",
+    "confirmed": {
+      "harvey": "Harvey ball, 75% filled.",
+      "check": "Checkbox, yes.",
+      "flow": "Process flow: Scope, Design, Build, Launch. Design highlighted.",
+      "kpi": "Revenue: €4.2m +12% vs LY (up)."
+    },
+    "unverified": {
+      "table": "NOT a defect, and not confirmed either. The button was enabled, the click was accepted, and the insert was attempted at 23 shapes. The host then went silent and the pane reported it: 'Failed: PowerPoint did not respond while drawing shapes 1-10 of 23 (45s) | at=drawing the chart's shapes'. The slide's shape count was 52 before and after. Same 45s silent-host stall that blind-skipped `insert onto a slide that already has content` in round 458."
+    }
+  },
+  "conclusion": "Four of the five Elements write a correct, element-specific altTextDescription on a real host. The 1.10 write reaches PowerPoint and the accessibility description a user gets is the one the engine built. The fifth is untested because the host would not draw it, which is an environment result rather than a product one — and the pane said so rather than failing silently.",
+  "doesNotCover": [
+    "The table element. It needs one clean insert on a host that is answering.",
+    "PowerPoint on Windows or Mac desktop. This is the web host only.",
+    "Whether the description is what a screen reader should ideally say. This checks that the engine's `desc` ARRIVED, not that the copy is good.",
+    "n = 1 per element, one slide, one session."
+  ],
+  "theProbeCostThreeSelfInflictedWounds": [
+    "It anchored on `tab \"Chart\"` copied from round.mjs's readiness check. This pane's tabs are Elements/Agenda/Automation, so it reported `no pane on screen` against a pane that was open and healthy.",
+    "It passed `--regex` to the CLI's `find`, which takes plain text — the driver applies its regex in JS afterwards, in `refFor`. And it took the FIRST ref in the output rather than the one on the matching line, which `refFor`'s own comment warns lands you in the OneDrive document where `PowerPoint` is undefined.",
+    "Worst: its parser could not read the CLI's escaped quotes, so `JSON.parse` threw and every element reported `the host would not list the slide` while the host was answering perfectly. A parser that cannot read the answer reports the same thing as a feature that was never written."
+  ]
+}

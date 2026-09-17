@@ -8483,3 +8483,114 @@ identical in count AND in naming. The heuristic cannot be repaired by looking
 harder at the deck, because the deck does not hold the answer. What does is the
 grouping counter the gate already prints — 20 of 20 attempts grouped, 0 refused.
 The line now reports the shape of the deck and points there, and claims nothing.
+## Cycle 2 — 0fde152 — a degraded round, and the environment got worse
+
+`deployed == HEAD == 0fde152`, and `git diff v0.6.1..HEAD -- src manifest*.xml
+vite.config.ts` is still EMPTY: eight commits past the tag and the shipped
+bundle has not moved, so these rounds remain evidence about what a user
+installs.
+
+### The driver refused a stale pane before it refused anything else
+
+Attempt 1 opened on `Presentation70` — the 4:3 deck left fronted by cycle 1's
+last leg — carrying `pane b82048a`, the PREVIOUS build. It refused twice over:
+`deck-missing`, because it was told to run against `Presentation64`, and a stale
+pane serving a build that is not the one under test.
+
+Worth recording because the whole three-way-identity argument this window rests
+on depends on that check existing. A round that measured `b82048a` while
+claiming `0fde152` would corrupt the archive in the way it is least recoverable
+from. The two builds happen to be byte-identical in what ships, so such a round
+would have been harmless in substance and still wrong in provenance — and the
+driver does not know the first part and correctly does not weigh it. It refuses
+on the stamp.
+
+### Round 458 — 18 pass, 1 SKIPPED BLIND
+
+    the host stopped answering during `insert onto a slide that already has
+    content` — PowerPoint did not respond while drawing shapes 1-10 of 16 (45s);
+    the last thing it answered was "writing the chart's origin tag", 0s earlier
+
+`blind: true`, so nothing was checked. A skipped scenario is not a passing one.
+
+### The grouping counter earned its keep one round after the change
+
+The same round reported `14 of 18 attempt(s) grouped, 4 refused`. **Its deck
+held 0,3,1,1,2,5,3 shapes per slide — every slide under the ceiling of 6 — so
+the fullest-slide heuristic would have been SILENT.**
+
+That is the same argument as yesterday's from the other side. Yesterday the
+count test fired on eleven benign decks; today it would have missed a real
+refusal entirely. Wrong in both directions, and the counter the gate was
+redirected to is the instrument that answers the question.
+
+**AND THE REFUSALS ARE NOT AN ANOMALY, which the first reading of them said.**
+The gate prints `usually 0`, that is the MEDIAN, and it was read here as "never
+before". Counted properly over the archive — trace entries reading
+`not grouping: …`, the same signal the gate uses:
+
+    rounds with grouping activity        431
+    rounds with at least one refusal     110   (25.5%)
+    recent examples                      407 refused 13 · 440 and 441 refused 7
+                                         · 434 refused 3 · 445 refused 2
+
+Four sits well inside that. The first extraction attempted here searched
+`trace.summary.steps` for the wrong text and returned a confident zero; the
+method above agrees with the gate's own count of 4 on round 458, which is what
+makes it trustworthy. Most likely the refusals are part of the same degraded
+episode that stalled the host for 45s, and not a finding of their own.
+
+### THE ENVIRONMENT CHANGED, and this is the finding of the cycle
+
+Browser deaths, from `driverRun.recovered`:
+
+    baseline    34 of 307 rounds recording recoveries had one   11.1%
+                37 events total                                 0.12 per round
+    recent      452:1 453:1 454:0 455:1 456:1 457:1 + 459        5 in the last 6
+
+At an 11.1% per-round rate, five of six rounds affected is about a 1-in-11,000
+event. The environment has changed by roughly sevenfold, and it is not
+small-sample noise.
+
+Three things follow. It explains this window's friction, which was being
+reported round by round as incidents rather than as a pattern: 456 needing five
+attempts and four recoveries is the current normal, not bad luck. It makes
+**`sideloadAddIn`'s retry rung load-bearing rather than tidy** — every death
+destroys the web sideload, `addin-missing` is outside `RECOVERABLE_STOPS`, and
+so before that fix roughly five rounds in six would have ended the loop at the
+first flaky Add-ins dialog. That was landed for a different reason and turns out
+to be the thing holding the loop up.
+
+And the cause is unknown, here as everywhere else: `ROUNDS.md` already says the
+losses come mid-round and leave no entry in the Windows Application log. The
+rate change is recorded; the mechanism is not claimed.
+
+One caveat on the baseline: `driverRun.recovered` exists in 307 of 431 rounds,
+so 11.1% is over the rounds that record it rather than the whole archive.
+
+### And then the question five green rounds never asked
+
+`docs/evidence/elements-alt-text-2026-09-17.json`. Four of the five Elements
+write a correct, element-specific `altTextDescription` on the live web host —
+harvey, check, flow and kpi, read straight off the slide. The 1.10 write
+reaches PowerPoint and the description a user gets is the one the engine built.
+
+`table` is neither confirmed nor a defect: its insert was attempted at 23 shapes
+and the host went silent, and the pane said so —
+`Failed: PowerPoint did not respond while drawing shapes 1-10 of 23 (45s)`.
+That is the same 45s stall that blind-skipped a scenario in round 458, on the
+same unwell host. The slide held 52 shapes before the click and 52 after.
+
+**THE PROBE COST THREE SELF-INFLICTED WOUNDS AND THE THIRD IS THE ONE TO
+REMEMBER.** It anchored on `tab "Chart"`, which this pane does not have. It
+passed `--regex` to a `find` that takes plain text, and took the first ref in
+the output rather than the one on the matching line — both traps that
+`refFor`'s own comment documents, walked into by copying the SHAPE of that call
+without reading it. And its parser could not read the CLI's escaped quotes, so
+`JSON.parse` threw and all five elements reported "the host would not list the
+slide" while the host was answering perfectly.
+
+The first two refused to measure. The third reported a FAILURE against a
+product that was working, which is worse, and is the same shape as every other
+instrument fault this archive records: **a parser that cannot read the answer
+says exactly what a feature that was never written would say.**
