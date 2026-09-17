@@ -1331,11 +1331,23 @@ const dragThenUpdate: Scenario = async (prefix) => {
   const { found: moved, blind: movedBlind, gap: movedGap } = await probeCharts(prefix);
   if (movedBlind) return blindSkip(movedGap);
   const atMoved = moved.find((c) => c.cfg.title === chart.cfg.title);
-  if (!atMoved || typeof atMoved.target.left !== "number")
+  if (!atMoved || typeof atMoved.target.left !== "number" || typeof atMoved.target.top !== "number")
     return { ok: false, detail: "the chart could not be found after moving it" };
-  const shifted = Math.round(atMoved.target.left - before.left);
-  if (Math.abs(shifted - DX) > 2)
-    return { ok: false, skipped: true, detail: `the move did not land (x moved ${shifted}pt, wanted ${DX}pt)` };
+  // BOTH AXES, and the y one is not decoration.
+  //
+  // This asked about x alone from the day it was written, so a move that
+  // travelled 60pt sideways and 0pt down passed it. office-js#6183 reports
+  // exactly that, on exactly this host: "PowerPoint Online: OfficeJS API does
+  // not update left and top properties of selected shape simultaneously — only
+  // the left property is updated". A check blind to the axis an upstream issue
+  // names would report 19 of 19 while the defect shipped.
+  const shifted = { x: Math.round(atMoved.target.left - before.left), y: Math.round(atMoved.target.top - before.top) };
+  if (Math.abs(shifted.x - DX) > 2 || Math.abs(shifted.y - DY) > 2)
+    return {
+      ok: false,
+      skipped: true,
+      detail: `the move did not land (moved ${shifted.x}x${shifted.y}pt, wanted ${DX}x${DY}pt)`,
+    };
 
   const next = { ...atMoved.cfg, title: `${atMoved.cfg.title} (moved)` };
   const target = await updateChartInSlide(buildChart(next), atMoved.target, { tagData: JSON.stringify(next) });
@@ -1343,21 +1355,29 @@ const dragThenUpdate: Scenario = async (prefix) => {
   const { found: after, blind: afterBlind, gap: afterGap } = await probeCharts(prefix);
   if (afterBlind) return blindSkip(afterGap);
   const redrawn = after.find((c) => c.cfg.title === next.title);
-  if (!redrawn || typeof redrawn.target.left !== "number")
+  if (!redrawn || typeof redrawn.target.left !== "number" || typeof redrawn.target.top !== "number")
     return { ok: false, detail: "the moved chart is no longer re-editable — its config did not survive the redraw" };
 
   // THE ASSERTION. A chart that kept its origin redraws where the user left it;
   // one that lost it snaps back to where it was first inserted, which is the
   // symptom a user would report as "it jumped".
-  const drift = Math.round(redrawn.target.left - atMoved.target.left);
-  const snappedBack = Math.abs(redrawn.target.left - before.left) < Math.abs(drift);
+  //
+  // On both axes for the same reason the move above is: a chart that redrew at
+  // the right x and the ORIGINAL y has jumped, and the user would say so.
+  const drift = {
+    x: Math.round(redrawn.target.left - atMoved.target.left),
+    y: Math.round(redrawn.target.top - atMoved.target.top),
+  };
+  const worst = Math.max(Math.abs(drift.x), Math.abs(drift.y));
+  const wasAt = Math.hypot(redrawn.target.left - before.left, redrawn.target.top - before.top);
+  const snappedBack = wasAt < Math.hypot(drift.x, drift.y);
   return {
-    ok: Math.abs(drift) <= 2,
+    ok: worst <= 2,
     detail: snappedBack
-      ? `the update SNAPPED THE CHART BACK to where it was first inserted (${Math.round(before.left)}pt), losing the ${DX}pt move — the origin tag did not survive`
-      : Math.abs(drift) <= 2
+      ? `the update SNAPPED THE CHART BACK to where it was first inserted (${Math.round(before.left)}x${Math.round(before.top)}pt), losing the ${DX}x${DY}pt move — the origin tag did not survive`
+      : worst <= 2
         ? `moved ${DX}x${DY}pt and the update redrew it there, so the origin round trip held`
-        : `the update redrew it ${drift}pt from where it was moved to`,
+        : `the update redrew it ${drift.x}x${drift.y}pt from where it was moved to`,
   };
 };
 

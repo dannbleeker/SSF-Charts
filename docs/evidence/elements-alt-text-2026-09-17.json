@@ -18,8 +18,17 @@
     }
   },
   "conclusion": "Four of the five Elements write a correct, element-specific altTextDescription on a real host. The 1.10 write reaches PowerPoint and the accessibility description a user gets is the one the engine built. The fifth is untested because the host would not draw it, which is an environment result rather than a product one — and the pane said so rather than failing silently.",
+  "secondSitting": {
+    "taken": "2026-09-17T13:40Z",
+    "why": "To finish the table element, and to re-run the probe after it was fixed to tell `could not ask` from `asked and the answer was wrong`.",
+    "reconfirmed": "A hand read of the settled slide returned the same four descriptions, each on a shape named PowerChart: 'Harvey ball, 75% filled.', 'Checkbox, yes.', 'Process flow: Scope, Design, Build, Launch. Design highlighted.', 'Revenue: €4.2m +12% vs LY (up).'. The host reported PowerPointApi 1.8/1.9/1.10 = true, 1.11 = false, so the 1.10 gate was open throughout.",
+    "table": "STILL NOT CONFIRMED, and now for a second, different reason. Its parts arrived — rule-top, rule-header, cell-text-0-0..0-4, cell-text-1-0..1-2 — and NEVER GROUPED. The description is written on the group, so an insert that does not group has nowhere to put it. No shape named PowerChart carrying a 'Table, N rows by M columns.' description exists anywhere on the slide after repeated attempts.",
+    "hostCondition": "Badly degraded, and this is what the sitting mostly measured. Across four probe runs the host refused to group 3 of 5 elements at a time, stalled reads for 45-60s, and left around sixty loose parts — harvey-fill-f0..f22, step-0..3, kpi-box, check-box — from inserts that never grouped. Every element that DID group carried its correct description; not one grouped shape was missing one.",
+    "aHostQuirkWorthKnowing": "`presentation.setSelectedSlides([newSlideId])` returns without error and `slides.items.length` goes up, but `getSelectedSlides().getItemAt(0)` keeps returning the previously selected slide. Three attempts to give the probe a clean slide all silently read the old one. It changes none of the verdicts — the probe diffs shape ids per run, so what was already there is excluded either way — but a future reader should not believe an added slide is a selected one.",
+    "whatTheProbeLearned": "It reported `0 of 5 elements carried an altTextDescription`, exit 1, against a build whose descriptions were sitting on that slide as it printed. Three separate confusions, all the same shape: a silent host counted as a wrong answer, a shape read mid-insert counted as a finished one, and an insert that never grouped counted as a description that was never written. Each now has a named cause in the verdict and its own line in the report."
+  },
   "doesNotCover": [
-    "The table element. It needs one clean insert on a host that is answering.",
+    "The table element. It needs one clean insert on a host that will group — the blocker is now grouping, not silence.",
     "PowerPoint on Windows or Mac desktop. This is the web host only.",
     "Whether the description is what a screen reader should ideally say. This checks that the engine's `desc` ARRIVED, not that the copy is good.",
     "n = 1 per element, one slide, one session."

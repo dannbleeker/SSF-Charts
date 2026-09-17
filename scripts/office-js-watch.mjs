@@ -247,6 +247,70 @@ export const KNOWN_ISSUES = {
     "enlarges the surface Microsoft tests. It is the argument behind raising PowerPointApi 1.4 -> 1.8 -> 1.10 on 2026-09-13; see the comment " +
     "in manifest.xml. The reporter's own attempt to narrow the block instead produced `No Supported Office Products`, so that escape does " +
     "not work either.",
+  6183:
+    "PowerPoint ONLINE does not update `left` and `top` on a shape simultaneously — set both in one sync and only the left " +
+    "property is applied. Closed COMPLETED. THE MOST EXPENSIVE ENTRY IN THIS SWEEP, because it named the axis our own check " +
+    "omitted: `an update follows a moved chart` moved a probe chart 60pt across and 40pt down and then compared x ALONE, " +
+    "from the day it was written — the move check and the drift check after the redraw, both. A host doing exactly what " +
+    "this issue describes would have been reported as 19 of 19 for as long as it did it. Fixed 2026-09-17: both assertions " +
+    "read both axes now, and the fake host grew `faults.ignoresTopWrites` so the hole cannot come back unnoticed — without " +
+    "the y clause that fault passes, with the message `moved 60x40pt and the update redrew it there, so the origin round " +
+    "trip held`. `moveShapeBy` is the call, and it sets left and top in one sync.",
+  6948:
+    "PowerPoint `customXmlParts.getByNamespace(...).getItemOrNullObject` THROWS for an id that is not there, instead of " +
+    "returning a null object the way Excel and Word do. Open, `Needs: triage`, desktop. CORROBORATION FOR THIS REPO'S OWN " +
+    "FINDING, which is why it earns an entry: the deck-style read calls `getByNamespace(...).getOnlyItemOrNullObject()`, " +
+    "and rounds 096 and 097 recorded that on an EMPTY collection that call never returns at all — `getCount()` answers " +
+    "`parts: 0` and the item read hangs for the whole budget. Same API family, same broken OrNullObject promise, two " +
+    "symptoms and two hosts. `attemptDeckStyleRead` already counts first and never asks for the only item of an empty " +
+    "collection, so nothing is owed; what this adds is that the contract is unreliable upstream generally, and the guard " +
+    "must not be removed on the grounds that OrNullObject is documented not to throw.",
+  4121:
+    "`addLine` comes out bent when the box handed to it has a zero height or width, and the workaround Microsoft gave is to " +
+    "RE-ASSIGN the dimension after creation (`const line = shapes.addLine(..., {height: 0, ...}); line.height = 0;`). Closed " +
+    "for inactivity, not fixed. EXPOSED BY CONSTRUCTION AND NOT OBSERVED: `addSegment` takes its `addLine` branch precisely " +
+    "when `w < 0.5 || h < 0.5`, which is every axis, gridline, rule and table divider this add-in draws, and it never " +
+    "re-assigns. Nothing in the archive reports a bent rule and the showcase deck renders straight ones — but the showcase " +
+    "is written by our own OOXML writer and never goes near `addLine`, so it is not evidence either way. Recorded with the " +
+    "workaround attached: if a bent axis is ever reported, the fix is one line and is already written down.",
+  4222:
+    "`getSelectedShapes()` sometimes answers an EMPTY array while a shape is selected on the slide, web and desktop. Closed " +
+    "COMPLETED. Live exposure on the pane's newest path: `editSelectedChart` reads the selection the user made with a click, " +
+    "and an empty answer there is indistinguishable from 'nothing is selected' — the user clicks a chart, presses Edit, and " +
+    "is told to select a chart. Already reported rather than swallowed (`edit the chart the user selected` is routine and " +
+    "says which of the two it saw), and no retry is added on the strength of a closed issue: the rule here is that a " +
+    "workaround needs a probe that fails without it.",
+  3552:
+    "`setSelectedSlides` throws when the NOTES pane holds the selection — desktop only, web is fine. Closed COMPLETED. " +
+    "Exposure is real and already contained: `showSlide` is the only caller, it is best-effort behind `supports('1.5')`, and " +
+    "every path that uses it treats failure as 'the slide could not be brought into view' rather than as an error. It stays " +
+    "in the table because it is DESKTOP-ONLY and this repo's whole evidence base is the web host — so if a desktop user ever " +
+    "reports that the pane will not follow their chart, this is the first thing to read, and no round will have seen it.",
+  3715:
+    "`insertSlidesFromBase64` loses CENTRE ALIGNMENT on inserted text boxes. PowerPoint, web and desktop. Closed COMPLETED. " +
+    "NO EXPOSURE ON THE PATH WE TAKE, and the distinction is one argument wide: the repro passes " +
+    "`formatting: useDestinationTheme`, and `insertDeckFromBase64` defaults to `KeepSourceFormatting` at both call sites. " +
+    "Centred text is not incidental here — every chart title the fast path ships is centred — so if that default is ever " +
+    "changed to follow the deck's theme, this issue is the cost of doing it. Checked rather than assumed on 2026-09-17.",
+  6130:
+    "PowerPoint TABLE cells will not report `cell.fill.color` or `cell.borders.*.color` — they read back undefined or null. " +
+    "Closed COMPLETED. NO EXPOSURE: this add-in has no PowerPoint table in it anywhere. The `table` element is built from " +
+    "native shapes — `rule-top`, `rule-header`, `cell-text-<r>-<c>` — and `addTable` appears zero times in `src/`. Checked " +
+    "rather than assumed, because an issue about table cell colour is exactly what a table-drawing add-in should stop and " +
+    "read.",
+  6933:
+    "Setting `TextRange.font.color` and `font.underline` does not visually override HYPERLINK theme formatting, though the " +
+    "API reports the new values back. Open, `Area: PowerPoint`, desktop. NO EXPOSURE: nothing here adds or reads a " +
+    "hyperlink — `hyperlinks`, `getLinkedTextRangeOrNullObject` and `font.underline` are all zero matches across `src/`. In " +
+    "the table because the sweep will find it again every week until it is.",
+  4988:
+    "Excel table creation becomes slow when heavy Excel files are open. EXCEL, not PowerPoint. NO EXPOSURE. It reaches the " +
+    "sweep on `getItemOrNullObject` plus `context.sync`, which is what a corroboration-only term looks like when it lands " +
+    "on the wrong host — kept so it is not re-triaged next Monday.",
+  5537:
+    "`Document.insertFileFromBase64()` strips web extension settings. WORD ON MAC. NO EXPOSURE: this repo calls " +
+    "`Presentation.insertSlidesFromBase64`, a different method on a different host, and stores nothing in document " +
+    "settings. Same shape of false positive as #4988, recorded for the same reason.",
 };
 
 /** Lower-cased haystack for one issue. */

@@ -564,6 +564,30 @@ describe("the scenarios the selection API unlocked", () => {
     expect(bad.detail).toMatch(/did not read back as an SSF chart|read back a different chart/);
   });
 
+  it("catches a host that moves a chart sideways and not down — office-js#6183", async () => {
+    // The upstream issue is titled "PowerPoint Online: OfficeJS API does not
+    // update left and top properties of selected shape simultaneously", and its
+    // body is explicit: "only the left property is updated". PowerPoint Online
+    // is the host every round in this archive runs against.
+    //
+    // `an update follows a moved chart` moves a chart 60pt across and 40pt down
+    // and, until 2026-09-17, compared one of the two. Under this fault it called
+    // the move landed and went on to pass — a green line for a chart that had
+    // travelled half the distance the user asked for.
+    //
+    // Found by triaging the tracker sweep's backlog, not by a round. The
+    // scenario had been green for hundreds of rounds with the hole in it.
+    vi.unstubAllGlobals();
+    installHost([makeSlide("s1")]);
+    faults.ignoresTopWrites = true;
+    const bad = byName(await runSelfTest("probe"))["an update follows a moved chart"];
+    faults.ignoresTopWrites = false;
+    expect(bad.ok, `reported ok against a host that drops every write to top: ${bad.detail}`).toBe(false);
+    // It says what it saw, including the axis that did not move, so the next
+    // reader is not left guessing which half failed.
+    expect(bad.detail).toMatch(/wanted 60x40pt/);
+  });
+
   it("calls a host that stops answering after a select a known limitation, not a failure", async () => {
     // The third of PowerPoint-on-the-web's selection bugs, and the one that
     // cost a whole real-host round: `setSelectedShapes` is GA at PowerPointApi

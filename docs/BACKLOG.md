@@ -334,7 +334,7 @@ whole-history figure and should not be quoted as current: it is dominated by the
 
 ## 1. Open
 
-**Everything actually open, as of 2026-09-13.** The sections below carry the
+**Everything actually open, as of 2026-09-17.** The sections below carry the
 evidence; this list carries the state. Anything not on it is either shipped,
 refused, or a finding rather than a task.
 
@@ -365,6 +365,27 @@ raised 90 -> 105 on the first evidence that ever bore on it. FOUR are open.**
 > falling into is not arithmetic; it is that work done somewhere else does not
 > walk over here by itself.** Anything owner-gated belongs on this list even
 > when its evidence lives in another document.
+
+> **RE-READ 2026-09-17, AND THE ANSWER IS THAT NOTHING OPENED OR CLOSED.** Which
+> is worth writing down, because the four previous notes above are all about the
+> list saying a number it had not checked — and "still four" is a claim needing a
+> check exactly as much as a change would be. What happened in the four days:
+> v0.6.1 was released and then **validated against the live host for the first
+> time** (rounds 455-459, on bytes identical to the tag, zero failures), the
+> mutation job went from four six-hour kills with no report to a 1m43s scoped
+> run, and `docs/evidence/elements-alt-text-2026-09-17.json` took the first host
+> evidence for the 1.10 `altTextDescription` write. None of that is owner-gated
+> and none of it moves 5, 21, 22 or 23 — every one of those still waits on his
+> identity, his Mac, his screenshots or his submission. **FOUR are open, counted
+> off the list on 2026-09-17.**
+>
+> One correction while re-reading it: **the numbers 29, 30 and 56 that appear
+> further down this file are COUNTS in evidence tables, not backlog items.**
+> They are formatted exactly like the entries in the list above — a number,
+> spaces, a phrase — and I read them as a fifth, sixth and seventh open item
+> before checking. They are redraw tallies from the 30-round windows in the
+> update-cost sections. Nothing to close, and the near-miss is recorded because
+> the next reader will meet the same formatting.
 
 
     5  filing this project's host measurements to the office-js tracker
@@ -429,7 +450,11 @@ raised 90 -> 105 on the first evidence that ever bore on it. FOUR are open.**
     23  the AppSource submission itself
        — everything above feeds it and none of it is the act. Partner Center
        account confirmed by the owner 2026-09-13; manifests validate; privacy
-       and terms are live and all 17 URLs in `manifest-prod.xml` return 200.
+       and terms are live and all 18 URLs across the two prod manifests return
+       200. THE NUMBER WAS 17, AND 17 IS `manifest-prod.xml` ALONE —
+       `manifest-excel-prod.xml` adds `src/excel/excel.html`, which is a
+       shipping entry point nobody had counted. Corrected 2026-09-17 by
+       counting both files rather than re-reading the sentence.
        What is left is 21, 22, and a decision to press submit — all his.
 
 

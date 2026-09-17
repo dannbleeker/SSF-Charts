@@ -38,7 +38,7 @@
  *
  * Usage:  node scripts/elements-probe.mjs
  * Exit:   0 all five carried their description · 1 at least one did not
- *         · 2 could not ask (no pane, no host)
+ *         · 2 could not ask (no pane, no frame, or a host that never answered)
  */
 
 import { spawnSync } from "node:child_process";
@@ -55,6 +55,14 @@ const DIR = "C:\\devtools\\SSF-Charts\\.pw-session";
  * columns.") and pinning the exact string here would make this a change
  * detector for copy rather than a check that the description ARRIVED.
  */
+/**
+ * The name the renderer gives the group it forms, and where the description is
+ * written. A LOOKUP KEY rather than a label — `powerpoint.ts` and `ooxml.ts`
+ * each hold their own private copy, so this third one is checked against the
+ * source by the test beside this file rather than trusted.
+ */
+export const GROUP_NAME = "PowerChart";
+
 export const ELEMENTS = [
   { el: "harvey", expect: /harvey/i },
   { el: "check", expect: /checkbox/i },
@@ -132,23 +140,111 @@ export function readAlt(out) {
  * without a host — which is most of what goes wrong in a probe like this.
  */
 export function judge({ el, expect }, before, after, clicked) {
-  if (clicked !== "clicked") return { el, ok: false, why: `the pane's button said ${clicked}` };
+  if (clicked !== "clicked") return { el, ok: false, cause: "button", why: `the pane's button said ${clicked}` };
+  // `cause` and `silent` rather than a prose match: what the exit code and the
+  // report turn on must not be sentences somebody can reword. See `summarise`.
   if (!Array.isArray(before) || !Array.isArray(after))
-    return { el, ok: false, why: "the host would not list the slide" };
+    return { el, ok: false, cause: "silent", silent: true, why: "the host would not list the slide" };
   const had = new Set(before.map((s) => s.id));
   const added = after.filter((s) => !had.has(s.id));
-  if (!added.length) return { el, ok: false, why: "nothing landed on the slide" };
+  if (!added.length) return { el, ok: false, cause: "nothing-landed", why: "nothing landed on the slide" };
   const described = added.filter((s) => String(s.alt ?? "").trim());
-  if (!described.length)
-    return { el, ok: false, why: `${added.length} shape(s) landed, none with altTextDescription`, added: added.length };
+  if (!described.length) {
+    // TWO DIFFERENT FINDINGS WEAR THIS FACE, and saying only "no description"
+    // reports the wrong one. The description is written on the GROUP. When the
+    // host refuses to group — which the archive has at roughly a quarter of
+    // rounds — the parts land loose (`harvey-fill-f0`, `step-2`, `cell-text-1-3`)
+    // and there is nothing to write it on. That is the grouping refusal, not a
+    // regression in the 1.10 write, and the fix for it is in a different file.
+    //
+    // Measured on 2026-09-17: a slide holding four correct descriptions on four
+    // `PowerChart` groups, and beside them sixty loose parts from inserts that
+    // never grouped. This probe called that 5 of 5 failing to describe.
+    const grouped = added.some((s) => s.name === GROUP_NAME);
+    return {
+      el,
+      ok: false,
+      cause: grouped ? "undescribed" : "ungrouped",
+      ungrouped: !grouped,
+      why: grouped
+        ? `${added.length} shape(s) landed and grouped, and the group carries no altTextDescription`
+        : `${added.length} loose shape(s) landed and NEVER GROUPED — the description has nowhere to live, so this is the grouping refusal, not the 1.10 write`,
+      added: added.length,
+    };
+  }
   const match = described.find((s) => expect.test(s.alt));
   if (!match)
     return {
       el,
       ok: false,
+      cause: "mismatched",
       why: `described, but not as a ${el}: ${JSON.stringify(described.map((s) => s.alt).slice(0, 2))}`,
     };
   return { el, ok: true, alt: match.alt, added: added.length };
+}
+
+/**
+ * Did the host answer at all? A SILENT HOST IS NOT A FAILING PRODUCT, and this
+ * file said it was.
+ *
+ * `Office` and `PowerPoint` can both be loaded objects in a pane that is on
+ * screen and answering DOM questions, while `PowerPoint.run(...)` never
+ * resolves — the host has stopped answering. That state is all over this week's
+ * archive: 45s stalls blind-skipped a scenario in round 458 and another in 459,
+ * and it defeated the `table` element twice.
+ *
+ * On 2026-09-17 this probe met it and printed "0 of 5 elements carried an
+ * altTextDescription", exit 1, against a product measured working hours
+ * earlier. Exit 1 means "asked and the answer was wrong". Nothing was asked.
+ *
+ * So when EVERY element came back silent the run exits 2 — could not ask —
+ * rather than accusing the code. The distinction is the one this repo keeps
+ * paying to relearn: a check that cannot tell "verified" from "not attempted"
+ * reads as evidence.
+ *
+ * ALL of them, not some: one silent element among four answered ones is a real
+ * result about that element, and downgrading the whole run for it would hide a
+ * genuine failure behind an environment excuse.
+ */
+export const hostSilent = (results) => results.length > 0 && results.every((r) => r.silent === true);
+
+/**
+ * The run's three buckets and the exit code they add up to.
+ *
+ * Pure, and separate from the printing, because this is the part that was
+ * WRONG: a silent element was counted in the denominator of "N of 5 carried an
+ * altTextDescription" and pushed the exit to 1. Both said the product had been
+ * asked and had answered badly.
+ *
+ *   `carried`  asked, and the description arrived   -> nothing owed
+ *   `failed`   asked, and the answer was wrong      -> exit 1, a finding
+ *   `unasked`  the host never answered              -> exit 2, a re-run
+ *
+ * A finding outranks a stall: one real failure among four stalls is still a
+ * failure, and exiting 2 there would file a regression as an environment
+ * excuse. A stall outranks a clean pass, because "4 of 5 passed and the fifth
+ * was never asked" is not a green run — it is a partial one, and 0 would say
+ * the fifth was fine.
+ */
+export function summarise(results) {
+  const of = (...causes) => results.filter((r) => causes.includes(r.cause)).map((r) => r.el);
+  const carried = results.filter((r) => r.ok).map((r) => r.el);
+  const unasked = of("silent");
+  const failed = results.filter((r) => !r.ok && !r.silent).map((r) => r.el);
+  // Subsets of `failed`, not extra buckets — every one of these is still an
+  // element that did not arrive described. They are named apart because they
+  // send the reader to different files, and on 2026-09-17 a `nothing landed`
+  // was reported as "grouped and not described", which points at the 1.10 write
+  // for a click whose shapes never appeared at all.
+  return {
+    carried,
+    failed,
+    ungrouped: of("ungrouped"),
+    undescribed: of("undescribed", "mismatched"),
+    absent: of("nothing-landed", "button"),
+    unasked,
+    code: failed.length ? 1 : unasked.length ? 2 : 0,
+  };
 }
 
 async function main() {
@@ -214,26 +310,97 @@ async function main() {
     process.exit(2);
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  /**
+   * Read until the slide has changed, or the budget runs out.
+   *
+   * WAS A FLAT 9s WAIT, and on 2026-09-17 that reported `flow` as "nothing
+   * landed on the slide" in a run where the host refused three of five reads
+   * outright. A number chosen for a healthy host, applied to a stalling one,
+   * turns latency into a defect report.
+   *
+   * Polling does not weaken the assertion — an element that never inserts still
+   * fails, it just takes the full budget to say so. Two things it must NOT do:
+   * stop early on a null read (that is the host being slow, not an answer), and
+   * hide how long it took. The elapsed time is printed on every pass, so an
+   * element that only makes it at 38s reads as the warning it is.
+   *
+   * AND IT MUST NOT STOP AT THE FIRST NEW SHAPE. The first version did, and
+   * reported all five elements as landing shapes with no `altTextDescription` —
+   * including `check`, which had passed with "Checkbox, yes." minutes earlier.
+   * These elements draw their parts, group them, and set the description on the
+   * group LAST, so the first new id is the middle of the insert, not the end of
+   * it. Breaking there measured a half-built element and called the product
+   * broken. That is the same false red as the flat wait, arrived at from the
+   * opposite side, inside the same hour.
+   *
+   * So it stops on one of two things: a new shape that CARRIES a description
+   * (the terminal state — more waiting cannot unset it), or a new-id set that
+   * has not moved across two consecutive reads (the insert has quiesced).
+   */
+  const settle = async (before, budgetMs = 60_000) => {
+    const started = Date.now();
+    const had = new Set((before ?? []).map((s) => s.id));
+    let last = null;
+    let previousIds = null;
+    while (Date.now() - started < budgetMs) {
+      await sleep(4000);
+      const seen = readAlt(pw("eval", readAltScript(), ref));
+      if (!Array.isArray(seen)) continue;
+      last = seen;
+      const added = seen.filter((s) => !had.has(s.id));
+      if (added.some((s) => String(s.alt ?? "").trim())) break;
+      const ids = added
+        .map((s) => s.id)
+        .sort()
+        .join(",");
+      if (added.length && previousIds === ids) break;
+      previousIds = ids;
+    }
+    return { after: last, waitedMs: Date.now() - started };
+  };
   const results = [];
   for (const spec of ELEMENTS) {
     const before = readAlt(pw("eval", readAltScript(), ref));
     const clicked = /"?(clicked|disabled|no-button)"?/.exec(pw("eval", clickElementScript(spec.el), ref))?.[1] ?? "?";
-    await sleep(9000);
-    const after = readAlt(pw("eval", readAltScript(), ref));
+    const { after, waitedMs } = await settle(before);
     const verdict = judge(spec, before, after, clicked);
     results.push(verdict);
-    console.log(
-      `  ${verdict.ok ? "ok  " : "FAIL"} ${spec.el.padEnd(7)} ${verdict.ok ? JSON.stringify(verdict.alt) : verdict.why}`,
-    );
+    const mark = verdict.ok ? "ok  " : verdict.silent ? "----" : "FAIL";
+    const secs = `${Math.round(waitedMs / 1000)}s`;
+    const said = verdict.ok ? `${JSON.stringify(verdict.alt)} (${secs})` : `${verdict.why} (waited ${secs})`;
+    console.log(`  ${mark} ${spec.el.padEnd(7)} ${said}`);
   }
-  const bad = results.filter((r) => !r.ok);
   console.log("");
-  console.log(`${results.length - bad.length} of ${results.length} elements carried an altTextDescription.`);
-  if (bad.length) {
+  if (hostSilent(results)) {
+    console.log(`The host answered none of the ${results.length} reads. NOTHING WAS MEASURED.`);
+    console.log("The pane is on screen and `PowerPoint` is loaded, but `PowerPoint.run` never");
+    console.log("resolves — the same stall that blind-skipped scenarios in rounds 458 and 459.");
+    console.log("Reload the deck and the add-in, then run this again. This is not a verdict on");
+    console.log("`altTextDescription`.");
+    process.exit(2);
+  }
+  const { carried, ungrouped, undescribed, absent, unasked, code } = summarise(results);
+  console.log(`${carried.length} of ${results.length} elements carried an altTextDescription.`);
+  if (unasked.length) {
+    console.log(`${unasked.length} were never asked — the host went quiet on ${unasked.join(", ")}.`);
+    console.log("Those are not verdicts. Re-run until every element has been asked once.");
+  }
+  if (ungrouped.length) {
+    console.log(`${ungrouped.length} never grouped: ${ungrouped.join(", ")}.`);
+    console.log("Their parts landed loose, so there was no group to describe. That is the host");
+    console.log("refusing to group — the gate's `grouping` line, not the 1.10 write.");
+  }
+  if (absent.length) {
+    console.log(`${absent.length} put nothing on the slide: ${absent.join(", ")}.`);
+    console.log("The click was accepted and no shape followed it, so there is nothing yet to say");
+    console.log("about descriptions. Check the pane's own status line for what it reported.");
+  }
+  if (undescribed.length) {
+    console.log(`${undescribed.length} grouped and were not described: ${undescribed.join(", ")}.`);
     console.log("This is the 1.10 `Shape.altTextDescription` write in `powerpoint.ts` — the only");
     console.log("Office.js-reaching change in v0.6.1, and the thing no scenario covers.");
   }
-  process.exit(bad.length ? 1 : 0);
+  process.exit(code);
 }
 
 if (isMain(import.meta.url, process.argv[1])) {

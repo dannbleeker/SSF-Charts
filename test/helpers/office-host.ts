@@ -259,6 +259,21 @@ export const faults = {
    */
   refuseTagWritesOnResolvedProxy: false,
   /**
+   * Take a write to `shape.top` and keep the old value, while `shape.left`
+   * lands normally.
+   *
+   * office-js#6183, "PowerPoint Online: OfficeJS API does not update left and
+   * top properties of selected shape simultaneously" — on the web host, setting
+   * both in one sync moves the shape horizontally only. That is the host every
+   * round in this archive runs against.
+   *
+   * Modelled because the scenario that should catch it, `an update follows a
+   * moved chart`, asked about x alone until 2026-09-17: it moved a chart 60pt
+   * across and 40pt down, then checked one of the two. A fault nothing fails
+   * under is a fault nothing is watching for.
+   */
+  ignoresTopWrites: false,
+  /**
    * Refuse this many `shape.load("id,left,top")` calls outright.
    *
    * The one load that asks WHERE a chart landed. See the shape's `load` for
@@ -1210,6 +1225,10 @@ export function makeShape(
       return ownTop;
     },
     set top(v: number) {
+      // See faults.ignoresTopWrites — office-js#6183. The write is accepted and
+      // discarded, exactly as the web host does it: no error, and a later read
+      // answers the OLD value rather than the one just set.
+      if (faults.ignoresTopWrites) return;
       ownTop = v;
     },
     get width() {
