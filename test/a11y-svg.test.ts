@@ -171,4 +171,108 @@ describe("every element scene carries a text alternative", () => {
       "Table, 2 rows by 3 columns.",
     );
   });
+
+  /**
+   * THE KPI TILE'S DESCRIPTION, WHICH NOTHING ASSERTED UNTIL A MUTANT SAID SO.
+   *
+   * Found 2026-09-17 by the first mutation report this project has ever
+   * produced. 27 mutants survived `src/core/elements.ts` and they were not
+   * scattered: the builders whose `desc` is asserted above killed theirs, and
+   * `buildKpiTile` — used at line 139 of this file for a truthiness check and
+   * never for its CONTENT — carried 18. Line 318 alone survived ten, including
+   * `"Stryker was here!"` substituted for the delta.
+   *
+   * It is the text a screen-reader user actually hears, and it reaches the
+   * host: measured the same morning on PowerPoint for the web,
+   * `Shape.altTextDescription` read back "Revenue: €4.2m +12% vs LY (up)." — the
+   * exact string the first case pins. So it was known to ARRIVE intact while
+   * nothing in 3,985 tests would have noticed it being wrong.
+   *
+   * Each case kills a named survivor rather than covering the function loosely.
+   */
+  it("reads a KPI tile out the way it was drawn", () => {
+    // INFERRED, not passed. The option is `direction`; a `+` delta infers "up"
+    // on its own, and this is the exact string PowerPoint read back from
+    // `altTextDescription` that morning — inference included.
+    expect(
+      buildKpiTile({ label: "Revenue", value: "€4.2m", delta: "+12% vs LY" }).desc,
+      "the whole tile — this is the string a real host read back",
+    ).toBe("Revenue: €4.2m +12% vs LY (up).");
+    expect(buildKpiTile({ value: "42" }).desc, "no label falls back to KPI:, and no delta adds nothing").toBe(
+      "KPI: 42.",
+    );
+    // An EXPLICIT `direction` beats the sign. Written first as `dir: "flat"`,
+    // which is not an option at all — it was ignored, the direction was inferred
+    // "down" from the `-1pp`, and the assertion failed. A test that pins the
+    // wrong option name would have passed happily on the two cases where
+    // inference agrees, and said nothing about the branch it was written for.
+    expect(
+      buildKpiTile({ label: "Churn", value: "3%", delta: "-1pp", direction: "flat" }).desc,
+      "a flat direction is not read out — it would tell a listener nothing",
+    ).toBe("Churn: 3% -1pp.");
+    expect(
+      buildKpiTile({ label: "Heads", value: 12 as never }).desc,
+      "a numeric value is coerced before it is described, as it is before it is drawn",
+    ).toBe("Heads: 12.");
+  });
+
+  it("says a table is empty rather than describing nothing", () => {
+    // The other branch of `buildTableScene`'s description. The populated case
+    // above was asserted; this one was not, and carried its own survivors.
+    expect(buildTableScene([]).desc, "an empty paste still needs a text alternative").toBe("Empty table.");
+  });
+
+  /**
+   * THE BRANCHES THE SECOND MUTATION RUN STILL NAMED, and every one is text a
+   * screen-reader user hears rather than an internal detail.
+   *
+   * The five assertions above took `src/core/elements.ts` from 27 survivors to
+   * 9. All nine were real untested branches rather than equivalent mutants —
+   * the checkbox wording other than "partial", both boundaries of the process
+   * flow highlight, the KPI value fallback, and the singular/plural in a table.
+   * Each line below kills named survivors.
+   */
+  it("describes the edges of each element, not just its middle", () => {
+    // 103: only "partial" was asserted, via the `__proto__` case above. A real
+    // host read "Checkbox, yes." back from altTextDescription this morning.
+    expect(buildCheckbox("yes").desc, "the state a user most often picks").toBe("Checkbox, yes.");
+    expect(buildCheckbox("no").desc).toBe("Checkbox, no.");
+
+    // 185: `highlight >= 0 && highlight < list.length`. The existing case uses 9
+    // against a 2-step flow, which is out of range on BOTH sides of either
+    // mutant — so it never separated `>= 0` from `> 0`, nor `<` from `<=`.
+    expect(buildProcessFlow(["A", "B"], 0).desc, "the FIRST step can be the highlighted one").toBe(
+      "Process flow: A, B. A highlighted.",
+    );
+    expect(
+      buildProcessFlow(["A", "B"], 2).desc,
+      "an index equal to the length is past the end, not the last step",
+    ).toBe("Process flow: A, B.");
+    // THE DEFAULT CALL, and it was the last mutant standing of twenty-seven.
+    // `highlight` defaults to **-1**, so replacing `highlight >= 0` with `true`
+    // changes the output ONLY when no highlight is passed: the guard collapses
+    // to `-1 < list.length`, which holds, and the flow then describes itself as
+    // "... undefined highlighted."
+    //
+    // Every other case above passes a highlight, so every one of them AGREED
+    // with the mutant. The commonest way to call a public builder was the one
+    // path with nothing asserted on it.
+    expect(buildProcessFlow(["A", "B"]).desc, "no highlight names no step").toBe("Process flow: A, B.");
+
+    // 317: the `?? ""` fallback. Every other KPI case passes a value, so nothing
+    // reached the branch that describes a tile whose number is not filled in.
+    // CAST, because `value` is REQUIRED in `KpiTileOptions` — and the `?? ""`
+    // fallback exists precisely for the caller who violates that. These five
+    // builders are public API (`src/index.ts` exports all of them), so the
+    // value can arrive undefined out of user JSON, which is the same boundary
+    // `buildProcessFlow` guards with its `Array.isArray` check. A type that
+    // forbids it does not stop it happening; it only stops the test saying so.
+    expect(
+      buildKpiTile({ label: "Revenue" } as never).desc,
+      "a tile with no number yet still reads out its label",
+    ).toBe("Revenue:.");
+
+    // 576: `rows === 1 ? "" : "s"` twice. Everything else asserted is plural.
+    expect(buildTableScene([["only"]]).desc, "one row and one column are singular").toBe("Table, 1 row by 1 column.");
+  });
 });
