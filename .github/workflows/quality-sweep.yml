@@ -249,10 +249,84 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # SCOPED TO THE WEEK'S DIFF, BECAUSE THE WHOLE-ENGINE RUN CANNOT FINISH.
+      #
+      # Measured rather than feared. GitHub's hard job ceiling is 6 hours and
+      # this job has been killed at it FOUR times — 2026-08-10, 08-17, 08-24 and
+      # 2026-09-14 at 6h00m29s — with zero reports produced in its whole life.
+      # Monday's run left the arithmetic in its log:
+      #
+      #     elapsed: ~5h 49m, remaining: ~144h 26m
+      #     3254/18724 tested (671 survived, 21 timed out)
+      #
+      # 559 mutants an hour, so ~33 hours for the set at that rate and Stryker's
+      # own estimate said 144. Not a run that needs another timeout raised: it is
+      # 5-25x over budget. (The four stacked timeouts fixed on 2026-09-13 got the
+      # DRY RUN to complete in 12m07s. Necessary, nowhere near sufficient.)
+      #
+      # And 671 survivors in the 17% it reached extrapolates to ~3,900 for a full
+      # run, which nobody reads — the same fate `office-js-watch.mjs` describes
+      # for a report that says the same twenty things forever.
+      #
+      # So: mutate the lines that CHANGED. A quiet week mutates nothing and this
+      # job exits after the dry run.
+      - name: Scope the run to the week's diff
+        id: scope
+        run: |
+          SCOPE="$(node scripts/mutation-scope.mjs --days 7)"
+          if [ -z "$SCOPE" ]; then
+            echo "no src/core changes in the last 7 days — nothing to mutate"
+            echo "empty=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "mutating: $SCOPE"
+            echo "scope=$SCOPE" >> "$GITHUB_OUTPUT"
+          fi
       # A devDependency rather than `npx --package`: Stryker resolves
       # `typescript` from the project it is mutating, and an npx-isolated copy
       # cannot see it — the first attempt failed exactly there.
-      - run: npx stryker run
+      #
+      # `tee` because the per-file score table is `clear-text`'s, and it goes to
+      # STDOUT — which is not in `reports/` and so dies with the runner. It is
+      # the one human-readable summary the run produces.
+      - name: Run the mutants that changed
+        if: steps.scope.outputs.empty != 'yes'
+        run: |
+          mkdir -p reports/mutation
+          npx stryker run --mutate "${{ steps.scope.outputs.scope }}" | tee reports/mutation/clear-text.txt
+      - name: Which survivors nobody has ruled on
+        id: triage
+        if: steps.scope.outputs.empty != 'yes'
+        run: |
+          # `set +e` around the capture, exactly as the two sibling jobs do it.
+          # 3 IS THE FINDING here, and under the default `bash -e` the step would
+          # die on it before `found` was ever written.
+          set +e
+          node scripts/mutation-triage.mjs reports/mutation/mutation.json > /tmp/mutants.md
+          code=$?
+          set -e
+          cat /tmp/mutants.md
+          if [ "$code" = "3" ]; then echo "found=yes" >> "$GITHUB_OUTPUT"; fi
+          if [ "$code" != "0" ] && [ "$code" != "3" ]; then
+            echo "the triage itself could not run (exit $code)" >&2
+            exit "$code"
+          fi
+      # THE STEP THIS JOB ALONE LACKED. `flake` files one, `published-install`
+      # files one, and mutation uploaded an artifact and stopped — which, with
+      # `thresholds.break: null`, made it a green check with an attachment
+      # nobody opens.
+      - name: File or update the surviving-mutant report
+        if: steps.triage.outputs.found == 'yes'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title="mutation watch: assertions that let a mutant live"
+          existing=$(gh issue list --state all --search "$title in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file /tmp/mutants.md
+            gh issue reopen "$existing" || true
+          else
+            gh issue create --title "$title" --body-file /tmp/mutants.md
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
