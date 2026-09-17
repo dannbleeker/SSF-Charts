@@ -490,6 +490,20 @@ draw on the web host. FIVE are open.**
        It is also why the `table` element's 1.10 `altTextDescription` write is
        still the one of the five never exercised on a host: the draw never gets
        far enough to reach it. See `docs/evidence/elements-alt-text-2026-09-17.json`.
+       AND IT BEARS ON 23, WHICH IS WHY IT IS HERE RATHER THAN ONLY IN §3.
+       `manifest-prod.xml` ships FIVE ribbon deep links straight at these
+       buttons, `Taskpane.Url.el.table` among them. A certification tester
+       clicks those first. Checked 2026-09-18 rather than assumed: `grep -ciE
+       "harvey|kpiCard|buildTableScene|elements" src/taskpane/selftest.ts`
+       returns **0**, so no scenario has ever touched Elements, and the archive
+       holds no round in which a table drew — 437 of them. This is not a
+       regression. It is a shipped path with a manifest deep link pointed at it
+       that has never once been exercised on a host, and the first time anyone
+       asked, it did not work. The engine is fine (32 test references to
+       `buildTableScene` and the SVG/pptx writers draw it); what fails is the
+       Office.js draw on the web.
+       WHETHER TO SUBMIT WITH IT BROKEN IS THE OWNER'S CALL, and it is the only
+       part of this item that is. Mine is to find out why and offer the options.
 
 
 **The 4:3 arm is no longer on this list, and was never on it as a numbered
