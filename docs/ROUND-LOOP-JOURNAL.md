@@ -8699,3 +8699,48 @@ ask for it, and the refusal that comes back, `could not read the pane's build
 stamp`, does not hint that `--retry 1` would have walked the sideload. Left
 unchanged: the fix is a documentation or default question, not a bug, and this
 is the end of a long session on a host that has failed four ways.
+
+## Rounds 460-462 — fa41b10 — a full cycle, and #6183 answered
+
+The first cycle to finish in this session, after five environment failures and a
+browser restart. **Thirteen Chrome processes were holding the automation
+profile** — the same count `recover`'s comment records after round 415 — and
+`close-all` took all thirteen gracefully. Nothing outside `pw-profile` was
+running, so the pile was the residue of the afternoon's dead rounds, and each
+one had been inheriting a more contended machine than the last.
+
+    460  16:9   18/19, 1 skipped (the visibility gate's known rasterise blind spot)
+    461  16:9   19/19
+    462  4:3    19/19
+
+**`an update follows a moved chart` PASSED all three, with `moved 60x40pt`.**
+That is the answer the whole day was waiting on: this host moves BOTH axes, so
+it does not do what office-js#6183 describes. Two things follow, and the second
+is the one worth keeping. The new y assertion does not misfire on a healthy host
+— the review's specific worry, that DY=40 might legitimately drift through
+rounding or a layout rule, is refuted by three rounds. And the check is now
+exercised rather than merely written: it would catch #6183 if it appeared.
+
+**20 of 20 attempts grouped, 0 refused — which corroborates the retraction.**
+Every Elements probe run this afternoon reported loose parts and no group, and
+the first draft of `docs/evidence/elements-alt-text-2026-09-17.json` called that
+the host refusing to group. On the same deck, hours later, on a machine that is
+not drowning in orphaned browsers, grouping refused nothing at all. The review
+was right that those were truncated draws on a degraded host, and `judge` no
+longer picks between the two causes.
+
+**THE GATE'S "NEW BEHAVIOUR" FLAG IS AN ARM ARTEFACT, not a finding.** It
+reported `43x host|the layout an added slide will be built from — absent
+recently, common now (first seen in b6940ba)`. Checked across the last 23
+archived rounds and the correlation is perfect: the signature appears in EVERY
+4:3 round (440, 445, 450, 453, 457, 462) and in NO 16:9 round. It is a trace
+line that fires only on a deck with more than one master, and `tall` is the
+multi-master deck; `b6940ba` is the commit that added the instrumentation, not a
+build that changed behaviour. "Absent recently" means only that the 4:3 arm had
+not run since round 457, five rounds earlier.
+
+So the novelty detector does not group by ARM, and a cycle is 2:1 in favour of
+16:9 by design — which makes this flag fire on the 4:3 leg of any cycle that
+follows a run of 16:9 rounds. Left as a note rather than a change: the detector
+is doing something useful the rest of the time, and narrowing it wants its own
+read rather than an edit at the end of a session.
