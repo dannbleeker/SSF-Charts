@@ -8594,3 +8594,56 @@ The first two refused to measure. The third reported a FAILURE against a
 product that was working, which is worse, and is the same shape as every other
 instrument fault this archive records: **a parser that cannot read the answer
 says exactly what a feature that was never written would say.**
+
+## No round 460 — 2026-09-17 — three attempts, zero archived rounds
+
+**The gap in the archive between 459 and whatever comes next is the HOST, and
+this entry exists so nobody re-derives that.** The build under test was
+`6cc74c9`; site, pane and HEAD all agreed on it at the start of the third
+attempt, on a deck cleaned to one slide.
+
+    attempt   how far it got                               what ended it
+    1         refused at the pre-flight                    site-behind + pane shut + deck 4
+    2         ready, host answered in 2ms, ran 1322s       the browser process died
+    3         ready, host answered in 4ms                  the pane stopped answering
+
+None of the three is a product verdict and none is archived, which is correct —
+a round that did not finish must not leave a file that looks like one.
+
+**Four distinct failures in one afternoon, on one host.** `PowerPoint.run(...)`
+returning nothing while `Office` and `PowerPoint` are both loaded objects and
+the pane answers DOM questions; grouping refused on three of five Elements
+inserts at a time, repeatedly, leaving sixty loose parts on a slide; a browser
+death 22 minutes into a round; and a pane left holding a crash-recovery offer
+whose run button could not be found. The first two ran all afternoon, through
+every Elements probe run.
+
+**WHAT WAS WAITING ON A ROUND, AND STILL IS.** `an update follows a moved
+chart` now asserts BOTH axes (office-js#6183 — PowerPoint Online updates `left`
+and not `top`). If this host does what that issue describes, that scenario goes
+red on the next finished round, and **that would be a true finding rather than a
+regression** — the scenario compared x alone from the day it was written, so a
+chart travelling half the distance the user asked for has been reported as 19 of
+19 for the whole archive. It is proven at the unit level: `faults.ignoresTopWrites`
+models the host, and without the new y clause that fault passes with "the origin
+round trip held". What is missing is the host's own answer.
+
+**One correction, made here rather than left standing.** Mid-recovery I reported
+that the browser death had taken the web sideload with it. It had not. The check
+ran while the window was 1929px, and at that width PowerPoint hides `Insert
+chart` in the ribbon overflow — which is precisely what `MIN_RIBBON_WIDTH`
+exists for, and what the driver's own comment calls indistinguishable from an
+absent command. After the driver widened to 4632px the command was there. The
+recovery was widen, reopen the pane, clean the deck; no sideload was needed or
+performed.
+
+**A driver gap found while reading, and deliberately NOT changed tonight.** The
+"present but stale" sideload path in `needsSideload` requires `sightings >= 2`,
+and `commandWithoutPane` is a module-level counter that resets with the process.
+`recover` polls readiness inside one process and can reach it; a hand-run
+`node scripts/round.mjs` gets exactly one sighting and returns, so that path is
+unreachable from a single invocation. That is defensible for a pre-flight check
+— but it means a stale pane will never self-heal for someone running rounds by
+hand, and the refusal they see is `could not read the pane's build stamp`, which
+does not hint that a re-sideload is what they need. Written down rather than
+fixed at the end of a long session on a host that has failed four ways.
