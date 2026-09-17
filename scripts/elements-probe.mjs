@@ -71,6 +71,87 @@ export const GROUP_NAME = "PowerChart";
  */
 export const QUIESCE_FLOOR_MS = 24_000;
 
+/** How long an element gets to land before the probe stops waiting for it. */
+export const SETTLE_BUDGET_MS = 60_000;
+
+/** Between reads. Short enough to catch a fast insert, long enough not to flood the host. */
+export const SETTLE_POLL_MS = 4_000;
+
+/**
+ * Read until the slide has stopped changing, or the budget runs out.
+ *
+ * WAS A FLAT 9s WAIT, and on 2026-09-17 that reported `flow` as "nothing landed
+ * on the slide" in a run where the host refused three of five reads outright. A
+ * number chosen for a healthy host, applied to a stalling one, turns latency
+ * into a defect report.
+ *
+ * IT MUST NOT STOP AT THE FIRST NEW SHAPE. The first replacement did, and
+ * reported all five elements as landing shapes with no `altTextDescription` —
+ * including `check`, which had passed with "Checkbox, yes." minutes earlier.
+ * These elements draw their parts, group them, and set the description on the
+ * group LAST, so the first new id is the middle of the insert. That is the same
+ * false red as the flat wait, from the opposite side, inside the same hour.
+ *
+ * AND QUIESCENCE NEEDS MORE THAN TWO READS, plus a floor under the clock. The
+ * renderer commits the parts on one sync, re-reads, and only then commits
+ * `addGroup` + the name + the alt text on a SECOND sync. Between those, an
+ * outside reader sees a stable set of loose parts and no group — indistinguishable
+ * from a grouping refusal. Two consecutive reads is 8 seconds and this host's own
+ * evidence records reads stalling 45-60s, so 8s sat inside the ordinary gap.
+ *
+ * EXPORTED AND INJECTABLE BECAUSE IT IS THE ONLY NEW LOGIC HERE. A review on
+ * 2026-09-17 pointed out that reverting any of the above would be invisible —
+ * it lived inside `main`, reachable by no test. `read`, `sleep` and `now` are
+ * parameters so the whole thing runs in milliseconds against a scripted host.
+ */
+export async function settleReads(before, read, sleep, opts = {}) {
+  const budgetMs = opts.budgetMs ?? SETTLE_BUDGET_MS;
+  const pollMs = opts.pollMs ?? SETTLE_POLL_MS;
+  const floorMs = opts.floorMs ?? QUIESCE_FLOOR_MS;
+  const now = opts.now ?? (() => Date.now());
+  const started = now();
+  // NO DIFF IS POSSIBLE WITHOUT A BEFORE. `before ?? []` made every shape on the
+  // slide look new, so the first read satisfied "something was added" and the
+  // quiesce test compared a set that never changes — it stopped about 5s after
+  // the click and handed `judge` a full slide as the added set. `judge` marks a
+  // null `before` silent whatever comes back, so there is nothing to wait for:
+  // take one read for the record and go.
+  if (!Array.isArray(before)) {
+    await sleep(pollMs);
+    return { after: await read(), waitedMs: now() - started, settled: false };
+  }
+  const had = new Set(before.map((s) => s.id));
+  let last = null;
+  let previousIds = null;
+  let stable = 0;
+  let settled = false;
+  while (now() - started < budgetMs) {
+    await sleep(pollMs);
+    const seen = await read();
+    // A read the host refused is NOT an answer about the slide. Keep waiting —
+    // treating it as "nothing changed" would count silence toward quiescence.
+    if (!Array.isArray(seen)) continue;
+    last = seen;
+    const added = seen.filter((s) => !had.has(s.id));
+    // The terminal state: a description arrived. More waiting cannot unset it.
+    if (added.some((s) => String(s.alt ?? "").trim())) {
+      settled = true;
+      break;
+    }
+    const ids = added
+      .map((s) => s.id)
+      .sort()
+      .join(",");
+    stable = added.length && previousIds === ids ? stable + 1 : 0;
+    previousIds = ids;
+    if (stable >= 2 && now() - started >= floorMs) {
+      settled = true;
+      break;
+    }
+  }
+  return { after: last, waitedMs: now() - started, settled };
+}
+
 export const ELEMENTS = [
   { el: "harvey", expect: /harvey/i },
   { el: "check", expect: /checkbox/i },
@@ -333,84 +414,8 @@ async function main() {
     process.exit(2);
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  /**
-   * Read until the slide has changed, or the budget runs out.
-   *
-   * WAS A FLAT 9s WAIT, and on 2026-09-17 that reported `flow` as "nothing
-   * landed on the slide" in a run where the host refused three of five reads
-   * outright. A number chosen for a healthy host, applied to a stalling one,
-   * turns latency into a defect report.
-   *
-   * Polling does not weaken the assertion — an element that never inserts still
-   * fails, it just takes the full budget to say so. Two things it must NOT do:
-   * stop early on a null read (that is the host being slow, not an answer), and
-   * hide how long it took. The elapsed time is printed on every pass, so an
-   * element that only makes it at 38s reads as the warning it is.
-   *
-   * AND IT MUST NOT STOP AT THE FIRST NEW SHAPE. The first version did, and
-   * reported all five elements as landing shapes with no `altTextDescription` —
-   * including `check`, which had passed with "Checkbox, yes." minutes earlier.
-   * These elements draw their parts, group them, and set the description on the
-   * group LAST, so the first new id is the middle of the insert, not the end of
-   * it. Breaking there measured a half-built element and called the product
-   * broken. That is the same false red as the flat wait, arrived at from the
-   * opposite side, inside the same hour.
-   *
-   * So it stops on one of two things: a new shape that CARRIES a description
-   * (the terminal state — more waiting cannot unset it), or a new-id set that
-   * has not moved across two consecutive reads (the insert has quiesced).
-   */
-  const settle = async (before, budgetMs = 60_000) => {
-    const started = Date.now();
-    // NO DIFF IS POSSIBLE WITHOUT A BEFORE. `before ?? []` made every shape on
-    // the slide look new, so the first read satisfied "something was added" and
-    // the quiesce test compared a set that never changes — it stopped about 5s
-    // after the click and handed `judge` a full slide as the added set. `judge`
-    // marks a null `before` silent whatever comes back, so there is nothing to
-    // wait for: take one read for the record and go.
-    if (!Array.isArray(before)) {
-      await sleep(4000);
-      return { after: readAlt(pw("eval", readAltScript(), ref)), waitedMs: Date.now() - started, settled: false };
-    }
-    const had = new Set(before.map((s) => s.id));
-    let last = null;
-    let previousIds = null;
-    let stable = 0;
-    let settled = false;
-    while (Date.now() - started < budgetMs) {
-      await sleep(4000);
-      const seen = readAlt(pw("eval", readAltScript(), ref));
-      if (!Array.isArray(seen)) continue;
-      last = seen;
-      const added = seen.filter((s) => !had.has(s.id));
-      // The terminal state: a description arrived. More waiting cannot unset it.
-      if (added.some((s) => String(s.alt ?? "").trim())) {
-        settled = true;
-        break;
-      }
-      const ids = added
-        .map((s) => s.id)
-        .sort()
-        .join(",");
-      stable = added.length && previousIds === ids ? stable + 1 : 0;
-      previousIds = ids;
-      // QUIESCENCE NEEDS MORE THAN TWO READS, and a floor under the clock.
-      //
-      // The renderer commits the parts on one sync, re-reads, and only then
-      // commits `addGroup` + the name + the alt text on a SECOND sync. Between
-      // those an outside reader sees a stable set of loose parts and no group —
-      // identical to a grouping refusal. Two consecutive reads is 8 seconds, and
-      // this host's own evidence file records reads stalling 45-60s, so 8s was
-      // inside the ordinary gap rather than past it. Three stable reads AND 24
-      // seconds elapsed is still far short of the budget and no longer sits in
-      // the middle of a normal insert.
-      if (stable >= 2 && Date.now() - started >= QUIESCE_FLOOR_MS) {
-        settled = true;
-        break;
-      }
-    }
-    return { after: last, waitedMs: Date.now() - started, settled };
-  };
+  /** `settleReads` bound to this run's frame. The reasoning lives on it. */
+  const settle = (before) => settleReads(before, () => readAlt(pw("eval", readAltScript(), ref)), sleep);
   const results = [];
   for (const spec of ELEMENTS) {
     const before = readAlt(pw("eval", readAltScript(), ref));
