@@ -188,6 +188,43 @@ export const readAltScript = (budgetMs = 20000) =>
   `new Promise((_, rej) => setTimeout(() => rej(new Error("budget")), ${budgetMs})) ]); ` +
   '} catch (e) { return "alt-failed:" + (e && e.message ? String(e.message).slice(0, 90) : "?"); } }';
 
+/**
+ * What the PANE says about what just happened — `#host-note`, the `note()`
+ * target, `role="status"`.
+ *
+ * THE INSTRUMENT THAT DECIDES, and this probe did not read it. When an insert
+ * leaves loose parts and no group, a shape list cannot say whether the host
+ * refused to group or the draw stopped before reaching the grouping sync — both
+ * leave exactly the same slide. The pane knows: it writes `PowerPoint did not
+ * respond while drawing shapes 1-10 of 23 (45s)` for the second, and something
+ * quite different for the first.
+ *
+ * On 2026-09-17 the `table` element produced one sync's worth of a 23-shape
+ * draw, the evidence file recorded that as a grouping refusal, and the sentence
+ * correcting it said the deciding instrument "was not read". This is that
+ * instrument. A pure DOM read, so it answers even while the host is silent —
+ * which is exactly when it is worth the most.
+ */
+export const readNoteScript = () =>
+  "() => { const n = document.getElementById('host-note'); " +
+  "return 'note:' + JSON.stringify({ text: n ? n.textContent : null, cls: n ? n.className : null }); }";
+
+/** `note:{...}` -> the note, or null when the pane would not answer. */
+export function readNote(out) {
+  const m = /note:(\{.*?\})\s*"?\s*$|note:(\{.*\})/s.exec(String(out ?? ""));
+  const body = m?.[1] ?? m?.[2];
+  if (!body) return null;
+  for (const candidate of [body, body.replace(/\\"/g, '"')]) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch {
+      // try the next spelling — see `readAlt` for why both are attempted
+    }
+  }
+  return null;
+}
+
 /** Click one Elements button by id, inside the pane's frame. */
 export const clickElementScript = (el) =>
   "async () => { const tab = document.querySelector('[data-tab=\"elements\"]'); if (tab) tab.click(); " +
@@ -431,6 +468,17 @@ async function main() {
     const secs = `${Math.round(waitedMs / 1000)}s${settled ? "" : ", STILL CHANGING when the budget ran out"}`;
     const said = verdict.ok ? `${JSON.stringify(verdict.alt)} (${secs})` : `${verdict.why} (waited ${secs})`;
     console.log(`  ${mark} ${spec.el.padEnd(7)} ${said}`);
+    // AND WHAT THE PANE SAID, whenever the element did not simply work. This is
+    // a DOM read and answers while the host is silent, so it is the one line
+    // available in exactly the case the rest of this probe cannot resolve.
+    if (!verdict.ok) {
+      const n = readNote(pw("eval", readNoteScript(), ref));
+      const text = n?.text?.trim();
+      console.log(
+        `       the pane said: ${text ? JSON.stringify(text) : "nothing — #host-note was empty or unreadable"}`,
+      );
+      verdict.paneSaid = text ?? null;
+    }
   }
   console.log("");
   if (hostSilent(results)) {

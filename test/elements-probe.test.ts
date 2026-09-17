@@ -9,6 +9,7 @@ import {
   hostSilent,
   judge,
   readAlt,
+  readNote,
   settleReads,
   summarise,
   // @ts-expect-error — a .mjs tool script with no types, imported for its pure helpers.
@@ -314,6 +315,23 @@ describe("what the Elements probe concludes", () => {
     expect(r.settled, "claimed a settled answer about a slide it could not diff").toBe(false);
     expect(r.waitedMs, "waited out a budget for an answer that cannot exist").toBeLessThan(QUIESCE_FLOOR_MS);
     expect(judge(harvey, null, r.after, "clicked").silent).toBe(true);
+  });
+
+  it("reads what the PANE said, including its escaped spelling", () => {
+    // The instrument that decides between "the host refused to group" and "the
+    // draw stopped before it got there". Same escaped-quote trap as `readAlt`:
+    // the CLI returns `"` as `\"`, and a parser that cannot read the answer
+    // reports the same thing as a pane that said nothing.
+    const plain =
+      'note:{"text":"PowerPoint did not respond while drawing shapes 1-10 of 23 (45s)","cls":"hint status-err"}';
+    expect(readNote(plain)?.text).toMatch(/did not respond while drawing shapes 1-10 of 23/);
+    const escaped = 'note:{\\"text\\":\\"Inserted 1 chart.\\",\\"cls\\":\\"hint status-ok\\"}';
+    expect(readNote(escaped)?.text).toBe("Inserted 1 chart.");
+    // An empty note is an ANSWER — the pane said nothing — and must not be
+    // confused with the read failing.
+    expect(readNote('note:{"text":"","cls":"hint"}')?.text).toBe("");
+    expect(readNote("nothing like a note")).toBeNull();
+    expect(readNote(undefined)).toBeNull();
   });
 
   it("does not call an empty run silent", () => {

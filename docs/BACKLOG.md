@@ -345,7 +345,9 @@ was also a third instance of this file's own trap, written up as a section and
 left off this list until someone asked what was open. 17 closed the same
 evening, on a deck created for it rather than a harness one. 3 closed on
 2026-09-06: its remainder was answered NO, and the budget it argued about was
-raised 90 -> 105 on the first evidence that ever bore on it. FOUR are open.**
+raised 90 -> 105 on the first evidence that ever bore on it. 24 was ADDED on
+2026-09-17, the first item opened here in weeks: the `table` element does not
+draw on the web host. FIVE are open.**
 
 > The count here read "six" against a list of four, and then "five" against a
 > list of three. Stale both times, and this file states its own tie-breaker:
@@ -378,6 +380,13 @@ raised 90 -> 105 on the first evidence that ever bore on it. FOUR are open.**
 > and none of it moves 5, 21, 22 or 23 — every one of those still waits on his
 > identity, his Mac, his screenshots or his submission. **FOUR are open, counted
 > off the list on 2026-09-17.**
+>
+> **AND THEN FIVE, LATER THE SAME EVENING.** Item 24 was opened after the
+> restart-and-cycle: the `table` element does not draw on this host, measured
+> four times, and the pane names the failure itself. Noted here rather than only
+> at the item, because the paragraph above says "four" and would otherwise be
+> the fifth instance of the staleness this section keeps recording. The count is
+> FIVE, and 24 is the only one of them that is mine rather than the owner's.
 >
 > One correction while re-reading it: **the numbers 29, 30 and 56 that appear
 > further down this file are COUNTS in evidence tables, not backlog items.**
@@ -456,6 +465,31 @@ raised 90 -> 105 on the first evidence that ever bore on it. FOUR are open.**
        shipping entry point nobody had counted. Corrected 2026-09-17 by
        counting both files rather than re-reading the sentence.
        What is left is 21, 22, and a decision to press submit — all his.
+
+    24  the `table` element does not draw on PowerPoint on the web
+       — added 2026-09-17, and it is MINE rather than the owner's. The pane
+       reports `Failed: PowerPoint did not respond while drawing shapes 1-10 of
+       23 (45s) | at=drawing the chart's shapes`, word for word, on four
+       separate attempts across the day — including twice in a row on a cleared
+       slide, on a machine that had just run a clean three-leg cycle and where
+       the other four Elements completed in 11-23s. What the user gets is ten
+       loose shapes and a failure message. The pane says so honestly, which is
+       the reporting working; the draw is what does not.
+       WHY IT IS ON THIS LIST AND NOT ONLY IN THE EVIDENCE FILE: it is open
+       product work, it is user-facing, and this section's own rule is that a
+       thing not on the list is not open. Tracking it where the measurement
+       happened is the trap the notes above this list are about.
+       THE NEXT STEP IS A HYPOTHESIS TEST, NOT A FIX. It is not shape count —
+       `harvey` is 24 shapes and finishes in 11s, `table` is 23 and dies on its
+       first batch of ten. The difference is composition: harvey's first ten are
+       all geometric, the table's are two rules and EIGHT `addTextBox` calls in
+       one sync. Cheap experiment, nothing else should be changed first: time
+       ten text boxes in one sync against ten rectangles. A fix chosen before
+       that is a guess — and `SHAPES_PER_SYNC` is the obvious knob to reach for,
+       which is exactly why it should not be turned yet.
+       It is also why the `table` element's 1.10 `altTextDescription` write is
+       still the one of the five never exercised on a host: the draw never gets
+       far enough to reach it. See `docs/evidence/elements-alt-text-2026-09-17.json`.
 
 
 **The 4:3 arm is no longer on this list, and was never on it as a numbered
