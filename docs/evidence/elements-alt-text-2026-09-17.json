@@ -17,7 +17,7 @@
       "table": "NOT a defect, and not confirmed either. The button was enabled, the click was accepted, and the insert was attempted at 23 shapes. The host then went silent and the pane reported it: 'Failed: PowerPoint did not respond while drawing shapes 1-10 of 23 (45s) | at=drawing the chart's shapes'. The slide's shape count was 52 before and after. Same 45s silent-host stall that blind-skipped `insert onto a slide that already has content` in round 458."
     }
   },
-  "conclusion": "Four of the five Elements write a correct, element-specific altTextDescription on a real host. The 1.10 write reaches PowerPoint and the accessibility description a user gets is the one the engine built. The fifth is untested because the host would not draw it, which is an environment result rather than a product one — and the pane said so rather than failing silently.",
+  "conclusion": "ALL FIVE Elements write a correct, element-specific altTextDescription on a real host — the fifth confirmed on 2026-09-18 as one grouped shape carrying \"Table, 4 rows by 5 columns.\". The 1.10 write reaches PowerPoint and the accessibility description a user gets is the one the engine built. THE THREE SENTENCES THIS FILE PREVIOUSLY ENDED ON WERE EACH WRONG ABOUT THE FIFTH, in turn: untested because the host would not draw it (the host would, later in a session it would not); a grouping refusal (it was a truncated draw); the element itself (it was session age). Read the sittings in order — the corrections are the useful part.",
   "secondSitting": {
     "taken": "2026-09-17T13:40Z",
     "why": "To finish the table element, and to re-run the probe after it was fixed to tell `could not ask` from `asked and the answer was wrong`.",
@@ -36,9 +36,19 @@
     "aHYPOTHESIS_NOT_A_FINDING": "It is not shape COUNT. `harvey` is 24 shapes and completes in 11s; `table` is 23 and dies on its first batch of 10. What differs is composition: harvey's first ten are `harvey-ring` plus nine `harvey-fill-*`, all geometric, zero text. The table's first ten are `rule-top`, `rule-header` and EIGHT `cell-text-*`, i.e. eight `addTextBox` calls in one sync. The other elements carry text in ones and twos and are fine. That points at a batch dense in text boxes rather than at size — but it is one comparison on one host and nothing has varied the composition deliberately, so it is a hypothesis to test, not a result. The experiment is cheap: draw ten text boxes in one sync and time it against ten rectangles.",
     "whatTheUserGETS": "On this host, clicking `table` leaves ten loose shapes on the slide and a failure message. The pane reports it honestly rather than failing silently, which is the behaviour working. Whether the wreckage should be swept is a separate question and is not answered here."
   },
+  "fourthSitting": {
+    "taken": "2026-09-18T00:30Z",
+    "headline": "ALL FIVE ELEMENTS ARE NOW CONFIRMED ON A REAL HOST. The fifth, `table`, was never broken — it drew first-in-session on an empty slide as one grouped shape carrying 'Table, 4 rows by 5 columns.', read straight off the slide.",
+    "whatWasWrongWithTheThirdSitting": "It concluded the table 'does not draw', from five failures that were all its LAST element. `ELEMENTS` runs in a fixed order and `table` is last, so every run measured it latest in the session. Position was a confound and the probe never said so; it reported the element as broken five times.",
+    "theControls": "table 1st on an empty slide -> Done. table/check/flow/kpi as 1st-4th -> all Done. harvey 5th onto four element groups -> Done. table 6th onto five groups -> Failed at shapes 11-20 of 23. table 5th with the slide CLEARED first -> Failed the same way, so it is not slide load. table 1st again straight afterwards -> Done, so it is not a poisoned session either.",
+    "soTheVariableIsSESSIONAGE": "Not the element, not the slide, not the shape count. The archive already holds this under office-js#3565 (syncs getting progressively longer, a restart resetting it) and #6329 (the web host forcing a full presentation save on every sync). What the table adds is that it is the first thing to cross the 45s budget when that cost rises.",
+    "whyTheTableFirst": "`SHAPES_PER_SYNC` caps SHAPES and the cost is STATEMENTS. Measured on `scripts/textbox-cost-probe.mjs`: the table's first batch styled the way `addText` styles it costs 1641ms against 498ms for the same ten shapes unstyled — 3.4x for identical geometry. A text node is 20 statements and a rect 7, so the table's batch is ~174 statements against harvey's ~70, and both are 'ten shapes'.",
+    "hypothesesTheBenchKilled": "COMPOSITION: ten text boxes 571ms against ten rectangles 419ms, 1.3x — refuted. THE EMPTY CORNER CELL: `buildTableScene` emits a text node for every cell including the blank one at 0,0, and the failed insert's shapes read back with `cell-text-0-0` carrying '' — the sharpest candidate available, and adding exactly it to the styled batch gave 1628ms against 1641ms. Refuted.",
+    "fixed": "`elements-probe.mjs` now clears the slide between elements and documents why."
+  },
   "doesNotCover": [
-    "Whether the table element's `desc` ARRIVES. The third sitting established WHY it cannot be asked — the host stalls drawing shapes 1-10 of 23 — which is a different question, and the 1.10 write for `table` remains the one of the five never exercised on a host.",
-    "Why a batch of eight text boxes stalls where ten geometric shapes do not. Named as a hypothesis in `thirdSitting`, untested.",
+    "A second host. Everything here is PowerPoint on the web, on one machine, and the session-age effect is exactly the kind of thing that could differ.",
+    "Whether budgeting by STATEMENTS instead of shapes would fix it. That is the remedy direction and it is not implemented — one host, one sitting, and two hypotheses already dead here.",
     "PowerPoint on Windows or Mac desktop. This is the web host only.",
     "Whether the description is what a screen reader should ideally say. This checks that the engine's `desc` ARRIVED, not that the copy is good.",
     "n = 1 per element, one slide, one session."

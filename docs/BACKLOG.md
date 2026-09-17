@@ -466,45 +466,54 @@ draw on the web host. FIVE are open.**
        counting both files rather than re-reading the sentence.
        What is left is 21, 22, and a decision to press submit — all his.
 
-    24  the `table` element does not draw on PowerPoint on the web
-       — added 2026-09-17, and it is MINE rather than the owner's. The pane
-       reports `Failed: PowerPoint did not respond while drawing shapes 1-10 of
-       23 (45s) | at=drawing the chart's shapes`, word for word, on four
-       separate attempts across the day — including twice in a row on a cleared
-       slide, on a machine that had just run a clean three-leg cycle and where
-       the other four Elements completed in 11-23s. What the user gets is ten
-       loose shapes and a failure message. The pane says so honestly, which is
-       the reporting working; the draw is what does not.
-       WHY IT IS ON THIS LIST AND NOT ONLY IN THE EVIDENCE FILE: it is open
-       product work, it is user-facing, and this section's own rule is that a
-       thing not on the list is not open. Tracking it where the measurement
-       happened is the trap the notes above this list are about.
-       THE NEXT STEP IS A HYPOTHESIS TEST, NOT A FIX. It is not shape count —
-       `harvey` is 24 shapes and finishes in 11s, `table` is 23 and dies on its
-       first batch of ten. The difference is composition: harvey's first ten are
-       all geometric, the table's are two rules and EIGHT `addTextBox` calls in
-       one sync. Cheap experiment, nothing else should be changed first: time
-       ten text boxes in one sync against ten rectangles. A fix chosen before
-       that is a guess — and `SHAPES_PER_SYNC` is the obvious knob to reach for,
-       which is exactly why it should not be turned yet.
-       It is also why the `table` element's 1.10 `altTextDescription` write is
-       still the one of the five never exercised on a host: the draw never gets
-       far enough to reach it. See `docs/evidence/elements-alt-text-2026-09-17.json`.
-       AND IT BEARS ON 23, WHICH IS WHY IT IS HERE RATHER THAN ONLY IN §3.
-       `manifest-prod.xml` ships FIVE ribbon deep links straight at these
-       buttons, `Taskpane.Url.el.table` among them. A certification tester
-       clicks those first. Checked 2026-09-18 rather than assumed: `grep -ciE
-       "harvey|kpiCard|buildTableScene|elements" src/taskpane/selftest.ts`
-       returns **0**, so no scenario has ever touched Elements, and the archive
-       holds no round in which a table drew — 437 of them. This is not a
-       regression. It is a shipped path with a manifest deep link pointed at it
-       that has never once been exercised on a host, and the first time anyone
-       asked, it did not work. The engine is fine (32 test references to
-       `buildTableScene` and the SVG/pptx writers draw it); what fails is the
-       Office.js draw on the web.
-       WHETHER TO SUBMIT WITH IT BROKEN IS THE OWNER'S CALL, and it is the only
-       part of this item that is. Mine is to find out why and offer the options.
+    24  a text-dense element crosses the sync budget as a session ages
+       — opened 2026-09-17 as "the `table` element does not draw on the web",
+       which was WRONG, and rewritten 2026-09-18 after the bench refuted its own
+       premise. The table draws perfectly well: first in a session, on an empty
+       slide, it comes back `Done.` as one grouped shape carrying
+       `Table, 4 rows by 5 columns.` — the fifth Elements description, and the
+       last one this project had never seen on a host.
+       WHAT ACTUALLY HAPPENS, measured in one sitting on one healthy host:
 
+           table  1st, empty slide          Done
+           table/check/flow/kpi 1st-4th     all Done
+           harvey 5th, 4 groups on slide    Done
+           table  6th, 5 groups on slide    Failed, shapes 11-20 of 23
+           table  5th, slide CLEARED first  Failed, shapes 11-20 of 23
+           table  1st again, after that     Done
+
+       Clearing the slide does not save it, so it is not slide load; and a
+       restart does, so it is not permanent. What is left is SESSION AGE, which
+       this archive already has under two names — office-js#3565 (syncs getting
+       progressively longer, a restart resetting it) and #6329 (the web host
+       forcing a full presentation save on EVERY sync, so the cost per sync
+       tracks the work already done).
+       WHY THE TABLE AND NOT HARVEY, which is the same size. `SHAPES_PER_SYNC`
+       caps SHAPES; the cost is STATEMENTS. Measured on the bench at
+       `scripts/textbox-cost-probe.mjs`: the table's first batch styled the way
+       `addText` styles it costs 1641ms against 498ms for the same ten shapes
+       unstyled — **3.4x for identical geometry**. A text node is 20 statements
+       and a rect 7, so the table's batch is ~174 statements and harvey's ~70.
+       Both are "ten shapes". As the per-sync cost rises, the batch carrying two
+       and a half times the statements crosses the 45s budget first, and the
+       table is the most text-dense thing this add-in ships.
+       THE REMEDY DIRECTION IS TO BUDGET BY STATEMENTS, NOT SHAPES — and it is
+       the same defect this repo has already met once, in `shape-budget.test.ts`
+       reading `scene.nodes.length` while its own docstring was about shapes.
+       NOT IMPLEMENTED, deliberately: it changes the renderer's batching for
+       every chart on every host, the evidence is one host and one sitting, and
+       two hypotheses have already died here. It wants its own read, a second
+       host if one can be had, and rounds either side.
+       WHAT IS ALREADY FIXED: `elements-probe.mjs` clears the slide between
+       elements and says why. `table` is last in `ELEMENTS`, so every run
+       measured it latest in the session and reported it as the broken one —
+       five times. The probe's own ordering produced the finding.
+       IT STILL BEARS ON 23. `manifest-prod.xml` ships five ribbon deep links at
+       these buttons, `Taskpane.Url.el.table` among them, and a certification
+       tester clicks those first — where it works. A tester who clicks all five
+       and then the table again meets this. Checked rather than assumed: grep
+       for harvey/kpiCard/buildTableScene/elements in `selftest.ts` returns 0,
+       so no scenario has ever touched Elements.
 
 **The 4:3 arm is no longer on this list, and was never on it as a numbered
 item.** It closed 2026-09-05 on fifteen post-fix rounds against four pre-fix

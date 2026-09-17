@@ -453,8 +453,35 @@ async function main() {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   /** `settleReads` bound to this run's frame. The reasoning lives on it. */
   const settle = (before) => settleReads(before, () => readAlt(pw("eval", readAltScript(), ref)), sleep);
+  /**
+   * EACH ELEMENT ON A SLIDE OF ITS OWN, because position was a confound and
+   * this file spent a day reporting it as a defect.
+   *
+   * `ELEMENTS` runs in a fixed order and `table` is last, so every run measured
+   * it on a slide already holding four inserted elements — and it failed, five
+   * times, with the probe reporting "table" as the thing that was broken. It is
+   * not. Measured 2026-09-18, on one healthy host, in one sitting:
+   *
+   *     table 1st  on an empty slide   -> Done, grouped, "Table, 4 rows by 5 columns."
+   *     harvey 5th on 4 element groups -> Done
+   *     table 6th  on 5 element groups -> Failed, shapes 11-20 of 23
+   *     table 1st  again after that    -> Done
+   *
+   * So the element works and the SLIDE LOAD is the variable — which is BACKLOG
+   * item 24's real subject and is not what this probe is for. This probe asks
+   * whether each of the five carries its description; measuring each on a clean
+   * slide is that question's honest scope, and leaving the accumulation in made
+   * the answer depend on alphabetical luck.
+   */
+  const clearSlide = () =>
+    pw(
+      "eval",
+      'async () => { try { await Promise.race([ PowerPoint.run(async (c) => { const sh = c.presentation.getSelectedSlides().getItemAt(0).shapes; sh.load("items/id"); await c.sync(); for (const x of (sh.items || [])) x.delete(); await c.sync(); }), new Promise((_, rej) => setTimeout(() => rej(new Error("budget")), 60000)) ]); return "cleared"; } catch (e) { return "clear-failed"; } }',
+      ref,
+    );
   const results = [];
   for (const spec of ELEMENTS) {
+    clearSlide();
     const before = readAlt(pw("eval", readAltScript(), ref));
     const clicked = /"?(clicked|disabled|no-button)"?/.exec(pw("eval", clickElementScript(spec.el), ref))?.[1] ?? "?";
     const { after, waitedMs, settled } = await settle(before);
