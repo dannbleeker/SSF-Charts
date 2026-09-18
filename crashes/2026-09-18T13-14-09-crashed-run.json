@@ -1,0 +1,19 @@
+{
+  "kind": "ssf-charts-crash-log",
+  "build": "dece3c0 · 2026-09-17 23:24Z",
+  "host": "PowerPoint · OfficeOnline · 0.0.0.0",
+  "label": "the whole round",
+  "seq": 1,
+  "startedAt": "2026-09-18T13:08:19.418Z",
+  "dropped": 0,
+  "steps": [
+    "  62.9s  deck-style  the deck-style read answered  parts=0 at=counting the deck's style parts observedBeforeTheRound=true",
+    "  62.9s  host  environment  build=dece3c0 · 2026-09-17 23:24Z host=PowerPoint platform=OfficeOnline version=0.0.0.0 extendedErrors=true requirementSets=[\"1.1\",\"1.2\",\"1.3\",\"1.4\",\"1.5\",\"1.6\",\"1.7\",\"1.8\",\"1.9\",\"1.10\"] canInsertSlidesFromBase64=true canInsertPicture=true",
+    "  63.2s  host  slide size  width=720 height=540 source=documentFile",
+    " 152.9s  host  gave up waiting  what=listing the deck's slides afterMs=90000 afterAnswering=reading the slide size afterAnsweringMs=29 idleMs=-28 shape=THIS CALL ALONE is stuck — the host answered something else 28ms AFTER this call was issued, while it was still waiting",
+    " 152.9s  error  listing the deck's slides  error=PowerPoint did not respond while listing the deck's slides (90s) | at=listing the deck's slides",
+    " 152.9s  pane  action failed  action=demo-round ms=90011 error=PowerPoint did not respond while listing the deck's slides (90s) | at=listing the deck's slides stack=Error: PowerPoint did not respond while listing the deck's slides (90s) |     at https://ssf-chart.struktureretsundfornuft.dk/assets/taskpane-D-8_V137.js:28:20742"
+  ],
+  "frontedWhenRescued": "Presentation70.pptx",
+  "deckAskedNextRound": "Presentation70"
+}
