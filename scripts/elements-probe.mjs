@@ -63,14 +63,6 @@ const DIR = "C:\\devtools\\SSF-Charts\\.pw-session";
  */
 export const GROUP_NAME = "PowerChart";
 
-/**
- * How long an insert must have been quiet before "it has stopped changing" is
- * believed. See `settle` — the gap between the draw sync and the grouping sync
- * is a window in which a finished-looking set of loose parts is the middle of
- * an insert, and this is the floor under how long that window is allowed to be.
- */
-export const QUIESCE_FLOOR_MS = 24_000;
-
 /** How long an element gets to land before the probe stops waiting for it. */
 export const SETTLE_BUDGET_MS = 60_000;
 
@@ -78,78 +70,47 @@ export const SETTLE_BUDGET_MS = 60_000;
 export const SETTLE_POLL_MS = 4_000;
 
 /**
- * Read until the slide has stopped changing, or the budget runs out.
+ * Wait for the PANE to say it has finished, then read the slide ONCE.
  *
- * WAS A FLAT 9s WAIT, and on 2026-09-17 that reported `flow` as "nothing landed
- * on the slide" in a run where the host refused three of five reads outright. A
- * number chosen for a healthy host, applied to a stalling one, turns latency
- * into a defect report.
+ * THE PREVIOUS VERSION OF THIS FUNCTION BROKE THE THING IT MEASURED, and that
+ * is the whole reason this one looks so plain. It polled the slide every four
+ * seconds THROUGH the draw — a `PowerPoint.run` per poll, interleaved with the
+ * renderer's own batches, on a host that forces a full presentation save on
+ * every sync (office-js#6329). Measured 2026-09-18, same fresh session, same
+ * cleared slide, same element, the only difference being the polling:
  *
- * IT MUST NOT STOP AT THE FIRST NEW SHAPE. The first replacement did, and
- * reported all five elements as landing shapes with no `altTextDescription` —
- * including `check`, which had passed with "Checkbox, yes." minutes earlier.
- * These elements draw their parts, group them, and set the description on the
- * group LAST, so the first new id is the middle of the insert. That is the same
- * false red as the flat wait, from the opposite side, inside the same hour.
+ *     table insert, no polling      -> "Done."
+ *     table insert, polled every 4s -> "Failed: PowerPoint did not respond
+ *                                       while drawing shapes 11-20 of 23 (45s)"
  *
- * AND QUIESCENCE NEEDS MORE THAN TWO READS, plus a floor under the clock. The
- * renderer commits the parts on one sync, re-reads, and only then commits
- * `addGroup` + the name + the alt text on a SECOND sync. Between those, an
- * outside reader sees a stable set of loose parts and no group — indistinguishable
- * from a grouping refusal. Two consecutive reads is 8 seconds and this host's own
- * evidence records reads stalling 45-60s, so 8s sat inside the ordinary gap.
+ * and the poll results in the failing run read `X,20,20,20,20,...` — the first
+ * read timing out against the draw, then the shape count frozen at 20 forever.
+ * The other four Elements survived it because their draws are short enough; the
+ * table's is long enough to be hit over and over. Every "table FAILS" this probe
+ * ever reported was this.
  *
- * EXPORTED AND INJECTABLE BECAUSE IT IS THE ONLY NEW LOGIC HERE. A review on
- * 2026-09-17 pointed out that reverting any of the above would be invisible —
- * it lived inside `main`, reachable by no test. `read`, `sleep` and `now` are
- * parameters so the whole thing runs in milliseconds against a scripted host.
+ * So: no host calls until the insert is done. `busy` is a DOM read of
+ * `#host-note`'s class, which the pane sets to `status-busy` while working and
+ * to `status-ok`/`status-err` when it settles — it costs the host nothing, and
+ * it is a better signal than any amount of guessing at quiescence, which is
+ * what the stable-id counting and the 24s floor were.
  */
-export async function settleReads(before, read, sleep, opts = {}) {
+export async function settleReads(read, busy, sleep, opts = {}) {
   const budgetMs = opts.budgetMs ?? SETTLE_BUDGET_MS;
   const pollMs = opts.pollMs ?? SETTLE_POLL_MS;
-  const floorMs = opts.floorMs ?? QUIESCE_FLOOR_MS;
   const now = opts.now ?? (() => Date.now());
   const started = now();
-  // NO DIFF IS POSSIBLE WITHOUT A BEFORE. `before ?? []` made every shape on the
-  // slide look new, so the first read satisfied "something was added" and the
-  // quiesce test compared a set that never changes — it stopped about 5s after
-  // the click and handed `judge` a full slide as the added set. `judge` marks a
-  // null `before` silent whatever comes back, so there is nothing to wait for:
-  // take one read for the record and go.
-  if (!Array.isArray(before)) {
-    await sleep(pollMs);
-    return { after: await read(), waitedMs: now() - started, settled: false };
-  }
-  const had = new Set(before.map((s) => s.id));
-  let last = null;
-  let previousIds = null;
-  let stable = 0;
   let settled = false;
   while (now() - started < budgetMs) {
     await sleep(pollMs);
-    const seen = await read();
-    // A read the host refused is NOT an answer about the slide. Keep waiting —
-    // treating it as "nothing changed" would count silence toward quiescence.
-    if (!Array.isArray(seen)) continue;
-    last = seen;
-    const added = seen.filter((s) => !had.has(s.id));
-    // The terminal state: a description arrived. More waiting cannot unset it.
-    if (added.some((s) => String(s.alt ?? "").trim())) {
-      settled = true;
-      break;
-    }
-    const ids = added
-      .map((s) => s.id)
-      .sort()
-      .join(",");
-    stable = added.length && previousIds === ids ? stable + 1 : 0;
-    previousIds = ids;
-    if (stable >= 2 && now() - started >= floorMs) {
+    // `null` is "cannot tell" — the note was unreadable. Keep waiting rather
+    // than treating an unknown as a finish.
+    if ((await busy()) === false) {
       settled = true;
       break;
     }
   }
-  return { after: last, waitedMs: now() - started, settled };
+  return { after: await read(), waitedMs: now() - started, settled };
 }
 
 export const ELEMENTS = [
@@ -208,6 +169,25 @@ export const readAltScript = (budgetMs = 20000) =>
 export const readNoteScript = () =>
   "() => { const n = document.getElementById('host-note'); " +
   "return 'note:' + JSON.stringify({ text: n ? n.textContent : null, cls: n ? n.className : null }); }";
+
+/**
+ * Is the pane still working? A DOM read, costing the host NOTHING.
+ *
+ * `note()` sets `#host-note`'s class to `hint status-busy` while an action runs
+ * and to `status-ok`/`status-err` when it settles, so the class answers "has
+ * the insert finished" without a single `PowerPoint.run`. That is the whole
+ * point — see `settleReads` for what asking the HOST during a draw did.
+ */
+export const busyScript = () =>
+  "() => { const n = document.getElementById('host-note'); " +
+  "return 'busy:' + (n ? (/status-busy/.test(n.className) ? 'yes' : 'no') : 'unknown'); }";
+
+/** `busy:yes|no` -> true/false, or null when the pane could not be read. */
+export function readBusy(out) {
+  const m = /busy:(yes|no|unknown)/.exec(String(out ?? ""));
+  if (!m || m[1] === "unknown") return null;
+  return m[1] === "yes";
+}
 
 /** `note:{...}` -> the note, or null when the pane would not answer. */
 export function readNote(out) {
@@ -452,7 +432,12 @@ async function main() {
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   /** `settleReads` bound to this run's frame. The reasoning lives on it. */
-  const settle = (before) => settleReads(before, () => readAlt(pw("eval", readAltScript(), ref)), sleep);
+  const settle = () =>
+    settleReads(
+      () => readAlt(pw("eval", readAltScript(), ref)),
+      () => readBusy(pw("eval", busyScript(), ref)),
+      sleep,
+    );
   /**
    * EACH ELEMENT ON A SLIDE OF ITS OWN, because position was a confound and
    * this file spent a day reporting it as a defect.
@@ -484,7 +469,7 @@ async function main() {
     clearSlide();
     const before = readAlt(pw("eval", readAltScript(), ref));
     const clicked = /"?(clicked|disabled|no-button)"?/.exec(pw("eval", clickElementScript(spec.el), ref))?.[1] ?? "?";
-    const { after, waitedMs, settled } = await settle(before);
+    const { after, waitedMs, settled } = await settle();
     const verdict = judge(spec, before, after, clicked);
     results.push(verdict);
     const mark = verdict.ok ? "ok  " : verdict.silent ? "----" : "FAIL";

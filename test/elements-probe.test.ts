@@ -3,12 +3,13 @@ import { readFileSync } from "node:fs";
 import {
   ELEMENTS,
   GROUP_NAME,
-  QUIESCE_FLOOR_MS,
   SETTLE_BUDGET_MS,
   SETTLE_POLL_MS,
   hostSilent,
   judge,
+  busyScript,
   readAlt,
+  readBusy,
   readNote,
   settleReads,
   summarise,
@@ -32,16 +33,19 @@ import {
 const shape = (id: string, name: string, alt = "") => ({ id, name, alt });
 
 /**
- * Drive `settleReads` against a scripted host. `frames` is what each read
- * answers in order (a `null` is the host refusing); the clock advances one poll
- * per read, so a test that would take a minute of wall time takes none.
+ * Drive `settleReads` against a scripted PANE. `busyFrames` is what each DOM
+ * read of the busy class answers, in order; the clock advances one poll per
+ * read, so a minute of waiting takes none.
  */
-const settled = (frames: unknown[], before: unknown) => {
+const settledBy = (busyFrames: unknown[], read: () => unknown, onBusy?: () => void) => {
   let at = 0;
   let clock = 0;
   return settleReads(
-    before,
-    () => frames[Math.min(at++, frames.length - 1)],
+    async () => read(),
+    async () => {
+      onBusy?.();
+      return busyFrames[Math.min(at++, busyFrames.length - 1)];
+    },
     async () => {
       clock += SETTLE_POLL_MS;
     },
@@ -219,102 +223,68 @@ describe("what the Elements probe concludes", () => {
     }
   });
 
-  it("waits past the gap between the draw sync and the grouping sync", async () => {
-    // THE WHOLE REASON `settleReads` EXISTS, and the case that made it wrong
-    // twice in one hour. The renderer commits the loose parts on one sync and
-    // only then commits addGroup + the name + the alt text on a second. An
-    // outside reader in between sees a stable set of parts and no group, which
-    // is indistinguishable from a grouping refusal.
+  it("makes NO host call until the pane says it has finished", async () => {
+    // THE MOST EXPENSIVE DEFECT THIS PROBE HAS HAD. The previous `settleReads`
+    // polled the SLIDE every 4s through the draw — a PowerPoint.run per poll,
+    // interleaved with the renderer's own batches, on a host that forces a full
+    // presentation save on every sync. It broke the insert it was measuring,
+    // and reported `table` as broken five times.
     //
-    // This host holds that state for three reads before the group arrives. A
-    // two-read quiesce rule stops inside it and reports the refusal.
-    const frames = [
-      [shape("1", "Title 1")], // pre-existing, already in `before`
-      [shape("1", "Title 1"), shape("2", "harvey-ring"), shape("3", "harvey-fill-f0")],
-      [shape("1", "Title 1"), shape("2", "harvey-ring"), shape("3", "harvey-fill-f0")],
-      [shape("1", "Title 1"), shape("2", "harvey-ring"), shape("3", "harvey-fill-f0")],
-      [shape("1", "Title 1"), shape("4", GROUP_NAME, "Harvey ball, 75% filled.")],
-    ];
-    const r = await settled(frames, [shape("1", "Title 1")]);
-    expect(r.settled).toBe(true);
-    expect(
-      r.after.some((s: { alt: string }) => s.alt),
-      "stopped before the group was described",
-    ).toBeTruthy();
-    // And judged, end to end, it is a pass rather than the grouping refusal the
-    // old rule reported.
-    expect(judge(harvey, [shape("1", "Title 1")], r.after, "clicked").ok).toBe(true);
-  });
-
-  it("stops once the slide has been quiet long enough", async () => {
-    // The other side: an insert that really did leave loose parts must not cost
-    // the whole budget. Quiet for three reads AND past the floor, then it stops
-    // — with `settled` true, because the answer is real.
-    const loose = [shape("2", "harvey-ring"), shape("3", "harvey-fill-f0")];
-    const r = await settled([[], loose, loose, loose, loose, loose, loose, loose, loose], []);
-    expect(r.settled).toBe(true);
-    expect(r.waitedMs, "left before the floor").toBeGreaterThanOrEqual(QUIESCE_FLOOR_MS);
-    expect(r.waitedMs, "spent the whole budget on a slide that had stopped").toBeLessThan(SETTLE_BUDGET_MS);
-    expect(judge(harvey, [], r.after, "clicked").ungrouped).toBe(true);
-  });
-
-  it("says STILL CHANGING rather than reporting the last read as final", async () => {
-    // A slide that never stops growing. The verdict is read off the last
-    // successful read either way, so without `settled` it is indistinguishable
-    // from a finished insert — which is how "no group formed" gets reported for
-    // an element that was still being drawn.
-    const growing = Array.from({ length: 40 }, (_, i) =>
-      Array.from({ length: i + 1 }, (_, k) => shape(String(k + 2), "step-" + k)),
+    // Measured, same session, same cleared slide, same element, polling the
+    // only difference: "Done." without it, and "Failed: PowerPoint did not
+    // respond while drawing shapes 11-20 of 23 (45s)" with it.
+    //
+    // So the COUNT is the assertion: one read, and not before the pane is done.
+    // Everything else in this file is about reading the answer correctly; this
+    // is about not destroying it.
+    let reads = 0;
+    let busyPolls = 0;
+    const r = await settledBy(
+      [true, true, true, false],
+      () => {
+        reads++;
+        return [shape("2", GROUP_NAME, "Harvey ball, 75% filled.")];
+      },
+      () => busyPolls++,
     );
-    const r = await settled([[], ...growing], []);
+    expect(reads, "asked the host more than once").toBe(1);
+    expect(busyPolls, "did not wait for the pane at all").toBe(4);
+    expect(r.settled).toBe(true);
+    expect(judge(harvey, [], r.after, "clicked").ok).toBe(true);
+  });
+
+  it("keeps waiting when the pane cannot be read, rather than calling it finished", async () => {
+    // null is "cannot tell". Treating an unknown as a finish would read the
+    // slide mid-draw, which is the failure above in a subtler dress.
+    const r = await settledBy([null, null, false], () => [shape("2", GROUP_NAME, "Checkbox, yes.")]);
+    expect(r.settled).toBe(true);
+    expect(r.waitedMs).toBe(3 * SETTLE_POLL_MS);
+  });
+
+  it("gives up on a pane that never settles, and says so", async () => {
+    // A budget that runs out is not a finish. It still reads once — the
+    // evidence it does have is worth keeping — but `settled` is false, so the
+    // report says STILL CHANGING instead of presenting it as final.
+    const r = await settledBy(
+      Array.from({ length: 999 }, () => true),
+      () => [shape("2", "harvey-ring")],
+    );
     expect(r.settled).toBe(false);
     expect(r.waitedMs).toBeGreaterThanOrEqual(SETTLE_BUDGET_MS);
-    expect(r.after, "threw away the evidence it did have").not.toBeNull();
+    expect(r.after, "threw away the evidence it had").not.toBeNull();
   });
 
-  it("does not count a refused read toward the slide having gone quiet", async () => {
-    // A null is the host DECLINING, not the slide holding still. If a stall
-    // counted as "nothing changed", two of them plus one real read would satisfy
-    // the quiesce rule — and on this host stalls come in runs of 45-60s.
-    //
-    // The sequence is built so the nulls are what decide. Five growing reads
-    // (nothing stable), two refusals, then the same set again, and only THEN
-    // the group with its description. Counting the refusals stops one read
-    // early and reports loose parts; not counting them reaches the answer.
-    const parts = (n: number) => Array.from({ length: n }, (_, i) => shape(String(i + 2), "step-" + i));
-    const r = await settled(
-      [
-        [],
-        parts(1),
-        parts(2),
-        parts(3),
-        parts(4),
-        parts(5),
-        null,
-        null,
-        parts(5),
-        [shape("9", GROUP_NAME, "Process flow: Scope, Design. Scope highlighted.")],
-      ],
-      [],
-    );
-    expect(r.settled).toBe(true);
-    expect(
-      r.after.some((s: { alt: string }) => s.alt),
-      "two stalls were counted as quiet and it stopped before the group arrived",
-    ).toBe(true);
-  });
-
-  it("does not diff against a `before` the host never gave", async () => {
-    // `before ?? []` made every shape on the slide look new, so the first read
-    // satisfied "something was added", the quiesce test compared a set that
-    // never changes, and it stopped ~5s after the click having handed `judge` a
-    // full slide as the added set. There is nothing to wait for — `judge` marks
-    // a null `before` silent whatever comes back.
-    const busy = [shape("1", "Title 1"), shape("2", GROUP_NAME, "Checkbox, yes.")];
-    const r = await settled([busy, busy, busy, busy, busy, busy, busy, busy], null);
-    expect(r.settled, "claimed a settled answer about a slide it could not diff").toBe(false);
-    expect(r.waitedMs, "waited out a budget for an answer that cannot exist").toBeLessThan(QUIESCE_FLOOR_MS);
-    expect(judge(harvey, null, r.after, "clicked").silent).toBe(true);
+  it("reads the pane's busy CLASS, and an absent note as cannot-tell", () => {
+    expect(readBusy("busy:yes")).toBe(true);
+    expect(readBusy("busy:no")).toBe(false);
+    expect(readBusy("busy:unknown"), "an absent note must not read as finished").toBeNull();
+    expect(readBusy("nothing")).toBeNull();
+    expect(readBusy(undefined)).toBeNull();
+    // The class, not the text: the text is translated and the class is not.
+    expect(busyScript()).toContain("status-busy");
+    // And it must stay a DOM read. The moment this touches the host it is the
+    // old defect again.
+    expect(busyScript(), "the busy check reached for the host").not.toContain("PowerPoint.run");
   });
 
   it("reads what the PANE said, including its escaped spelling", () => {

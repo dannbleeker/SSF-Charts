@@ -17,7 +17,7 @@
       "table": "NOT a defect, and not confirmed either. The button was enabled, the click was accepted, and the insert was attempted at 23 shapes. The host then went silent and the pane reported it: 'Failed: PowerPoint did not respond while drawing shapes 1-10 of 23 (45s) | at=drawing the chart's shapes'. The slide's shape count was 52 before and after. Same 45s silent-host stall that blind-skipped `insert onto a slide that already has content` in round 458."
     }
   },
-  "conclusion": "ALL FIVE Elements write a correct, element-specific altTextDescription on a real host — the fifth confirmed on 2026-09-18 as one grouped shape carrying \"Table, 4 rows by 5 columns.\". The 1.10 write reaches PowerPoint and the accessibility description a user gets is the one the engine built. THE THREE SENTENCES THIS FILE PREVIOUSLY ENDED ON WERE EACH WRONG ABOUT THE FIFTH, in turn: untested because the host would not draw it (the host would, later in a session it would not); a grouping refusal (it was a truncated draw); the element itself (it was session age). Read the sittings in order — the corrections are the useful part.",
+  "conclusion": "ALL FIVE Elements write a correct, element-specific altTextDescription on a real host, confirmed in a single run on 2026-09-18. The 1.10 write reaches PowerPoint and the accessibility description a user gets is the one the engine built. READ THE SITTINGS IN ORDER — the corrections are the useful part. This file said the fifth element was untested, then that it was a grouping refusal, then that it was the element, then that it was session age. It was the instrument.",
   "secondSitting": {
     "taken": "2026-09-17T13:40Z",
     "why": "To finish the table element, and to re-run the probe after it was fixed to tell `could not ask` from `asked and the answer was wrong`.",
@@ -57,5 +57,15 @@
     "It anchored on `tab \"Chart\"` copied from round.mjs's readiness check. This pane's tabs are Elements/Agenda/Automation, so it reported `no pane on screen` against a pane that was open and healthy.",
     "It passed `--regex` to the CLI's `find`, which takes plain text — the driver applies its regex in JS afterwards, in `refFor`. And it took the FIRST ref in the output rather than the one on the matching line, which `refFor`'s own comment warns lands you in the OneDrive document where `PowerPoint` is undefined.",
     "Worst: its parser could not read the CLI's escaped quotes, so `JSON.parse` threw and every element reported `the host would not list the slide` while the host was answering perfectly. A parser that cannot read the answer reports the same thing as a feature that was never written."
-  ]
+  ],
+  "fifthSitting": {
+    "taken": "2026-09-18T13:50Z",
+    "headline": "FIVE OF FIVE, exit 0, in one run: harvey 19s, check 14s, flow 12s, kpi 13s, table 31s — the table carrying \"Table, 4 rows by 5 columns.\"",
+    "theCause": "THE PROBE CAUSED THE FAILURE IT REPORTED. `settleReads` polled the SLIDE every 4s through the draw — a PowerPoint.run per poll, interleaved with the renderer's own batches, on a host that forces a full presentation save on every sync (office-js#6329).",
+    "theControl": "Same fresh session, same cleared slide, same element, polling the ONLY difference. Without polling: \"Done.\" With polling every 4s: \"Failed: PowerPoint did not respond while drawing shapes 11-20 of 23 (45s)\", and the poll results read X,20,20,20,... — the first read timing out against the draw, then the shape count frozen at 20.",
+    "whyOnlyTheTable": "The other four have short draws and survive the contention; the table has the longest and is hit repeatedly. Every \"table FAILS\" this probe ever reported was this.",
+    "theFix": "`settleReads` now waits on `#host-note`'s busy CLASS — a DOM read costing the host nothing — and makes exactly ONE host call, after the pane says it has settled. The stable-id counting and the 24s quiescence floor are gone; they were guessing at what the pane already knew.",
+    "hypothesesKilledGettingHere": "composition (1.3x), the empty corner cell (1628ms against 1641ms), session age (the table drew fine as the SIXTH insert in a fresh session), and slide load (clearing the slide did not save it).",
+    "theOneRealFinding": "The batch limit counts SHAPES and the cost is STATEMENTS — 1641ms against 498ms for identical geometry, 3.4x. Recorded in BACKLOG section 3. It is not the cause of anything here."
+  }
 }

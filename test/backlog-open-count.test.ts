@@ -107,13 +107,11 @@ describe("the backlog's open count", () => {
     // STORE-LISTING.md and never walked over here, so this list answered "one"
     // to a question whose answer was four. 21-23 are the owner-gated remainder.
     //
-    // 24 added 2026-09-17: the `table` element does not draw on the web host —
-    // `PowerPoint did not respond while drawing shapes 1-10 of 23 (45s)`, four
-    // times, in the pane's own words. It is the only one of the five that is
-    // not the owner's, and it went on the LIST rather than staying in the
-    // evidence file it was measured in, which is the trap the note above is
-    // about. This test failing is that trap being caught.
-    expect(ids, "section 1's real list").toEqual(["5", "21", "22", "23", "24"]);
+    // 24 was opened 2026-09-17 and CLOSED 2026-09-18, so this is back to four.
+    // It was never a product defect: the probe that found it caused it, by
+    // polling the slide through the draw. Recorded because an item that opens
+    // and closes inside a day is exactly the kind this list has lost before.
+    expect(ids, "section 1's real list").toEqual(["5", "21", "22", "23"]);
     expect(
       openIds([
         "## 1. Open",

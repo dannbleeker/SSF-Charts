@@ -345,9 +345,9 @@ was also a third instance of this file's own trap, written up as a section and
 left off this list until someone asked what was open. 17 closed the same
 evening, on a deck created for it rather than a harness one. 3 closed on
 2026-09-06: its remainder was answered NO, and the budget it argued about was
-raised 90 -> 105 on the first evidence that ever bore on it. 24 was ADDED on
-2026-09-17, the first item opened here in weeks: the `table` element does not
-draw on the web host. FIVE are open.**
+raised 90 -> 105 on the first evidence that ever bore on it. 24 was opened on
+2026-09-17 and CLOSED on 2026-09-18 with no product work, because it was never a
+product defect — see the note below. FOUR are open.**
 
 > The count here read "six" against a list of four, and then "five" against a
 > list of three. Stale both times, and this file states its own tie-breaker:
@@ -381,12 +381,35 @@ draw on the web host. FIVE are open.**
 > identity, his Mac, his screenshots or his submission. **FOUR are open, counted
 > off the list on 2026-09-17.**
 >
-> **AND THEN FIVE, LATER THE SAME EVENING.** Item 24 was opened after the
-> restart-and-cycle: the `table` element does not draw on this host, measured
-> four times, and the pane names the failure itself. Noted here rather than only
-> at the item, because the paragraph above says "four" and would otherwise be
-> the fifth instance of the staleness this section keeps recording. The count is
-> FIVE, and 24 is the only one of them that is mine rather than the owner's.
+> **FIVE FOR ONE DAY, AND BACK TO FOUR.** Item 24 was opened on 2026-09-17 —
+> "the `table` element does not draw on this host", measured five times, the
+> pane naming the failure itself — and closed on 2026-09-18 having produced no
+> product work, because there was no product defect. **The probe that found it
+> caused it.** `elements-probe.mjs` polled the slide every four seconds THROUGH
+> the draw, a `PowerPoint.run` per poll interleaved with the renderer's own
+> batches, on a host that forces a full presentation save on every sync
+> (office-js#6329). Same session, same cleared slide, same element, polling the
+> only difference:
+>
+>     table insert, no polling      -> "Done."
+>     table insert, polled every 4s -> "Failed: PowerPoint did not respond
+>                                       while drawing shapes 11-20 of 23 (45s)"
+>
+> The other four Elements survived it because their draws are short; the table's
+> is long enough to be hit over and over. The probe now waits on `#host-note`'s
+> busy CLASS — a DOM read costing the host nothing — and makes exactly one host
+> call, after the pane says it is done. It reports **5 of 5**, the table
+> included, carrying `Table, 4 rows by 5 columns.`
+>
+> **The item was still worth opening.** It was real, reproducible and
+> user-facing as far as anything then knew, and the alternative — leaving a
+> five-times-reproduced failure in an evidence file — is the trap this section
+> exists to record. What it cost was a day of measuring, and what it bought was
+> the fifth Elements description and a probe that no longer breaks its subject.
+> Three hypotheses died on the way: composition (1.3x), the empty corner cell
+> (1628ms against 1641ms), and session age (refuted by a table that drew fine as
+> the sixth insert). **The one finding to keep is in §3: the batch limit counts
+> SHAPES and the cost is STATEMENTS — 3.4x for identical geometry.**
 >
 > One correction while re-reading it: **the numbers 29, 30 and 56 that appear
 > further down this file are COUNTS in evidence tables, not backlog items.**
@@ -466,54 +489,6 @@ draw on the web host. FIVE are open.**
        counting both files rather than re-reading the sentence.
        What is left is 21, 22, and a decision to press submit — all his.
 
-    24  a text-dense element crosses the sync budget as a session ages
-       — opened 2026-09-17 as "the `table` element does not draw on the web",
-       which was WRONG, and rewritten 2026-09-18 after the bench refuted its own
-       premise. The table draws perfectly well: first in a session, on an empty
-       slide, it comes back `Done.` as one grouped shape carrying
-       `Table, 4 rows by 5 columns.` — the fifth Elements description, and the
-       last one this project had never seen on a host.
-       WHAT ACTUALLY HAPPENS, measured in one sitting on one healthy host:
-
-           table  1st, empty slide          Done
-           table/check/flow/kpi 1st-4th     all Done
-           harvey 5th, 4 groups on slide    Done
-           table  6th, 5 groups on slide    Failed, shapes 11-20 of 23
-           table  5th, slide CLEARED first  Failed, shapes 11-20 of 23
-           table  1st again, after that     Done
-
-       Clearing the slide does not save it, so it is not slide load; and a
-       restart does, so it is not permanent. What is left is SESSION AGE, which
-       this archive already has under two names — office-js#3565 (syncs getting
-       progressively longer, a restart resetting it) and #6329 (the web host
-       forcing a full presentation save on EVERY sync, so the cost per sync
-       tracks the work already done).
-       WHY THE TABLE AND NOT HARVEY, which is the same size. `SHAPES_PER_SYNC`
-       caps SHAPES; the cost is STATEMENTS. Measured on the bench at
-       `scripts/textbox-cost-probe.mjs`: the table's first batch styled the way
-       `addText` styles it costs 1641ms against 498ms for the same ten shapes
-       unstyled — **3.4x for identical geometry**. A text node is 20 statements
-       and a rect 7, so the table's batch is ~174 statements and harvey's ~70.
-       Both are "ten shapes". As the per-sync cost rises, the batch carrying two
-       and a half times the statements crosses the 45s budget first, and the
-       table is the most text-dense thing this add-in ships.
-       THE REMEDY DIRECTION IS TO BUDGET BY STATEMENTS, NOT SHAPES — and it is
-       the same defect this repo has already met once, in `shape-budget.test.ts`
-       reading `scene.nodes.length` while its own docstring was about shapes.
-       NOT IMPLEMENTED, deliberately: it changes the renderer's batching for
-       every chart on every host, the evidence is one host and one sitting, and
-       two hypotheses have already died here. It wants its own read, a second
-       host if one can be had, and rounds either side.
-       WHAT IS ALREADY FIXED: `elements-probe.mjs` clears the slide between
-       elements and says why. `table` is last in `ELEMENTS`, so every run
-       measured it latest in the session and reported it as the broken one —
-       five times. The probe's own ordering produced the finding.
-       IT STILL BEARS ON 23. `manifest-prod.xml` ships five ribbon deep links at
-       these buttons, `Taskpane.Url.el.table` among them, and a certification
-       tester clicks those first — where it works. A tester who clicks all five
-       and then the table again meets this. Checked rather than assumed: grep
-       for harvey/kpiCard/buildTableScene/elements in `selftest.ts` returns 0,
-       so no scenario has ever touched Elements.
 
 **The 4:3 arm is no longer on this list, and was never on it as a numbered
 item.** It closed 2026-09-05 on fifteen post-fix rounds against four pre-fix
@@ -2962,6 +2937,34 @@ All cleared 2026-08-16. See git.
 What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
+
+### The batch limit counts SHAPES and the cost is STATEMENTS — 3.4x, 2026-09-18
+
+`SHAPES_PER_SYNC` is 10. Measured on a real host with
+`scripts/textbox-cost-probe.mjs` — batches of ten differing only in what they
+are made of, strictly alternated so session drift could not become the finding:
+
+    10 geometric rectangles                                  419ms
+    10 bare text boxes                                       571ms
+    2 lines + 8 bare text boxes                              498ms
+    2 lines + 8 text boxes STYLED as `addText` styles them   1641ms
+
+**Same ten shapes, same geometry, 3.4x.** The repo had already measured the unit
+— a whole text node is 20 statements and a rect 7, from the in-place update work
+— and what this adds is that the batch limit is denominated in the wrong one.
+Harvey's first batch is ~70 statements and the table's ~174; both are "ten
+shapes".
+
+WHAT THIS IS NOT. It is not why the `table` element appeared to fail — that was
+the probe's own polling, recorded under the closed item 24 in §1. Composition was
+refuted at 1.3x and an empty-string corner cell at 1628ms against 1641ms. No user
+has reported anything this explains and `SHAPES_PER_SYNC` has not been touched.
+
+WHY IT IS WORTH KEEPING. It is the same defect as `shape-budget.test.ts` reading
+`scene.nodes.length` while its docstring was about shapes: a limit denominated in
+a cheap proxy sitting one property away from the real quantity. If a density
+limit is ever revisited this is the number to build it on, and the bench that
+produced it is checked in.
 
 ### The "read by nothing" list cannot see a once-per-round metric — 2026-09-09
 
