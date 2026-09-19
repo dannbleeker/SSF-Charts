@@ -237,18 +237,28 @@ describe("what the Elements probe concludes", () => {
     // So the COUNT is the assertion: one read, and not before the pane is done.
     // Everything else in this file is about reading the answer correctly; this
     // is about not destroying it.
-    let reads = 0;
-    let busyPolls = 0;
+    // THE ORDER IS THE ASSERTION, not the count — and the first version of this
+    // test got that wrong. It checked `reads === 1` and `busyPolls === 4`, both
+    // of which hold just as well if the read happens BEFORE the wait, which is
+    // the defect itself. Mutation-checked: moving the read above the loop
+    // passed all 23 tests in this file. So the calls are recorded in sequence
+    // and the read must come last.
+    const calls: string[] = [];
     const r = await settledBy(
       [true, true, true, false],
       () => {
-        reads++;
+        calls.push("read");
         return [shape("2", GROUP_NAME, "Harvey ball, 75% filled.")];
       },
-      () => busyPolls++,
+      () => calls.push("busy"),
     );
-    expect(reads, "asked the host more than once").toBe(1);
-    expect(busyPolls, "did not wait for the pane at all").toBe(4);
+    expect(calls, "the host was asked out of order, or more than once").toEqual([
+      "busy",
+      "busy",
+      "busy",
+      "busy",
+      "read",
+    ]);
     expect(r.settled).toBe(true);
     expect(judge(harvey, [], r.after, "clicked").ok).toBe(true);
   });
