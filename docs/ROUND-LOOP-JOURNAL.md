@@ -8744,3 +8744,47 @@ So the novelty detector does not group by ARM, and a cycle is 2:1 in favour of
 follows a run of 16:9 rounds. Left as a note rather than a change: the detector
 is doing something useful the rest of the time, and narrowing it wants its own
 read rather than an edit at the end of a session.
+
+## Rounds 466-467 — aee2783 — the cycle stopped itself, and it was right to
+
+466 came back 19/19. 467, on a bundle the gate confirms is byte-identical,
+failed `insert onto a slide that already has content` with `1 of 2 new charts
+are re-editable`, and the cycle stopped on its one fatal check — a scenario that
+WAS passing has stopped. That check exists to buy a person's attention and it
+spent it correctly; this is the reading it asked for.
+
+**IT IS THE HOST, and the trace says so in one line:**
+
+    group | the cold re-read fell short — asking again after the settle
+            {"chart":"draw-2","kind":"empty","drew":16,"listed":0}
+
+Sixteen shapes drawn, **zero listed**. The friction record agrees —
+`errors: 1, emptyReReads: 1, reReadsRepaired: 1`, and every other counter zero:
+no id refusals, no GeneralExceptions, no short or unmatched re-reads. That is
+office-js#6363, already in `KNOWN_ISSUES`: `PowerPoint.run`'s batching "fails to
+load properties reliably", web only, `Status: under investigation`, with ten
+workarounds recorded in the thread that all failed. Our shape of it is the EMPTY
+array rather than a throw, which is exactly how that entry describes it.
+
+Four things say host rather than regression, and they are worth listing because
+"the previous round passed" is not one of them on its own:
+
+1. The shipped bundle is UNCHANGED between 466 and 467 — the gate checks `src/`
+   itself rather than trusting the build stamp.
+2. The friction signature is the documented one, and only that one.
+3. `drew 16, listed 0` is a read that lost everything, not a write that failed.
+4. It has failed twice in 345 rounds at this profile, and this exact failure text
+   has appeared once before, at `f3e3941`.
+
+**WHAT IS STILL OURS, and is not fixed by calling it the host.** The consequence
+a user meets is a chart that cannot be re-edited, and nothing tells them. The
+repair pass ran, repaired one re-read, and one chart still came out untagged.
+That is the same silent-loss shape as #3784 (tags lost on cut-and-paste, also
+recorded as not detected on purpose), and the same argument applies: a count of
+`PowerChart` shapes carrying no config would be dominated by this host's own tag
+refusals and would say "this host is unwell" rather than "your chart broke". The
+scenario catching it IS the detection, and it did.
+
+No action taken and none owed. Recorded so the next reader meets the reasoning
+rather than re-deriving it, and so `f3e3941` has a sibling to be compared with if
+it happens a third time.
