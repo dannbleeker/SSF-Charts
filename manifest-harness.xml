@@ -1,0 +1,399 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+  xsi:type="TaskPaneApp">
+
+  <Id>b7f6d3a2-4c1e-4e8a-9f2b-7d5c0a1e6f43</Id>
+  <!--
+    THIS IS NOT THE npm VERSION AND CANNOT BE. Office rejects a manifest
+    version below 1.0 outright ("unsupported version number less than 1.0"),
+    and package.json is on 0.x — so the two schemes are independent and this
+    one is maintained by hand.
+
+    BUMP IT ON EVERY RELEASE THAT CHANGES THIS FILE. It sat at 1.0.0.0 across
+    v0.4.0, v0.5.0 and v0.6.0 while the file itself changed, which is a real
+    hole rather than an untidiness: a centrally-deployed or sideloaded add-in
+    is refreshed on the strength of this number, so a manifest that changes
+    without it can go on serving the cached one. 1.0.1.0 is the first bump, for
+    v0.6.1 — the release whose entire content is a change to this file's
+    requirement set, and therefore exactly the release that must reach people.
+  -->
+  <Version>1.0.1.0</Version>
+  <ProviderName>SSF Charts (open source)</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="SSF Charts" />
+  <Description DefaultValue="Consulting-grade charts — waterfall/bridge, Mekko/Marimekko, stacked columns, CAGR and difference arrows — inserted as native, fully editable PowerPoint shapes." />
+  <IconUrl DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/assets/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/assets/icon-64.png" />
+  <SupportUrl DefaultValue="https://github.com/dannbleeker/SSF-Charts" />
+
+  <Hosts>
+    <Host Name="Presentation" />
+  </Hosts>
+
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <!--
+        1.4 DRAWS A CHART; 1.8 IS WHERE ONE ARRIVES AS A CHART; 1.10 IS WHERE
+        EVERY CHART ARRIVES WHOLE. Raised 1.4 -> 1.8 and then 1.8 -> 1.10 on
+        2026-09-13, both deliberately, and this is the reasoning so nobody
+        lowers it back on reach grounds alone.
+
+        1.4 is what the shapes need (ShapeCollection.addGeometricShape / addLine
+        / addTextBox) and it is not enough. `Shape.group` needs 1.8, so below it
+        a chart lands as ~40 LOOSE SHAPES with nothing said about it. 1.10 adds
+        `Shape.rotation`, without which `addWedgeFan` and the arrowhead case
+        trace and return NOTHING: measured over the 123 shipped showcase charts,
+        18 lose ink below 1.10 and 9 lose their SUBJECT — every pie, every
+        doughnut, every sunburst and the radial-bar radar keep only their
+        labels. (`test/below-1-10-census.test.ts` re-derives those counts; it is
+        how the published figure was caught at 8 when it is 9.)
+
+        WHY THE FLOOR IS THE ONLY LEVER, which is the part that is easy to get
+        backwards. There is NO way to scope an add-in by platform:
+        `<Host Name="Presentation" />` means web + Windows + Mac + iPad as one
+        unit, and Microsoft says so outright — "You can't explicitly specify the
+        Office versions and builds or the platforms on which your add-in should
+        be installable". office-js#6658 is an open report from a publisher stuck
+        on exactly this, and it names the mechanism: Partner Center AUTO-DERIVES
+        the certified platform list from this Requirements block. Certification
+        policy 1120.3 then reads "Add-ins must work across all platforms that
+        support methods defined in the Requirements element... Add-ins must
+        support Office on web and Mac applications compatible with the APIs
+        specified in the manifest."
+
+        So a LOWER floor does not hedge. It ENLARGES the surface being
+        certified.
+
+        WHAT 1.10 COSTS, measured against Microsoft's update history on
+        2026-09-13: nothing on any serviced Microsoft 365 channel. 1.10 needs
+        Windows 2601 (19610.20002); Current is 2608 (20326.20144) and both
+        Monthly Enterprise and Semi-Annual Enterprise are on 2608/2607/2606.
+        Retail perpetual Office 2024 is on the same 2608 train. On Mac 1.10
+        needs 16.105 (13 Jan 2026) and the current release is 16.112.4 (10 Sep
+        2026) — and that page states "Only the most recently released version
+        listed below is supported", so the 16.96-16.104 band this excludes is
+        not a supported population at all.
+
+        WHAT 1.8 WAS COSTING, which is what moved the number. Below 1.10
+        `canRotate()` is false, and at a 1.8 floor the ONLY hosts that could
+        install and answer false were Mac 16.96-16.104 — the web reports 1.10,
+        every serviced Windows channel is past 2601, and volume-licensed/LTSC
+        (capped at 1.5) and iPad (capped at 1.1) cannot install at either floor.
+        That made the entire picture-fallback path Mac-only code on the one
+        platform this project has never measured. At 1.10 it is unreachable on
+        every host the manifest admits, so the certified platforms all run the
+        same path — the one measured across 425+ web rounds and one Windows
+        desktop reading.
+
+        An earlier version of this comment defended 1.8 on the grounds that
+        "the extra exclusion 1.10 would add is Mac 16.96-16.104, which is a live,
+        updating population". That was wrong on its own terms: a Mac that is
+        updating has long since passed 16.105, and Microsoft supports only the
+        newest. Kept here because the argument is the thing worth preserving.
+      -->
+      <Set Name="PowerPointApi" MinVersion="1.10" />
+    </Sets>
+  </Requirements>
+
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/src/taskpane/taskpane.html?harness=1" />
+  </DefaultSettings>
+
+  <Permissions>ReadWriteDocument</Permissions>
+
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Presentation">
+        <DesktopFormFactor>
+          <GetStarted>
+            <Title resid="GetStarted.Title" />
+            <Description resid="GetStarted.Description" />
+            <LearnMoreUrl resid="GetStarted.LearnMoreUrl" />
+          </GetStarted>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="SSFCharts.Group">
+                <Label resid="Group.Label" />
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16" />
+                  <bt:Image size="32" resid="Icon.32" />
+                  <bt:Image size="80" resid="Icon.80" />
+                </Icon>
+                <Control xsi:type="Button" id="SSFCharts.OpenPane">
+                  <Label resid="OpenPane.Label" />
+                  <Supertip>
+                    <Title resid="OpenPane.Label" />
+                    <Description resid="OpenPane.Tooltip" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16" />
+                    <bt:Image size="32" resid="Icon.32" />
+                    <bt:Image size="80" resid="Icon.80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>SSFChartsPane</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
+                <Control xsi:type="Menu" id="SSFCharts.InsertMenu">
+                  <Label resid="Menu.Label" />
+                  <Supertip>
+                    <Title resid="Menu.Label" />
+                    <Description resid="Menu.Tooltip" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16" />
+                    <bt:Image size="32" resid="Icon.32" />
+                    <bt:Image size="80" resid="Icon.80" />
+                  </Icon>
+                  <Items>
+                    <Item id="SSFCharts.Insert.stacked">
+                      <Label resid="Menu.stacked.Label" />
+                      <Supertip>
+                        <Title resid="Menu.stacked.Label" />
+                        <Description resid="Menu.Tooltip" />
+                      </Supertip>
+                      <Icon>
+                        <bt:Image size="16" resid="Icon.16" />
+                        <bt:Image size="32" resid="Icon.32" />
+                        <bt:Image size="80" resid="Icon.80" />
+                      </Icon>
+                      <Action xsi:type="ShowTaskpane">
+                        <TaskpaneId>SSFChartsPane</TaskpaneId>
+                        <SourceLocation resid="Taskpane.Url.stacked" />
+                      </Action>
+                    </Item>
+                    <Item id="SSFCharts.Insert.waterfall">
+                      <Label resid="Menu.waterfall.Label" />
+                      <Supertip>
+                        <Title resid="Menu.waterfall.Label" />
+                        <Description resid="Menu.Tooltip" />
+                      </Supertip>
+                      <Icon>
+                        <bt:Image size="16" resid="Icon.16" />
+                        <bt:Image size="32" resid="Icon.32" />
+                        <bt:Image size="80" resid="Icon.80" />
+                      </Icon>
+                      <Action xsi:type="ShowTaskpane">
+                        <TaskpaneId>SSFChartsPane</TaskpaneId>
+                        <SourceLocation resid="Taskpane.Url.waterfall" />
+                      </Action>
+                    </Item>
+                    <Item id="SSFCharts.Insert.mekko">
+                      <Label resid="Menu.mekko.Label" />
+                      <Supertip>
+                        <Title resid="Menu.mekko.Label" />
+                        <Description resid="Menu.Tooltip" />
+                      </Supertip>
+                      <Icon>
+                        <bt:Image size="16" resid="Icon.16" />
+                        <bt:Image size="32" resid="Icon.32" />
+                        <bt:Image size="80" resid="Icon.80" />
+                      </Icon>
+                      <Action xsi:type="ShowTaskpane">
+                        <TaskpaneId>SSFChartsPane</TaskpaneId>
+                        <SourceLocation resid="Taskpane.Url.mekko" />
+                      </Action>
+                    </Item>
+                    <Item id="SSFCharts.Insert.gantt">
+                      <Label resid="Menu.gantt.Label" />
+                      <Supertip>
+                        <Title resid="Menu.gantt.Label" />
+                        <Description resid="Menu.Tooltip" />
+                      </Supertip>
+                      <Icon>
+                        <bt:Image size="16" resid="Icon.16" />
+                        <bt:Image size="32" resid="Icon.32" />
+                        <bt:Image size="80" resid="Icon.80" />
+                      </Icon>
+                      <Action xsi:type="ShowTaskpane">
+                        <TaskpaneId>SSFChartsPane</TaskpaneId>
+                        <SourceLocation resid="Taskpane.Url.gantt" />
+                      </Action>
+                    </Item>
+                    <Item id="SSFCharts.Insert.pie">
+                      <Label resid="Menu.pie.Label" />
+                      <Supertip>
+                        <Title resid="Menu.pie.Label" />
+                        <Description resid="Menu.Tooltip" />
+                      </Supertip>
+                      <Icon>
+                        <bt:Image size="16" resid="Icon.16" />
+                        <bt:Image size="32" resid="Icon.32" />
+                        <bt:Image size="80" resid="Icon.80" />
+                      </Icon>
+                      <Action xsi:type="ShowTaskpane">
+                        <TaskpaneId>SSFChartsPane</TaskpaneId>
+                        <SourceLocation resid="Taskpane.Url.pie" />
+                      </Action>
+                    </Item>
+                    <Item id="SSFCharts.Insert.scatter">
+                      <Label resid="Menu.scatter.Label" />
+                      <Supertip>
+                        <Title resid="Menu.scatter.Label" />
+                        <Description resid="Menu.Tooltip" />
+                      </Supertip>
+                      <Icon>
+                        <bt:Image size="16" resid="Icon.16" />
+                        <bt:Image size="32" resid="Icon.32" />
+                        <bt:Image size="80" resid="Icon.80" />
+                      </Icon>
+                      <Action xsi:type="ShowTaskpane">
+                        <TaskpaneId>SSFChartsPane</TaskpaneId>
+                        <SourceLocation resid="Taskpane.Url.scatter" />
+                      </Action>
+                    </Item>
+                  </Items>
+                </Control>
+                <Control xsi:type="Menu" id="SSFCharts.ElementsMenu">
+                  <Label resid="ElementsMenu.Label" />
+                  <Supertip>
+                    <Title resid="ElementsMenu.Label" />
+                    <Description resid="ElementsMenu.Tooltip" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16" />
+                    <bt:Image size="32" resid="Icon.32" />
+                    <bt:Image size="80" resid="Icon.80" />
+                  </Icon>
+                  <Items>
+                    <Item id="SSFCharts.El.harvey">
+                      <Label resid="El.harvey.Label" />
+                      <Supertip>
+                        <Title resid="El.harvey.Label" />
+                        <Description resid="ElementsMenu.Tooltip" />
+                      </Supertip>
+                      <Icon>
+                        <bt:Image size="16" resid="Icon.16" />
+                        <bt:Image size="32" resid="Icon.32" />
+                        <bt:Image size="80" resid="Icon.80" />
+                      </Icon>
+                      <Action xsi:type="ShowTaskpane">
+                        <TaskpaneId>SSFChartsPane</TaskpaneId>
+                        <SourceLocation resid="Taskpane.Url.el.harvey" />
+                      </Action>
+                    </Item>
+                    <Item id="SSFCharts.El.check">
+                      <Label resid="El.check.Label" />
+                      <Supertip>
+                        <Title resid="El.check.Label" />
+                        <Description resid="ElementsMenu.Tooltip" />
+                      </Supertip>
+                      <Icon>
+                        <bt:Image size="16" resid="Icon.16" />
+                        <bt:Image size="32" resid="Icon.32" />
+                        <bt:Image size="80" resid="Icon.80" />
+                      </Icon>
+                      <Action xsi:type="ShowTaskpane">
+                        <TaskpaneId>SSFChartsPane</TaskpaneId>
+                        <SourceLocation resid="Taskpane.Url.el.check" />
+                      </Action>
+                    </Item>
+                    <Item id="SSFCharts.El.flow">
+                      <Label resid="El.flow.Label" />
+                      <Supertip>
+                        <Title resid="El.flow.Label" />
+                        <Description resid="ElementsMenu.Tooltip" />
+                      </Supertip>
+                      <Icon>
+                        <bt:Image size="16" resid="Icon.16" />
+                        <bt:Image size="32" resid="Icon.32" />
+                        <bt:Image size="80" resid="Icon.80" />
+                      </Icon>
+                      <Action xsi:type="ShowTaskpane">
+                        <TaskpaneId>SSFChartsPane</TaskpaneId>
+                        <SourceLocation resid="Taskpane.Url.el.flow" />
+                      </Action>
+                    </Item>
+                    <Item id="SSFCharts.El.kpi">
+                      <Label resid="El.kpi.Label" />
+                      <Supertip>
+                        <Title resid="El.kpi.Label" />
+                        <Description resid="ElementsMenu.Tooltip" />
+                      </Supertip>
+                      <Icon>
+                        <bt:Image size="16" resid="Icon.16" />
+                        <bt:Image size="32" resid="Icon.32" />
+                        <bt:Image size="80" resid="Icon.80" />
+                      </Icon>
+                      <Action xsi:type="ShowTaskpane">
+                        <TaskpaneId>SSFChartsPane</TaskpaneId>
+                        <SourceLocation resid="Taskpane.Url.el.kpi" />
+                      </Action>
+                    </Item>
+                    <Item id="SSFCharts.El.table">
+                      <Label resid="El.table.Label" />
+                      <Supertip>
+                        <Title resid="El.table.Label" />
+                        <Description resid="ElementsMenu.Tooltip" />
+                      </Supertip>
+                      <Icon>
+                        <bt:Image size="16" resid="Icon.16" />
+                        <bt:Image size="32" resid="Icon.32" />
+                        <bt:Image size="80" resid="Icon.80" />
+                      </Icon>
+                      <Action xsi:type="ShowTaskpane">
+                        <TaskpaneId>SSFChartsPane</TaskpaneId>
+                        <SourceLocation resid="Taskpane.Url.el.table" />
+                      </Action>
+                    </Item>
+                  </Items>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/assets/icon-16.png" />
+        <bt:Image id="Icon.32" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/assets/icon-32.png" />
+        <bt:Image id="Icon.80" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/assets/icon-80.png" />
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/src/taskpane/taskpane.html?harness=1" />
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://github.com/dannbleeker/SSF-Charts" />
+        <bt:Url id="Taskpane.Url.stacked" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/src/taskpane/taskpane.html?kind=stacked&amp;harness=1" />
+        <bt:Url id="Taskpane.Url.waterfall" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/src/taskpane/taskpane.html?kind=waterfall&amp;harness=1" />
+        <bt:Url id="Taskpane.Url.mekko" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/src/taskpane/taskpane.html?kind=mekko&amp;harness=1" />
+        <bt:Url id="Taskpane.Url.gantt" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/src/taskpane/taskpane.html?kind=gantt&amp;harness=1" />
+        <bt:Url id="Taskpane.Url.pie" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/src/taskpane/taskpane.html?kind=pie&amp;harness=1" />
+        <bt:Url id="Taskpane.Url.scatter" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/src/taskpane/taskpane.html?kind=scatter&amp;harness=1" />
+        <bt:Url id="Taskpane.Url.el.harvey" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/src/taskpane/taskpane.html?tab=elements&amp;el=harvey&amp;harness=1" />
+        <bt:Url id="Taskpane.Url.el.check" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/src/taskpane/taskpane.html?tab=elements&amp;el=check&amp;harness=1" />
+        <bt:Url id="Taskpane.Url.el.flow" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/src/taskpane/taskpane.html?tab=elements&amp;el=flow&amp;harness=1" />
+        <bt:Url id="Taskpane.Url.el.kpi" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/src/taskpane/taskpane.html?tab=elements&amp;el=kpi&amp;harness=1" />
+        <bt:Url id="Taskpane.Url.el.table" DefaultValue="https://ssf-chart.struktureretsundfornuft.dk/src/taskpane/taskpane.html?tab=elements&amp;el=table&amp;harness=1" />
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="Group.Label" DefaultValue="SSF Charts" />
+        <bt:String id="OpenPane.Label" DefaultValue="Insert chart" />
+        <bt:String id="GetStarted.Title" DefaultValue="SSF Charts loaded" />
+        <bt:String id="Menu.Label" DefaultValue="Insert chart by type" />
+        <bt:String id="Menu.stacked.Label" DefaultValue="Column chart" />
+        <bt:String id="Menu.waterfall.Label" DefaultValue="Waterfall chart" />
+        <bt:String id="Menu.mekko.Label" DefaultValue="Mekko chart" />
+        <bt:String id="Menu.gantt.Label" DefaultValue="Gantt chart" />
+        <bt:String id="Menu.pie.Label" DefaultValue="Pie chart" />
+        <bt:String id="Menu.scatter.Label" DefaultValue="Scatter chart" />
+        <bt:String id="ElementsMenu.Label" DefaultValue="Insert element" />
+        <bt:String id="El.harvey.Label" DefaultValue="Harvey ball" />
+        <bt:String id="El.check.Label" DefaultValue="Checkbox" />
+        <bt:String id="El.flow.Label" DefaultValue="Process flow" />
+        <bt:String id="El.kpi.Label" DefaultValue="KPI tile" />
+        <bt:String id="El.table.Label" DefaultValue="Table from data" />
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="OpenPane.Tooltip" DefaultValue="Open the SSF Charts pane to insert waterfall, Mekko and stacked charts as native shapes." />
+        <bt:String id="GetStarted.Description" DefaultValue="Find SSF Charts on the Home tab and insert your first chart." />
+        <bt:String id="Menu.Tooltip" DefaultValue="Open SSF Charts with this chart type preselected." />
+        <bt:String id="ElementsMenu.Tooltip" DefaultValue="Open SSF Charts on the Elements tab to insert this element (Harvey ball, checkbox, process flow, KPI tile or table)." />
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

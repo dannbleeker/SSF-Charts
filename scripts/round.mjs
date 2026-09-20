@@ -630,8 +630,32 @@ export function isOverflow(err) {
   return err.code === "ENOBUFS" || /ENOBUFS/.test(String(err.message ?? err));
 }
 
-/** Which manifest a re-sideload uploads. The PROD one — see `sideloadAddIn`. */
-export const MANIFEST_PATH = process.env.PW_MANIFEST ?? "C:/devtools/SSF-Charts/manifest-prod.xml";
+/**
+ * Which manifest a re-sideload uploads. The HARNESS one — see `sideloadAddIn`.
+ *
+ * NOT `manifest.xml`, for the reason `sideloadAddIn` gives at length: that one
+ * points at `https://localhost`, so it sideloads a pane readiness then refuses
+ * for disagreeing with the deployed site — worse than no pane, because it looks
+ * like it worked.
+ *
+ * AND NOT `manifest-prod.xml` EITHER, as of 2026-09-20. `manifest-harness.xml`
+ * is generated FROM the prod one and differs in exactly one thing: every
+ * task-pane URL carries `?harness=1`. Today that parameter is read and ignored,
+ * because `TESTING_UI_NEEDS_OPT_IN` in `app.ts` is `false` — the Testing section
+ * is visible either way and this changes nothing about what runs.
+ *
+ * It is here so that flipping that constant becomes a ONE-LINE change. The
+ * constant's own comment is why it has not been flipped: hiding
+ * Automation ▸ Testing "on its own hides the section from the round driver as
+ * well and the loop stops". With the driver already sideloading the harness
+ * manifest, it does not. The flip stays the owner's — it changes what a user
+ * receives.
+ *
+ * `test/build-manifest-harness.test.ts` holds the two properties that make this
+ * safe: the harness manifest is byte-identical to prod once the parameter is
+ * stripped back out, and the prod manifests never carry it.
+ */
+export const MANIFEST_PATH = process.env.PW_MANIFEST ?? "C:/devtools/SSF-Charts/manifest-harness.xml";
 
 /**
  * Has this process already tried to put the add-in back? One attempt, ever.
