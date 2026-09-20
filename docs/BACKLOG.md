@@ -2938,6 +2938,47 @@ What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
 
+### `two slides claiming one slot` has failed 15 times with ZERO host friction — OPEN QUESTION, 2026-09-20
+
+Found by aggregating the archive after round 475 failed it, rather than by the
+round itself. Every failure of this scenario ever archived:
+
+    060  ?     3 kept, 3 of 2 still re-editable; 2 queued as duplicates
+    148  16:9  4 kept, 2 of 2 still re-editable; 2 queued as duplicates
+    253  16:9  3 kept, 3 of 2 ...        273  16:9  3 kept, 3 of 2 ...
+    287  4:3   threw: Failed to fetch dynamically imported module
+    297  16:9  4 kept, 4 of 2 still re-editable; 0 queued as duplicates
+    315  16:9  4 kept, 2 of 2 ...        360  16:9  NaN kept, 0 of 2 ...
+    361  16:9  NaN kept, 0 of 2 ...      375  4:3   4 kept, 2 of 2 ...
+    422  16:9  4 kept, 2 of 2 ...        435  16:9  3 kept, 3 of 2 ...
+    446  16:9  threw: SSF Charts has been updated since this pane was opened
+    447  16:9  3 kept, 3 of 2 ...        475  4:3   3 kept, 3 of 2 ...
+
+**ALL FIFTEEN CARRY ZERO FRICTION.** Not one has an error, an id refusal, a
+GeneralException, a short read or an empty re-read. That is the opposite of
+round 467's empty re-read, which wore the host's signature plainly — and by
+`scenarioBlame`'s own rule, which lands anything unproven on US rather than the
+host, these are ours fifteen times over.
+
+THE GATE CANNOT SEE THIS, and that is the second finding. It reported the text as
+"NEW — no earlier round at this profile failed with these words", which is true
+at 4:3 and false of the archive: the identical sentence appears in six rounds.
+Novelty is scoped PER PROFILE, so a failure that alternates arms reads as new
+every time it crosses. Same blind spot as the 4:3 "new behaviour" signature on
+2026-09-18, in the other direction.
+
+`NaN kept` in 360 and 361 is a defect in the scenario's own reporting, whatever
+the underlying cause is.
+
+WHY THIS IS AN OPEN QUESTION AND NOT A BACKLOG ITEM. I opened item 24 on
+2026-09-17 from five reproductions and it dissolved into my own instrument; the
+lesson was to diagnose before filing, and nothing here is diagnosed. What is
+established is the aggregate — 15 failures, zero friction, six identical
+sentences, and a novelty check that cannot see the repetition. What is NOT
+established is whether the fault is in the product's slot reconciliation or in
+the scenario's counting. The next person to meet it should start from the fact
+that `3 of 2 still re-editable` is MORE than expected, not fewer.
+
 ### The batch limit counts SHAPES and the cost is STATEMENTS — 3.4x, 2026-09-18
 
 `SHAPES_PER_SYNC` is 10. Measured on a real host with
