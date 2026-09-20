@@ -3004,8 +3004,53 @@ function renderTemplateList() {
   }
 }
 
-$("template-save").addEventListener("click", () => {
-  const name = prompt("Template name?", state.title || state.kind);
+/**
+ * Ask for a template name, inline, and wait for the answer.
+ *
+ * WAS `prompt()`, WHICH THIS PANE MUST NOT CALL. It runs in an Office iframe
+ * where a native modal blocks the HOST as well as the pane — the argument
+ * `offerOwnSlide` already makes, under "A PROMISE ROUND A PAIR OF BUTTONS
+ * rather than `confirm()`". That reasoning was written and this call site was
+ * missed: one `prompt()` survived in the file that argues against it, on the
+ * one screen a store reviewer is most likely to click.
+ *
+ * Resolves to a trimmed name, or null when the user backs out. Every handler
+ * comes off on the way out, so pressing Save twice cannot leave the first
+ * promise pending — the same care `offerOwnSlide` takes, for the same reason.
+ */
+function askTemplateName(suggested: string): Promise<string | null> {
+  const row = $("template-name-row");
+  const input = $<HTMLInputElement>("template-name");
+  const ok = $<HTMLButtonElement>("template-name-ok");
+  const cancel = $<HTMLButtonElement>("template-name-cancel");
+  input.value = suggested;
+  row.hidden = false;
+  input.focus();
+  input.select();
+  return new Promise((resolve) => {
+    const done = (value: string | null) => {
+      ok.removeEventListener("click", onOk);
+      cancel.removeEventListener("click", onCancel);
+      input.removeEventListener("keydown", onKey);
+      row.hidden = true;
+      resolve(value);
+    };
+    const onOk = () => done(input.value.trim() || null);
+    const onCancel = () => done(null);
+    // Enter and Escape both answer, because a text box that only takes the
+    // mouse is a worse dialog than the native one this replaces.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Enter") onOk();
+      else if (e.key === "Escape") onCancel();
+    };
+    ok.addEventListener("click", onOk);
+    cancel.addEventListener("click", onCancel);
+    input.addEventListener("keydown", onKey);
+  });
+}
+
+$("template-save").addEventListener("click", async () => {
+  const name = await askTemplateName(state.title || state.kind);
   if (!name) return;
   const all = loadTemplates();
   all[name] = currentConfig();

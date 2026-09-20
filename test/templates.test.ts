@@ -38,10 +38,26 @@ async function reopenPane() {
   await import("../src/taskpane/app");
 }
 
-/** Save the pane's current chart under `name`, as the button does. */
-function saveAs(name: string) {
-  vi.spyOn(window, "prompt").mockReturnValue(name);
+/**
+ * Save the pane's current chart under `name`, the way a user does.
+ *
+ * WAS A `prompt()` SPY. The pane called `prompt()` until 2026-09-20, which an
+ * add-in must not do — a native modal blocks the Office HOST, not just the
+ * pane — so the name now comes from an inline row that Save reveals. Driving
+ * that row is closer to the real thing than stubbing a global ever was: this
+ * goes through the same input, the same button and the same handler the user
+ * does, and it would notice if the row stopped appearing.
+ *
+ * `async` because the handler awaits the answer now.
+ */
+async function saveAs(name: string) {
   $("template-save").click();
+  const row = $("template-name-row");
+  expect(row.hidden, "Save did not reveal the name row").toBe(false);
+  $<HTMLInputElement>("template-name").value = name;
+  $("template-name-ok").click();
+  // Let the promise that click resolves settle before anything reads storage.
+  await Promise.resolve();
 }
 
 /** The user-template names the picker is offering. */
@@ -88,7 +104,7 @@ describe("saved chart templates", () => {
     ($("chart-title") as HTMLInputElement).dispatchEvent(new Event("input"));
     ($("chart-w") as HTMLInputElement).value = "640";
     ($("chart-w") as HTMLInputElement).dispatchEvent(new Event("input"));
-    saveAs("my layout");
+    await saveAs("my layout");
 
     expect(offered(), "the saved template was not offered back").toContain("my layout");
     expect(Object.keys(stored())).toContain("my layout");
@@ -101,13 +117,13 @@ describe("saved chart templates", () => {
   });
 
   it("survives a reload — the point of saving one", async () => {
-    saveAs("keeps");
+    await saveAs("keeps");
     await reopenPane();
     expect(offered(), "the template did not survive reopening the pane").toContain("keeps");
   });
 
   it("deletes a user template, and refuses to delete a starter", async () => {
-    saveAs("throwaway");
+    await saveAs("throwaway");
     pick("user:throwaway");
     $("template-delete").click();
     expect(offered()).not.toContain("throwaway");
@@ -142,7 +158,7 @@ describe("saved chart templates", () => {
     // Nobody names a template `__proto__` on purpose. That is not the point:
     // the point is that this is the third table in this repo to be keyed by a
     // user-supplied string, and the project's own notes say to guard every one.
-    saveAs("__proto__");
+    await saveAs("__proto__");
     expect(offered(), "the odd name was not even offered in the same session").toContain("__proto__");
 
     await reopenPane();
