@@ -25,7 +25,29 @@ editable PowerPoint shapes** rather than an opaque OLE object.
   promise the product does not keep.
 -->
 
-![Demo gallery](docs/gallery.png)
+<!--
+  THE PRODUCT NAME USED TO LIVE IN THIS IMAGE'S PIXELS, WHERE NO GREP COULD
+  REACH IT. `docs/gallery.png` was captured at db06298, when this add-in was
+  still called PowerChart, and the page heading it photographed read "PowerChart
+  demo gallery". `index.html` and this file were renamed; the screenshot was
+  not — so a retired name survived on the page BOTH production manifests submit
+  as their `<SupportUrl>` (`manifest-prod.xml`, `manifest-excel-prod.xml`),
+  which is the first thing a certification reviewer opens. "PowerChart" is also
+  Oracle Health's EHR product, so the ghost is a collision as well.
+
+  Fixed by dropping the 89 pixel rows that carried the heading — the band above
+  the first card, checked ink-free first — rather than re-rendering text into a
+  screenshot nobody took. The title is the alt text and the caption below now,
+  where the next rename is one grep away. KEEP IT THERE: do not bake the product
+  name back into the pixels. (`GROUP_NAME` / `POWERCHART_CONFIG` in
+  `src/render/` are a different thing — lookup keys written into shapes on real
+  decks, which is why they were not swept.)
+-->
+
+![SSF Charts demo gallery — one panel per chart kind, all drawn by the add-in's own layout engine](docs/gallery.png)
+
+_Every chart above is produced by the same layout engine the PowerPoint add-in
+uses — here rendered to SVG, in PowerPoint rendered as native editable shapes._
 
 ## Try it
 
@@ -53,7 +75,29 @@ editable PowerPoint shapes** rather than an opaque OLE object.
 **[User manual](docs/MANUAL.md)** — how to use the pane, the datasheet
 conventions, and every option.
 
-| think-cell feature                                                               | SSF Charts                                                                                                                                  |
+<!--
+  A CAPABILITY LIST, NOT A COMPETITOR COMPARISON. This header cell read
+  "think-cell feature" until 2026-09-20, which made the 168 rows below it — four
+  fifths of this file by bytes — read as comparative advertising against a named
+  competitor, on the page both production manifests give as their
+  `<SupportUrl>`. That is the page a Microsoft certification reviewer lands on.
+
+  docs/STORE-LISTING.md already carries the rule ("the public listing, name,
+  description, and screenshots must **not** use the 'think-cell' mark as
+  branding … internal docs may keep it"), and PUBLISHING.md repeats it. Its own
+  checklist line — "Listing copy above is trademark-clean" — was only ever
+  applied to the copy in that file, while the Support URL it prints a few lines
+  later points here. Store-facing is a property of where a page is SUBMITTED,
+  not of which directory it sits in.
+
+  Renaming the header was the whole fix: no row below ever named the competitor,
+  so the rows stay where contributors already look for them (CLAUDE.md: "Any
+  feature change must update … 4. README feature table"). The nominative
+  mentions in the intro and the Disclaimer are positioning, which is the owner's
+  call, and are left alone. `test/support-url-page.test.ts` holds this.
+-->
+
+| Capability                                                                       | SSF Charts                                                                                                                                  |
 | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | Stacked / clustered / 100% column charts                                         | ✅                                                                                                                                          |
 | Stacked waterfall (multi-series deltas)                                          | ✅                                                                                                                                          |
@@ -194,7 +238,7 @@ conventions, and every option.
 | Palette presets + per-series color pickers                                       | ✅                                                                                                                                          |
 | Axis title, log scale, date-spaced line x-axis                                   | ✅                                                                                                                                          |
 | Difference arrows anchored to value lines, per-series CAGR                       | ✅                                                                                                                                          |
-| JSON automation (export/import/batch insert + `npm run render` CLI)              | ✅ (open take on `.ppttc`)                                                                                                                  |
+| JSON automation (export/import/batch insert + `npm run render` CLI)              | ✅                                                                                                                                          |
 | Download the preview as SVG or PNG (for email / chat)                            | ✅ (overflow menu; PNG rasterized at 2×)                                                                                                    |
 | Copy a shareable chart link (config in the URL hash)                             | ✅ (reopens the exact chart on the hosted gallery)                                                                                          |
 | Datasheet undo/redo (Ctrl+Z / Ctrl+Y)                                            | ✅                                                                                                                                          |

@@ -1993,6 +1993,62 @@ describe("guard — busy lockout and error surfacing", () => {
   });
 });
 
+/**
+ * THE AGENDA BUTTON'S OWN "Done." OVER NOTHING.
+ *
+ * `guard` closes an action that posted no end state of its own by printing
+ * "Done." in green — the fallback `settledNotes` exists to make reliable. The
+ * agenda handler answered an empty chapters box with a bare `return`, so the
+ * fallback fired and the pane reported success for zero slides: the exact
+ * "cannot tell did-the-thing from did-nothing" verdict this file has spent the
+ * most effort on, on the one tab where it was still reachable.
+ *
+ * BOTH HALVES ARE ASSERTED TOGETHER, and neither is enough alone. The note
+ * without the call count passes against a handler that says the right thing and
+ * inserts anyway; the call count without the note is exactly what the bug did.
+ */
+describe("Insert agenda slides", () => {
+  beforeEach(bootHostPane);
+
+  const typeChapters = (text: string) => {
+    ($("agenda-chapters") as HTMLTextAreaElement).value = text;
+  };
+
+  it("says the chapters box is empty instead of settling green over nothing", async () => {
+    typeChapters("");
+    $("agenda-insert").click();
+    await settle();
+    expect(host.agendaSlides, "inserted slides for an empty chapters box").toHaveLength(0);
+    expect($("host-note").textContent, "reported an insert that never happened as Done.").not.toBe("Done.");
+    expect($("host-note").className, "a no-op settled green").toContain("status-err");
+    expect(String($("host-note").textContent).toLowerCase()).toContain("chapters box is empty");
+  });
+
+  it("says the same for a box holding nothing but blank lines", async () => {
+    // The route a user actually takes to this branch: a stray newline or an
+    // indented line left behind. `agendaChapters` trims and drops empties, so
+    // the handler sees the same zero as an untouched box — and a pane that
+    // answered one honestly and the other with "Done." would be worse than both.
+    typeChapters("\n   \n\t\n");
+    $("agenda-insert").click();
+    await settle();
+    expect(host.agendaSlides, "inserted slides for a box of blank lines").toHaveLength(0);
+    expect($("host-note").className, "a no-op settled green").toContain("status-err");
+  });
+
+  it("still inserts one slide per chapter, and settles, when there are chapters", async () => {
+    typeChapters("Introduction\nMarket overview\nStrategy");
+    $("agenda-insert").click();
+    await settle();
+    expect(host.agendaSlides, "the real insert stopped happening").toHaveLength(1);
+    expect(host.agendaSlides[0], "one agenda slide per chapter").toHaveLength(3);
+    // "Done." is right HERE — work landed and the handler posts no note of its
+    // own, which is precisely the case `guard`'s fallback is for.
+    expect($("host-note").textContent).toBe("Done.");
+    expect($("host-note").className).toContain("status-ok");
+  });
+});
+
 describe("demo-insert results pages", () => {
   beforeEach(bootHostPane);
 
@@ -3710,6 +3766,144 @@ describe("the chart gallery can be navigated and its state can be heard", () => 
     const active = thumbs.filter((t) => t.classList.contains("active"));
     expect(pressed.length, "no chart type is announced as selected").toBe(1);
     expect(pressed[0], "the announced selection is not the one shown as selected").toBe(active[0]);
+  });
+});
+
+/**
+ * LIVE REGIONS — the third piece, after a name and a role. A region can be
+ * perfectly named, perfectly polite, and still announce nothing.
+ *
+ * TWO DEFECTS, ONE SUBJECT.
+ *
+ * 1. A LIVE REGION WRITTEN WHILE IT IS STILL `display: none`. `note()` set
+ *    `#host-note`'s text and only THEN lifted `hidden` from `#status-strip`
+ *    (`.status-strip[hidden] { display: none }` — an author rule in
+ *    taskpane.css, so the collapse is real). A live region announces a CHANGE
+ *    made while it is rendered; content that arrives together with the region
+ *    is its initial content and is not announced. The strip ships `hidden` and
+ *    `note("")` at boot leaves it that way, so what this cost was the FIRST
+ *    message of a session — "Working…" on the user's first insert. `#slow-offer`
+ *    had the identical ordering and is covered here too, because the fix that
+ *    misses its second call site is this repo's most repeated mistake.
+ *
+ * 2. A NAME THAT ARIA THROWS AWAY. `#demo-steps` is a bare `<pre>`, which maps
+ *    to the `generic` role, and `generic` PROHIBITS `aria-label` — so the live
+ *    log reached a screen reader unnamed, and axe-core's `aria-prohibited-attr`
+ *    flags it. AppSource validation tests accessibility, so both are shipping
+ *    gates and not courtesies.
+ *
+ * WHAT IS AND IS NOT PROVEN HERE. There is no screen reader in this harness, so
+ * what these assert is the DOM — the ordering of the two mutations, and the
+ * role/attribute pairing — which is the half that is ours to get right. The
+ * announcement itself rests on the platform rule, not on an experiment run here.
+ */
+describe("the pane's live regions can actually announce", () => {
+  beforeEach(bootHostPane);
+
+  /**
+   * Which of the two nodes the DOM touched first.
+   *
+   * A MutationObserver rather than reading state afterwards, because AFTERWARDS
+   * the two orderings are indistinguishable: strip open, text written, either
+   * way. The order of the records IS the defect.
+   */
+  const watchOrder = (container: Element, region: Element) => {
+    const seen: string[] = [];
+    const obs = new MutationObserver((records) => {
+      for (const r of records) seen.push(r.target === container ? "container" : "region");
+    });
+    obs.observe(container, { attributes: true, attributeFilter: ["hidden"] });
+    obs.observe(region, { childList: true, characterData: true, subtree: true });
+    return { seen, stop: () => obs.disconnect() };
+  };
+
+  it("opens #status-strip before writing the first status message into it", async () => {
+    const strip = $("status-strip");
+    // Both preconditions, or the test proves nothing: an already-open strip
+    // makes any ordering pass, and a note already on screen means the first
+    // announcement of the session has been and gone before the watch started.
+    expect(strip.hasAttribute("hidden"), "the strip was already open").toBe(true);
+    expect($("host-note").textContent, "a message was posted before the watch started").toBe("");
+
+    const watch = watchOrder(strip, $("host-note"));
+    $("insert").click();
+    await settle();
+    watch.stop();
+    expect(watch.seen.length, "neither the strip nor the note moved at all").toBeGreaterThan(1);
+    expect(watch.seen[0], `the live region was written while hidden: ${watch.seen.join(" → ")}`).toBe("container");
+  });
+
+  it("opens #slow-offer before writing the question into it", async () => {
+    const box = $("slow-offer");
+    expect(box.hasAttribute("hidden"), "the offer was already open").toBe(true);
+
+    const watch = watchOrder(box, $("slow-offer-text"));
+    // Enough shapes on the slide to cross SLOW_INSERT_MS and raise the offer.
+    host.slideShapes = Array.from({ length: 80 }, (_, i) => ({
+      left: 40 + (i % 4) * 120,
+      top: 70 + Math.floor(i / 4) * 20,
+      width: 110,
+      height: 18,
+    }));
+    $("insert").click();
+    for (let i = 0; i < 20 && $("slow-offer").hasAttribute("hidden"); i++) await settle();
+    expect($("slow-offer").hasAttribute("hidden"), "the pane never offered a slide").toBe(false);
+    watch.stop();
+    expect(watch.seen[0], `the live region was written while hidden: ${watch.seen.join(" → ")}`).toBe("container");
+    // Answer it, so the insert this started does not run on into the next test.
+    $("slow-offer-here").click();
+    await settle();
+  });
+
+  /**
+   * GENERIC, NOT A LIST OF IDS — the same reasoning as the naming sweep above.
+   * A test that named `#demo-steps` would pass the day the next `aria-label`
+   * lands on a `<div>`, which is how these arrive.
+   *
+   * The tags are the ones whose implicit role prohibits an accessible name in
+   * ARIA 1.2: `generic` (div, span, pre, b, i, u, s, small, q, code, samp, kbd,
+   * var), `paragraph` (p), `emphasis` (em), `strong` (strong). An explicit
+   * `role` replaces the implicit one and settles the question, so carrying one
+   * is the way out — that is what `role="log"` on `#demo-steps` is for.
+   */
+  it("never hangs an accessible name on an element whose role forbids one", () => {
+    const NAME_FORBIDDEN = [
+      "div",
+      "span",
+      "pre",
+      "p",
+      "b",
+      "i",
+      "u",
+      "s",
+      "small",
+      "q",
+      "code",
+      "samp",
+      "kbd",
+      "var",
+      "em",
+      "strong",
+    ];
+    const named = [...document.querySelectorAll("[aria-label], [aria-labelledby]")];
+    expect(named.length, "the pane rendered no named elements — the fixture is not booting it").toBeGreaterThan(10);
+    const discarded = named
+      .filter((el) => NAME_FORBIDDEN.includes(el.tagName.toLowerCase()) && !el.getAttribute("role"))
+      .map((el) => describeControl(el));
+    expect(discarded, `${discarded.length} element(s) carry a name ARIA discards`).toEqual([]);
+  });
+
+  it("names the live step log and gives it a role that keeps the name", () => {
+    const steps = $("demo-steps");
+    expect(steps.tagName, "the live log is no longer a <pre> — recheck the role mapping").toBe("PRE");
+    expect(String(steps.getAttribute("aria-label") ?? "").trim(), "the live log has no name").not.toBe("");
+    // `log` is the ARIA role for this exact thing — new information added in a
+    // meaningful order — and unlike `region` it is not a landmark, so a
+    // diagnostic panel does not gain a stop in the landmark list.
+    expect(steps.getAttribute("role"), "a bare <pre> is role=generic, where the name is discarded").toBe("log");
+    // Kept explicit although `log` implies it: an implicit value depends on the
+    // AT mapping the role, and this one was here and working first.
+    expect(steps.getAttribute("aria-live")).toBe("polite");
   });
 });
 

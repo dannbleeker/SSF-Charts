@@ -22,19 +22,21 @@ org-wide admin deploy (see `PUBLISHING.md` "Distribution beyond sideloading").
 > analysts actually use — waterfall/bridge, Mekko/Marimekko, stacked and
 > clustered columns, 100% charts, lines, areas, pie/doughnut, scatter/bubble,
 > Gantt plans, and more — inserted onto your slide as **native, fully editable
-> PowerPoint shapes** you can recolour, move and restyle by hand (on PowerPoint
-> on the web and Microsoft 365 builds from 2026; older builds get a complete
-> chart with a note about what they cannot draw). Add the
+> PowerPoint shapes** you can recolour, move and restyle by hand. Add the
 > annotations that tell the story: CAGR arrows, difference arrows, value lines,
 > automatic column totals, and collision-avoiding labels. Every chart stays
-> re-editable: reopen the pane, change the data, and it updates in place.
+> re-editable: reopen the pane, change the data, and it updates in place. A few
+> of the densest layouts — tile maps, large area charts — are more shapes than a
+> browser will take, so in PowerPoint on the web those arrive as a picture
+> instead; they stay just as re-editable from the pane, and the desktop apps
+> draw them as shapes like everything else.
 
 **Long description — feature bullets:**
 - 25 chart kinds incl. waterfall bridges, Mekko/Marimekko, stacked/clustered/100%,
   cascade, funnel, butterfly, Gantt, combo, scatter/bubble, boxplot, violin,
   candlestick, radar, heatmap, tile map, treemap, sunburst and waffle.
-- Native PowerPoint shapes on the web and current Microsoft 365 — recolour,
-  move, or restyle any element by hand.
+- Native PowerPoint shapes — recolour, move or restyle any element by hand, in
+  the desktop apps and, for all but the densest layouts, on the web.
 - Signature annotations: CAGR & difference arrows, value lines, totals, smart
   labels with a global de-overlap pass.
 - Re-editable charts, saved templates, and an import/export style file for a
@@ -92,6 +94,61 @@ org-wide admin deploy (see `PUBLISHING.md` "Distribution beyond sideloading").
 > the manifest's `MinVersion` to 1.10 so it is TRUE, not to delete the
 > qualifier: read every sentence in this file, not just the one that named the
 > word "picture".
+>
+> **AND THE SECOND FIX QUALIFIED THE RIGHT SENTENCES ON THE WRONG AXIS.
+> CORRECTED 2026-09-20.** Both qualifiers it added were written on 2026-09-10 —
+> three days before the floor moved — and both keyed off HOW OLD THE BUILD IS:
+> *"(on PowerPoint on the web and Microsoft 365 builds from 2026; older builds
+> get a complete chart with a note about what they cannot draw)"* and *"Native
+> PowerPoint shapes on the web and current Microsoft 365"*. At a 1.10 floor that
+> is wrong twice over, and the second way is the one a certifier would hit.
+>
+> **An older build cannot install this add-in, so it cannot have the degraded
+> experience the copy promised it.** The floor is 1.10 and
+> `pictureForUndrawableMarks` is unreachable above it — the paragraphs above are
+> the argument. So that clause was not merely inaccurate: there is no population
+> it is about. It reads as a support commitment to users Microsoft will not let
+> install the product, and it points a reviewer at a code path that cannot run.
+>
+> **And it named the web as a safe host when the web is the ONLY host with a
+> picture path left.** `wantsAutoPicture` returns false unless `opts.web`
+> (`src/render/powerpoint.ts`) and `isWebHost()` is `OfficeOnline` alone
+> (`src/taskpane/app.ts`), so the density rescue fires on PowerPoint on the web
+> and nowhere else. The old qualifier named exactly the wrong platform — and the
+> web is where most reviewers test.
+>
+> **THE MEASUREMENT — and the two audit readings of it, "Area and Tile map" and
+> "9 of 123", ARE BOTH RIGHT ABOUT DIFFERENT POPULATIONS.** Same predicate the
+> pane uses either way: `estimateOfficeShapes(buildChart(cfg)) >
+> DEMO_SHAPE_BUDGET` (105), gated on `isWebHost()`. Measured 2026-09-20:
+>
+> - **What a user or a reviewer actually meets: 2 of the 25 kinds.** The picker
+>   loads `sampleConfig(kind)`, and at its 480×300 default exactly **Tile map
+>   (122) and Area (111)** cross 105. Everything else is shapes — waffle 103 and
+>   sunburst 101 sit just under. THIS is the set the listing copy should name,
+>   and it is why the copy above names tile maps and area charts.
+> - **What the shipped deck holds: 9 of 123 shipped charts insert as a picture.**
+>   Over `examples/showcase.json` —
+>   the same denominator the 1.10 census uses — tile map 4/4, area 2, waffle 1
+>   (#61 at 107, not the 103 of a 10×10 grid), line 1 (the Catmull-Rom smoothed
+>   one, 226) and combo 1 (stacked area + margin line, 164). The showcase carries
+>   denser instances than the samples do, two of them in kinds the samples keep
+>   well under budget.
+>
+> Neither figure is "the" answer, and the gap between them is the useful part:
+> **the gate is a shape count, not a list of kinds**, so a user's own data can
+> push a kind over that its sample never approaches. None of this happens on the
+> desktop apps at all unless the user ticks *Insert as picture*.
+> `test/web-density-census.test.ts` re-derives both numbers and asserts this file
+> still says them, exactly as `below-1-10-census.test.ts` does for the 1.10 one.
+>
+> **THE TWO NINES ARE DIFFERENT NINES, and one is going to get quoted for the
+> other.** Nine charts lose their SUBJECT below 1.10 — a population that can no
+> longer install. Nine charts arrive as a PICTURE on the web — a population that
+> is every reviewer. They share not one chart: the first nine are pies,
+> doughnuts, sunbursts and a radial-bar radar, none of which reaches 105 shapes;
+> the second nine contain no wedge at all. If you catch yourself writing "the
+> nine charts", say which.
 
 > **Where "25" comes from, so it cannot go stale unnoticed:** it is the number of
 > entries in `CHART_KINDS` (`src/core/samples.ts`), which is what the picker
@@ -172,6 +229,52 @@ consulting charts, CAGR, editable charts, data visualization
       `grep -ohE 'https://[^"<> ]+' manifest-prod.xml manifest-excel-prod.xml | sed 's/&amp;/\&/g' | sort -u`
 - [ ] Listing copy above is trademark-clean; screenshots contain no competitor marks.
 - [ ] Value is demonstrable **without a login** (SSF Charts needs none — good).
+- [ ] **Notes for certification** written (Partner Center → the offer →
+      **Properties → Notes for certification**). **This item was missing from the
+      checklist until 2026-09-20**, which is worse than it sounds: it is the one
+      field where you tell the reviewer how to exercise the add-in, and a blank
+      one leaves a stranger to decide for themselves what the product was meant
+      to do — with a pane of 25 chart kinds, a picture fallback and a ribbon
+      entry that is easy to miss. Draft:
+
+      > SSF Charts needs no account, licence key, sign-in or demo credentials.
+      > Every feature works the moment the pane loads, and no document data
+      > leaves the client — charts are built in the task pane and written to the
+      > slide through Office.js.
+      >
+      > A one-minute pass, on PowerPoint on the web or the desktop app:
+      >
+      > 1. **Home** tab → **SSF Charts** → **Insert chart**. The pane opens on
+      >    the Chart tab with a stacked column chart and sample data already
+      >    filled in — nothing to type.
+      > 2. Press **Insert into slide**. The chart lands as a group of native
+      >    PowerPoint shapes (it is named `PowerChart` in PowerPoint's Selection
+      >    pane). Click a column and restyle it with PowerPoint's own tools.
+      > 3. Click that group on the slide. The pane shows *"An SSF chart is
+      >    selected on the slide"* with an **Edit it** button: press it, change a
+      >    number in the data grid, and insert again — the chart updates in place
+      >    rather than adding a second one.
+      > 4. Section **1 · Chart type** holds all 25 kinds. Two of them — **Tile
+      >    map** and **Area** — are denser than PowerPoint on the web will draw
+      >    shape by shape, so there they insert as a picture instead and the pane
+      >    says so in words. They stay re-editable via step 3, and they insert as
+      >    native shapes in the desktop apps. That is the behaviour the listing
+      >    copy describes.
+      >
+      > Minimum requirement set: PowerPointApi 1.10 — PowerPoint on the web,
+      > Microsoft 365 on Windows (2601 / 19610.20002 or later) and on Mac
+      > (16.105 or later).
+
+      Every claim in that draft is sourced rather than remembered: the ribbon
+      path, the 1.10 floor and the build numbers are `manifest.xml`; the pane's
+      opening chart is `sampleConfig("stacked")` and the banner wording is
+      `taskpane.html` (`selection-banner`); the group name is `GROUP_NAME`, seen
+      as one `msoGroup` of 40 shapes in
+      `docs/evidence/windows-desktop-2026-09-13.json`; the picture message is
+      `chartPicture` in `app.ts`; and "Tile map and Area" is the measured
+      2-of-25 above, not a guess. **Walk the four steps once on the web before
+      pasting it.** Nobody has driven them end to end as a script, and a reviewer
+      who finds one click missing trusts the rest of the note less.
 - [ ] Submit → respond to Microsoft validation feedback (days–weeks).
 
 ## Faster alternative (recommended first)

@@ -25,7 +25,29 @@
   <ProviderName>SSF Charts (open source)</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="SSF Charts" />
-  <Description DefaultValue="Consulting-grade charts — waterfall/bridge, Mekko/Marimekko, stacked columns, CAGR and difference arrows — inserted as native, fully editable PowerPoint shapes." />
+  <!--
+    THIS STRING IS STORE-FACING, and it promised "inserted as native, fully
+    editable PowerPoint shapes" with no qualifier until 2026-09-20.
+
+    On PowerPoint on the WEB that is not true of every chart, and the web is
+    where a certifier tests. A chart above DEMO_SHAPE_BUDGET (105 native shapes)
+    goes onto the slide as a picture instead — `wantsAutoPicture`, gated on
+    `isWebHost()`, so it happens on the web and nowhere else. Measured over the
+    25 samples the picker offers, two cross it: Tile map (122) and Area (111).
+    "Functionality does not match the offer description" is the ordinary
+    AppSource rejection, and this field IS part of the offer description.
+
+    The qualifier is about the HOST AND THE DENSITY, not about the build's age.
+    An earlier attempt at this in `docs/STORE-LISTING.md` qualified by build age
+    ("older builds get..."), which the 1.10 floor makes impossible: a build that
+    cannot draw the chart cannot install the add-in.
+
+    221 characters, under Microsoft's documented 250 for Description.
+    `docs/STORE-LISTING.md` carries the measurement and the matching listing
+    copy; `test/web-density-census.test.ts` re-derives the numbers so they
+    cannot go stale quietly.
+  -->
+  <Description DefaultValue="Consulting-grade charts — waterfall/bridge, Mekko/Marimekko, stacked columns, CAGR and difference arrows — drawn as native, fully editable PowerPoint shapes; the densest layouts arrive as a re-editable picture on the web." />
   <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png" />
   <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png" />
   <SupportUrl DefaultValue="https://github.com/dannbleeker/SSF-Charts" />

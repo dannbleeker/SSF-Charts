@@ -22,7 +22,45 @@
 
   <Requirements>
     <Sets DefaultMinVersion="1.1">
-      <!-- ShapeCollection.addGeometricShape / addLine / addTextBox -->
+      <!--
+        1.1 IS DERIVED, AND WAS NOT BEFORE. This block used to carry the
+        PowerPoint manifest's reasoning verbatim — "ShapeCollection.addGeometricShape
+        / addLine / addTextBox" — three APIs this add-in never calls, and which
+        in Excel arrive at ExcelApi 1.9, not 1.1. So the comment argued for a
+        floor nine sets above the number sitting beside it, and an auditor reading
+        it could only conclude the number was never derived at all.
+
+        RE-DERIVED 2026-09-20 from `src/excel/excel.ts` — the whole companion —
+        and confirmed against the built bundle, which adds nothing to it. It
+        reaches the Excel object model in exactly four places:
+
+          Excel.run(batch)              the Excel object model's entry point. The
+                                        `Excel` namespace exists wherever ExcelApi
+                                        does, and 1.1 is the lowest set there is.
+          Workbook.getSelectedRange()   ExcelApi 1.1
+          Range.values                  ExcelApi 1.1
+          Range.address                 ExcelApi 1.1
+
+        Sets read member by member off the `@remarks [Api set: ...]` annotations
+        in `node_modules/@types/office-js/index.d.ts`, the generated mirror of
+        Microsoft's reference. `context.sync()` is `OfficeExtension`, and
+        `Office.onReady` / `Office.context.host` are Common API — neither is a
+        member of any ExcelApi set, so neither raises the floor. The highest of
+        the four is 1.1. The floor is 1.1.
+
+        AND IT CANNOT BE USED TO HEDGE, in either direction. Partner Center
+        derives the certified platform list from this block (office-js#6658,
+        certification policy 1120.3 — the argument is written out in full in
+        `manifest.xml`), so a floor that is too LOW enlarges what Microsoft
+        certifies, and a floor that is too HIGH locks out hosts the pane runs on
+        perfectly. Neither is available here: a pane that only reads the selected
+        range needs 1.1, and 1.1 is also the floor of the set. There is no number
+        to move.
+
+        `test/excel-companion-manifest.test.ts` re-derives that surface from the
+        source instead of citing this comment — so a fifth call fails there,
+        rather than quietly invalidating the number.
+      -->
       <Set Name="ExcelApi" MinVersion="1.1" />
     </Sets>
   </Requirements>
@@ -90,7 +128,21 @@
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="OpenPane.Tooltip" DefaultValue="Generate an SSF Charts config from the selected range." />
-        <bt:String id="GetStarted.Description" DefaultValue="Find SSF Charts on the Home tab and insert your first chart." />
+        <!--
+          THE CALLOUT HAS TO DESCRIBE THIS ADD-IN, not the other one. Until
+          2026-09-20 this string was the PowerPoint manifest's word for word —
+          "…and insert your first chart" — and in Excel that is an instruction
+          nobody can follow: the companion has no insert path at all (see the
+          Requirements comment; its entire Excel surface is reading the selected
+          range). This is the FIRST thing a new user or a validation tester
+          meets, because the host pops it once, on install.
+
+          It now names the pane's primary button verbatim, and
+          `test/excel-companion-manifest.test.ts` checks the two against each
+          other so a relabelled button cannot leave the callout pointing at a
+          control that is no longer there.
+        -->
+        <bt:String id="GetStarted.Description" DefaultValue="Find SSF Charts on the Home tab, select a data range, then use Generate from selection to build a config you paste into SSF Charts in PowerPoint." />
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

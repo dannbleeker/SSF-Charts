@@ -575,13 +575,16 @@ function offerOwnSlide(
   const own = $<HTMLButtonElement>("slow-offer-own");
   const here = $<HTMLButtonElement>("slow-offer-here");
   const picture = $<HTMLButtonElement>("slow-offer-picture");
+  // REVEAL, THEN WRITE — `#slow-offer` carries `aria-live="polite"`, and a live
+  // region mutated while its own `hidden` still applies is not announced as a
+  // change. Same ordering, same reason, as `note()`; the full argument is there.
+  picture.hidden = !canPicture;
+  box.hidden = false;
   // The wording lives in `insert-cost.ts`, where a test can read what it
   // actually says rather than grep for what it must not. It USED to be fed two
   // durations from `estimateInsertMs` as well; those came out on 2026-09-05
   // because the curve behind them fails out of sample. See BACKLOG item 20.
   text.textContent = offerSentence(present);
-  picture.hidden = !canPicture;
-  box.hidden = false;
   return new Promise((resolve) => {
     const done = (choice: "own-slide" | "here" | "picture") => () => {
       own.removeEventListener("click", onOwn);
@@ -638,12 +641,13 @@ function offerNativeInsteadOfPicture(shapes: number): Promise<"own-slide" | "pic
   const own = $<HTMLButtonElement>("slow-offer-own");
   const here = $<HTMLButtonElement>("slow-offer-here");
   const picture = $<HTMLButtonElement>("slow-offer-picture");
-  text.textContent =
-    `That chart is ${shapes} shapes — too many for PowerPoint on the web to draw onto this slide. ` +
-    `It can go on a slide of its own as editable shapes, or stay on this one as a picture.`;
+  // Reveal, then write — see `offerOwnSlide`, and `note()` for why.
   here.hidden = true;
   picture.hidden = false;
   box.hidden = false;
+  text.textContent =
+    `That chart is ${shapes} shapes — too many for PowerPoint on the web to draw onto this slide. ` +
+    `It can go on a slide of its own as editable shapes, or stay on this one as a picture.`;
   return new Promise((resolve) => {
     const done = (choice: "own-slide" | "picture") => () => {
       own.removeEventListener("click", onOwn);
@@ -762,16 +766,36 @@ function showStop(on: boolean) {
 let settledNotes = 0;
 
 function note(text: string, status: "ok" | "err" | "busy" | "none" = "none", params?: Record<string, string | number>) {
-  // Route status text through the runtime translator so a localized pane
-  // announces it in the user's language. `text` is the English source string
-  // (an EN catalogue key), optionally carrying {placeholders} that `params`
-  // fills after translation. The aria-live host-note reads the change to a
-  // screen reader.
+  /**
+   * THE STRIP OPENS FIRST, AND THE ORDER IS THE WHOLE POINT.
+   *
+   * `#host-note` is the pane's live region (`role="status"`, `aria-live`), and
+   * `.status-strip[hidden]` is `display: none` in taskpane.css — an author rule,
+   * so the collapse is real and not just the UA default. Writing the text before
+   * lifting `hidden` therefore mutated a live region inside a `display: none`
+   * subtree, and a live region is only announced for a change made while it is
+   * rendered: content that appears together WITH the region counts as its
+   * initial content, not as an update. The strip ships `hidden` in the markup
+   * and `note("")` at boot leaves it that way, so the message this cost was the
+   * FIRST of every session — "Working…" on the user's first insert.
+   *
+   * Un-hiding first makes the write a change to a rendered region, which is what
+   * every platform guidance asks for. NOT VERIFIED AGAINST A SCREEN READER —
+   * there is none in this harness; what is tested is the DOM ordering, which is
+   * the half that is ours. The same ordering is applied to the other live region
+   * this pane collapses, `#slow-offer` — see `offerOwnSlide`.
+   *
+   * Clearing runs the other way round on purpose: hide, then blank. There is
+   * nothing to announce about a note being taken away.
+   *
+   * The text itself goes through the runtime translator so a localized pane
+   * announces it in the user's language. `text` is the English source string (an
+   * EN catalogue key), optionally carrying {placeholders} that `params` fills
+   * after translation.
+   */
+  statusStrip?.toggleAttribute("hidden", !text);
   hostNote.textContent = t(text, params);
   hostNote.className = status === "none" ? "hint" : `hint status-${status}`;
-  // The strip carries the note now, so it has to follow it: shown whenever
-  // there is something to say, collapsed when there is not.
-  statusStrip?.toggleAttribute("hidden", !text);
   statusBar?.toggleAttribute("hidden", status !== "busy");
   if (status !== "busy") {
     setProgress(null);
@@ -4720,7 +4744,28 @@ function wireInsert() {
       "click",
       guard(async () => {
         const chapters = agendaChapters();
-        if (!chapters.length) return;
+        /**
+         * A SILENT RETURN IS "Done." IN GREEN OVER AN INSERT THAT NEVER HAPPENED.
+         *
+         * `guard` closes out an action that posted no end state of its own by
+         * printing "Done." in green — see `settledNotes`, which counts
+         * settlements precisely so that fallback is reliable. That makes a bare
+         * `return` here the one thing this pane must not do: press Insert with
+         * the chapters box empty — or holding nothing but blank lines, which
+         * `agendaChapters` filters away — and the pane reported success for zero
+         * slides. A verdict that cannot tell "did the thing" from "did nothing"
+         * is the defect class this file has spent the most effort on.
+         *
+         * An "err" note rather than a disabled button, and that is a choice: the
+         * pane's other two refusals — "No steps to copy yet." and "No run to
+         * save yet…" — let the press land and then say why nothing came of it. A
+         * button that greys itself out says only that it is unavailable, never
+         * which of the pane's boxes is the empty one.
+         */
+        if (!chapters.length) {
+          note("Nothing inserted — the agenda chapters box is empty. Put one chapter per line.", "err");
+          return;
+        }
         await insertAgendaSlides(chapters.map((_, i) => buildAgendaScene(chapters, { highlight: i })));
       }),
     );

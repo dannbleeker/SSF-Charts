@@ -18,43 +18,72 @@
 </head>
 <body>
   <h1>SSF Charts — Privacy Policy</h1>
-  <p class="muted">Last updated: 30 August 2026</p>
+  <p class="muted">Last updated: 20 September 2026</p>
 
   <p>
-    SSF Charts is an open-source PowerPoint add-in that turns chart definitions into
-    native, editable PowerPoint shapes. It is designed to keep your data with you.
+    SSF Charts is an open-source Microsoft Office add-in. It ships in two parts: a
+    <strong>PowerPoint</strong> add-in that turns chart definitions into native,
+    editable PowerPoint shapes, and a smaller <strong>Excel</strong> companion
+    ("SSF Charts Link") that turns the range you have selected into a chart
+    configuration you can paste into PowerPoint. Both are designed to keep your data
+    with you, and this policy covers both.
   </p>
 
-  <h2>What data SSF Charts handles</h2>
+  <h2>What data SSF Charts handles in PowerPoint</h2>
   <p>
     The chart data and settings you enter are processed <strong>entirely inside your
     PowerPoint client</strong> to draw shapes on your slide. SSF Charts persists a
     chart's configuration in a shape tag <em>inside your own document</em> (so a chart
-    can be re-edited later) and stores your saved templates and style defaults in your
-    browser's <code>localStorage</code> on your device.
+    can be re-edited later) and — only when you press <em>Save style to deck</em> — a
+    small style record in the presentation's own custom XML, so that a branded deck
+    keeps its look when you send the file on.
+  </p>
+  <p>
+    On your device, in your browser's <code>localStorage</code>, it keeps your saved
+    templates, your style defaults and small interface preferences. If you run the
+    add-in's built-in diagnostics, a log of that run is kept in the same place, so that
+    a run which crashes the pane can still be downloaded afterwards. None of it leaves
+    your device.
+  </p>
+
+  <h2>What data SSF Charts handles in Excel</h2>
+  <p>
+    The Excel companion is a one-way bridge into PowerPoint. When you press
+    <em>Generate from selection</em> it reads the values of the range you have selected,
+    converts them into a chart configuration, and shows that configuration in the pane;
+    <em>Copy</em> places it on your clipboard so you can paste it into SSF Charts in
+    PowerPoint. All of that happens <strong>inside your Excel client</strong>. The
+    companion does not write to your workbook and stores nothing on your device.
   </p>
 
   <h2>What we do not do</h2>
   <ul>
-    <li>We do <strong>not</strong> transmit your slides, chart data, or documents to any server we control.</li>
+    <li>We do <strong>not</strong> transmit your slides, workbooks, chart data, or documents to any server we control.</li>
     <li>We do <strong>not</strong> use accounts, logins, analytics, advertising, or tracking cookies.</li>
     <li>We do <strong>not</strong> sell or share any personal information — we don't collect any.</li>
   </ul>
 
   <h2>Hosting</h2>
   <p>
-    The add-in's static files (scripts, icons, this page) are served over HTTPS from
-    <code>ssf-chart.struktureretsundfornuft.dk</code>, hosted on GitHub Pages. As with
-    any website, the host may record standard technical request logs (e.g. IP address,
-    timestamp) for security and reliability. SSF Charts itself adds no additional
-    collection on top of that.
+    The static files of both add-ins (scripts, icons, both task panes, this page) are
+    served over HTTPS from <code>ssf-chart.struktureretsundfornuft.dk</code>, hosted on
+    GitHub Pages. As with any website, the host may record standard technical request
+    logs (e.g. IP address, timestamp) for security and reliability. SSF Charts itself
+    adds no additional collection on top of that.
+  </p>
+  <p>
+    Besides loading its own files from that host, the PowerPoint pane makes one request
+    of its own: when it opens it reads a small <code>build.json</code> from the same
+    host, so it can tell you when the pane you have open is older than the deployed
+    site. Nothing about you or your document is sent with it. Those files and Microsoft's
+    Office.js library, described next, are the only network requests either add-in makes.
   </p>
 
   <h2>Third-party services</h2>
   <p>
-    Inside PowerPoint, the add-in loads Microsoft's Office.js library from Microsoft's
-    content delivery network, and runs within the Microsoft Office platform, which is
-    governed by Microsoft's own privacy terms.
+    Inside PowerPoint and Excel, the add-in loads Microsoft's Office.js library from
+    Microsoft's content delivery network, and runs within the Microsoft Office platform,
+    which is governed by Microsoft's own privacy terms.
   </p>
 
   <h2>Contact</h2>

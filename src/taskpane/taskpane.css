@@ -21,6 +21,36 @@
  * uses through this file re-theme without being touched.
  */
 :root {
+  /*
+   * TELL THE UA THE PANE HAS A DARK RENDERING. Every other line in this file
+   * paints the dark theme with author colours; this one line is what stops the
+   * USER AGENT painting the parts the author does not.
+   *
+   * Without it, a form control the rules below give no `background` keeps its
+   * light rendering on a dark pane while inheriting `--ink` — near-white text
+   * on a white field. Measured in Chromium under `prefers-color-scheme: dark`,
+   * 2026-09-20, on this markup: `#chart-w`, `#chart-h`, `#flow-highlight`,
+   * `#check-state`, `#demo-path`, `#demo-scenario` and `#experiment-pick` all
+   * computed `color: rgb(220,233,247)` on `background: rgb(255,255,255)` —
+   * 1.23:1, against WCAG 1.4.3's 4.5:1. The chart size boxes were unreadable.
+   *
+   * The rules below now give those controls a fill (see `:where(...)` in
+   * "fields & inputs"), so this line is no longer what rescues their text. It
+   * stays for the two jobs nothing else can do:
+   *   1. THE PARTS CSS CANNOT PAINT. The number spinners, the select's arrow
+   *      and — the one that matters — the option list a `<select>` pops open,
+   *      which the UA draws. Its options inherit the select's near-white
+   *      `color` (measured: rgb(220,233,247)) onto a UA-painted background, so
+   *      an undeclared scheme opens a white popup full of near-white text.
+   *   2. THE BACKSTOP. A control this file has not named — a new `type=`, an
+   *      `<input>` with no type at all — lands on the UA's dark field instead
+   *      of white: measured #3b3b3b fill, #858585 border, which is 9.09:1 for
+   *      `--ink` text and 3.04:1 for the border. Readable by default.
+   * `light dark` and not `dark`: the pane's light theme is the default one and
+   * must keep the UA's light controls.
+   */
+  color-scheme: light dark;
+
   --navy: #00254c;
   --blue: #2b6cb0;
   --orange: #ed8936;
@@ -597,6 +627,35 @@ input[type="number"],
 select,
 textarea {
   color: var(--ink);
+}
+/*
+ * THE FILL THAT GOES WITH THAT COLOUR — stated once, because seven controls
+ * proved the per-component rules do not cover the pane.
+ *
+ * The rule above names the text colour for every text-entry control; the fill
+ * was left to each component, and `#chart-w`, `#chart-h` (the chart size
+ * boxes), `#flow-highlight`, `#check-state` and the three Automation selects
+ * are matched by NO component rule at all — the sibling rules stop at
+ * `input[type="text"]` and `select`, so a number box or a select in the same
+ * row falls through. They wore whatever the UA painted, which on a dark pane
+ * was white under near-white text: 1.23:1, measured (see `color-scheme` in
+ * `:root` for the measurement and the parts this rule cannot reach).
+ * On `--panel` the same text measures 13.38:1 in dark. Light is unchanged to
+ * the pixel: `--panel` IS #ffffff there, which is what the UA was painting.
+ *
+ * `:where()` for ZERO specificity, so this is a default and never an override:
+ * `.type-search input` keeps its deliberate `--surface` recess, `.datasheet
+ * input.header` keeps `--calm`, and the next component to state a surface of
+ * its own wins without out-specifying this line. A plain selector list would
+ * tie with `.type-search input` and take it on source order. (`:where()` is
+ * Chromium 88; this file already requires 86 for its twelve `:focus-visible`
+ * rules, and Office's WebView2 is evergreen.)
+ *
+ * The same four selectors as the rule above on purpose — colour and fill are a
+ * pair. Anything outside the pair is caught by `color-scheme` instead.
+ */
+:where(input[type="text"], input[type="number"], select, textarea) {
+  background: var(--panel);
 }
 input:focus,
 select:focus,

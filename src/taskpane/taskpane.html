@@ -326,10 +326,29 @@
             <button id="demo-steps-copy" class="linkish" title="Copy every line below to the clipboard">Copy</button>
             <button id="demo-steps-clear" class="linkish" title="Empty the list">Clear</button>
           </div>
+          <!-- `role="log"` IS WHAT MAKES THE NAME BELOW COUNT. A bare `<pre>` maps
+               to the `generic` role, and ARIA PROHIBITS `aria-label` on `generic`
+               — so the name was discarded rather than merely ignored, and this
+               live region reached a screen reader unnamed while validators
+               (axe-core's `aria-prohibited-attr`) flag it outright. AppSource
+               validation tests accessibility, so that is a shipping gate.
+
+               `log` rather than `region` or `status`: this is exactly what ARIA
+               describes as a log — new information added in a meaningful order,
+               old information dropping off — it permits a name, and unlike
+               `region` it is not a landmark, so it does not add a stop to the
+               landmark list for a diagnostic panel. `tabindex` stays because the
+               box scrolls and a keyboard user has to be able to reach it.
+
+               `aria-live="polite"` is kept although `log` already implies it: it
+               was here first, it is what the behaviour was verified against, and
+               an explicit value costs nothing where an implicit one depends on
+               the AT mapping the role correctly. -->
           <pre
             id="demo-steps"
             class="steps"
             tabindex="0"
+            role="log"
             aria-live="polite"
             aria-label="Live steps of the run in progress"
           ></pre>
