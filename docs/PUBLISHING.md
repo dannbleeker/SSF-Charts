@@ -47,9 +47,18 @@ domain serves the project site from its **root**, the bundle base is `/`
    > referenced only by the manifests), so without the copy step the hosted
    > icon URLs 404. `pages-postbuild.mjs` copies them; the `CNAME` and legal
    > pages ride along from `public/`.
-2. **[agent] Deploy workflow** — ✅ `.github/workflows/pages.yml`: on push to
-   `main`, `npm ci` → `npm run build:pages` → `upload-pages-artifact` (path
-   `dist`) → `deploy-pages`, with `pages: write` / `id-token: write`.
+2. **[agent] Deploy workflow** — ✅ `.github/workflows/pages.yml`: after **CI
+   succeeds** on `main` (`workflow_run`, gated on
+   `github.event.workflow_run.conclusion == 'success'`), `npm ci` →
+   `npm run build:pages` → `upload-pages-artifact` (path `dist`) →
+   `deploy-pages`. It checks out `workflow_run.head_sha` — the commit CI
+   actually tested — rather than wherever `main` points by then. Permissions are
+   `{}` at workflow level and granted per job: `build` gets `contents: read`,
+   and only `deploy` holds `pages: write` / `id-token: write`.
+   > CORRECTED 2026-09-20. This said "on push to `main`" with one workflow-wide
+   > grant. Both halves were two rewrites out of date — the CI gate and the
+   > per-job split each landed after it was written — and the gate is the reason
+   > the wait below is what it is.
 3. **[owner] Enable Pages + custom domain** — ✅ done (Source: GitHub Actions;
    domain `ssf-chart.struktureretsundfornuft.dk`). Confirm **Enforce HTTPS**
    is checked once the cert provisions.
@@ -126,7 +135,13 @@ needed PowerPoint, and it has been covered in CI all along by
 fixes fallout — expect a real host to surface things the mocked tests can't,
 because every Office.js assertion in this repo is against a fake.
 
-**Before you start.** Wait ~2 minutes after the merge for the Pages deploy.
+**Before you start.** Wait **~5 minutes** after the merge for the Pages deploy —
+not the two this said until 2026-09-20. `pages.yml` now waits for CI to pass
+before it builds, so the site goes live about five minutes after a push instead
+of about one. Measured on the last three merges, push to `Deploy Pages`
+completion: **4m13s, 4m44s, 4m+**. The old figure was not merely stale; it sent
+you to the pane while the site still served the previous build, which reads as
+"the fix did not work". The build stamp below is what settles it either way.
 Open the pane and check the **build stamp** under the title is the commit you
 mean to test — PowerPoint caches the pane aggressively, and a whole session can
 otherwise go into testing code the host never fetched. Hard-reload if it is
