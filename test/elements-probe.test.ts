@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
+  CLICK_SENTINEL,
   ELEMENTS,
   GROUP_NAME,
   SETTLE_BUDGET_MS,
   SETTLE_POLL_MS,
+  clickElementScript,
   hostSilent,
   judge,
   busyScript,
@@ -331,5 +333,52 @@ describe("what the Elements probe concludes", () => {
     // If a sixth deep link is added to manifest.xml this list has to grow with
     // it, or the probe silently stops covering the new one.
     expect(ELEMENTS.map((e: { el: string }) => e.el)).toEqual(["harvey", "check", "flow", "kpi", "table"]);
+  });
+
+  it("stamps the note busy before clicking, not after", () => {
+    // THE SECOND WAY THIS PROBE CAN MANUFACTURE A FALSE RED, found 2026-09-23.
+    //
+    // The first was polling the host during a draw, which `settleReads` above
+    // now prevents. This one is quieter: `#host-note` holds ONE verdict, and
+    // between `b.click()` and the pane setting `status-busy` in its own
+    // handler, the note still reads the PREVIOUS element's `status-ok`. A poll
+    // landing in that window says "settled", `settleReads` reads the slide
+    // mid-draw, and a working element is reported broken.
+    //
+    // The archived 5-of-5 is not in doubt — a stale settle reads the previous
+    // element's shapes, which fail this element's `expect`, so the race can
+    // only produce failures and none were recorded. Fixed because it is latent.
+    //
+    // THE ORDER IS THE GUARANTEE. A stamp after the click guards nothing, and
+    // the two spellings read identically in a diff.
+    const script = clickElementScript("table");
+    const stamp = script.indexOf("status-busy");
+    // The INSERT click, spelled with what follows it — `b.click()` alone also
+    // matches the `tab.click()` that switches tab, which happens first and
+    // would make this pass while guarding nothing.
+    const click = script.indexOf('b.click(); return "clicked"');
+    expect(stamp, "the probe no longer stamps the note — a stale verdict reads as this insert's").toBeGreaterThan(-1);
+    expect(click).toBeGreaterThan(-1);
+    expect(
+      stamp < click,
+      "the note is stamped AFTER the click, which leaves the race open: a poll in between reads " +
+        "the previous element's success, settles early, and reads the slide mid-draw.",
+    ).toBe(true);
+    // And it must stay a DOM write. Reaching for the host here would be the
+    // expensive defect above, reintroduced by the fix for this one.
+    expect(script, "the click script reached for the host").not.toContain("PowerPoint.run");
+  });
+
+  it("uses a sentinel no element could be mistaken for", () => {
+    // The sentinel goes into the same slot the pane reports through, so a probe
+    // that accepted it would be quoting itself back as the product's answer.
+    expect(CLICK_SENTINEL).toBeTruthy();
+    for (const { el, expect: pattern } of ELEMENTS as { el: string; expect: RegExp }[]) {
+      expect(
+        pattern.test(CLICK_SENTINEL),
+        `the sentinel "${CLICK_SENTINEL}" matches ${el}'s pattern ${pattern}, so the probe's own ` +
+          `placeholder would read as that element landing`,
+      ).toBe(false);
+    }
   });
 });

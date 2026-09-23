@@ -205,12 +205,42 @@ export function readNote(out) {
   return null;
 }
 
-/** Click one Elements button by id, inside the pane's frame. */
+/**
+ * What the note is stamped with between the click and the pane's own verdict.
+ * If this is ever what the probe reports, the pane never answered at all.
+ */
+export const CLICK_SENTINEL = "waiting for this insert";
+
+/**
+ * Click one Elements button by id, inside the pane's frame.
+ *
+ * IT STAMPS THE NOTE BUSY BEFORE IT CLICKS. `#host-note` is a single slot
+ * holding one verdict, and the pane only sets `status-busy` once its own click
+ * handler reaches that line. Between the click and that moment the note still
+ * carries the PREVIOUS element's `status-ok` — so `settleReads`, polling
+ * `SETTLE_POLL_MS` later, can read a success belonging to the element before
+ * this one and conclude this insert finished before it started. It would then
+ * read the slide mid-draw and report the element as failed.
+ *
+ * That is the false red this probe was rewritten to stop, arriving by a second
+ * route: the first was polling the HOST during the draw, this one is reading a
+ * stale verdict from the PANE. The archived 5-of-5 run is not in doubt — a
+ * stale settle reads the previous element's shapes, which fail this element's
+ * `expect` regex, so this race can only manufacture failures and none were
+ * recorded. It is fixed because it is latent, not because it fired.
+ *
+ * Found 2026-09-23, when `scripts/store-shots.mjs` hit the identical race and
+ * was caught by its own guard holding a chart of 80 loose shapes that had not
+ * finished grouping.
+ */
 export const clickElementScript = (el) =>
   "async () => { const tab = document.querySelector('[data-tab=\"elements\"]'); if (tab) tab.click(); " +
   "await new Promise((r) => setTimeout(r, 400)); " +
   `const b = document.getElementById(${JSON.stringify(el + "-insert")}); ` +
-  'if (!b) return "no-button"; if (b.disabled) return "disabled"; b.click(); return "clicked"; }';
+  'if (!b) return "no-button"; if (b.disabled) return "disabled"; ' +
+  "const n = document.getElementById('host-note'); " +
+  `if (n) { n.className = "hint status-busy"; n.textContent = ${JSON.stringify(CLICK_SENTINEL)}; } ` +
+  'b.click(); return "clicked"; }';
 
 /**
  * `alt:[...]` -> the array, or null when the host refused.

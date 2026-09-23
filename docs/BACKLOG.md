@@ -478,6 +478,19 @@ product defect — see the note below. FOUR are open.**
        host's slide PNG into the blank region — which would be genuine output in
        a frame no user ever saw, and is therefore a misrepresentation question
        rather than a technical one. Owner's call.
+       ROUTE 2 TAKEN FOR THE SLIDES, 2026-09-23, because it was the one route
+       needing no decision from anybody. `scripts/store-shots.mjs` produced two
+       1366x768 images into `docs/store-shots/`, rendered by PowerPoint itself
+       through `getImageAsBase64`, nothing composited and nothing edited.
+       THE PANE HALF IS STILL OPEN, AND FOR A REASON NOBODY HAD WRITTEN DOWN.
+       "Pane and slide are each capturable" is wrong about the pane: the add-in
+       iframe does not composite into a screenshot of the host page either — an
+       element capture of it returns 318x1298 of pure white — so the only
+       headless way to photograph the pane is to open `taskpane.html` outside
+       PowerPoint, where it correctly announces "Not running inside PowerPoint".
+       Cropping that banner away is route 3's question in different clothes.
+       So what remains of 22 is a PANE image, it needs route 1, and route 1
+       needs him. Route 3 remains untouched and his.
 
     23  the AppSource submission itself
        — everything above feeds it and none of it is the act. Partner Center
