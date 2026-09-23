@@ -326,9 +326,42 @@ consulting charts, CAGR, editable charts, data visualization
       as one `msoGroup` of 40 shapes in
       `docs/evidence/windows-desktop-2026-09-13.json`; the picture message is
       `chartPicture` in `app.ts`; and "Tile map and Area" is the measured
-      2-of-25 above, not a guess. **Walk the four steps once on the web before
-      pasting it.** Nobody has driven them end to end as a script, and a reviewer
-      who finds one click missing trusts the rest of the note less.
+      2-of-25 above, not a guess.
+
+      **THOSE SOURCINGS ARE NOW PINNED BY A TEST**, `test/certification-notes.test.ts`
+      — the ribbon labels against `manifest.xml`, the insert button and the
+      section heading against `taskpane.html`, the group name against BOTH
+      renderers, the selection banner quoted verbatim, the 1.10 floor against
+      the requirement the manifest enforces, and the no-sign-in promise against
+      the shipped source. The draft's own instruction was "walk the four steps
+      once before pasting it", which is a one-time act by a person; this is what
+      keeps holding afterwards.
+
+      **WHICH OF THE FOUR STEPS IS ACTUALLY EXERCISED ON THE WEB, checked
+      2026-09-23 — and one is not.**
+
+      - Steps 1, 2 and 4 are covered by every archived round: the pane loads on
+        its Chart tab, the insert lands a group (3897 grouped against 257 not,
+        pooled over 458 rounds — a grouped chart keeps its config 99% of the
+        time), and the gallery's 25 kinds are re-derived in
+        `web-density-census.test.ts`.
+      - Step 3 is **half covered**. "Change a number and insert again — it
+        updates in place" is `editOnVisibleSlide`, routine in every round. But
+        that edits through a DECK SCAN. The half a reviewer actually performs —
+        *click the group on the slide, and the pane shows "An SSF chart is
+        selected on the slide" with an "Edit it" button* — is exercised by no
+        archived round at all. `editViaSelection` SKIPS on the web, because this
+        host's selection subsystem goes silent after `setSelectedShapes`
+        (office-js#3083, #3698), and `editViaRealClick` is `pickedOnly` because
+        it blocks on a human. **Zero of 460 rounds ran it.**
+
+      An agent cannot close this one: the slide canvas sits in a cross-origin
+      frame, so a scripted click cannot be aimed at a chart, and a click that
+      misses is indistinguishable from a feature that does not work. What is
+      known is that the live build's banner element carries exactly the words
+      the note quotes. **So this is a single manual click — select the chart,
+      confirm the banner and the button, press it.** Thirty seconds, and it is
+      the first thing a certification reviewer will do.
 - [ ] Submit → respond to Microsoft validation feedback (days–weeks).
 
 ## Faster alternative (recommended first)
