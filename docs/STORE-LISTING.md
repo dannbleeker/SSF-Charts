@@ -211,6 +211,30 @@ consulting charts, CAGR, editable charts, data visualization
   same way: it is the owner's, not the agent's. **A pane image for the listing
   therefore still needs route 1.**
 
+  **AND ROUTE 1 IS NOT AS NARROW AS THIS FILE HAS BEEN SAYING, noted
+  2026-09-26.** Every "not available" above is a fact about a HEADLESS browser,
+  and headless was a choice, not a constraint. Run Playwright **headed** and a
+  real window exists; photograph it at the **OS level** rather than through the
+  page, and the compositing problem disappears entirely, because a desktop
+  screenshot captures the pixels the GPU actually drew. That yields the
+  authentic single frame — ribbon, pane and slide together — that this file
+  calls unavailable, with no AITEST and nothing composited. It closes route 3's
+  question by making it moot rather than by answering it.
+
+  Two things it needs, neither of them a workaround:
+
+  - **A signed-in profile, which no longer exists.** All three copies were
+    deleted on 2026-09-24 when the project paused for certification, because one
+    held a live Microsoft session token. A fresh one needs the owner to sign in
+    once, and that is his alone.
+  - **Both tools at once.** Computer use grants browsers READ-ONLY — it can
+    photograph a browser window but not click in it — so Playwright does the
+    driving and computer use does the photographing. Neither alone is enough,
+    which is why "computer use on a desktop browser" reads as a dead end in
+    `driving-powerpoint-for-the-web-unattended` and is not one here.
+
+  Untried, so stated as a plan and not as a result.
+
   So the slide-with-chart is capturable, the pane is capturable only out of
   host, and **what is not available headlessly is one AUTHENTIC frame containing
   both.** Three ways to close it, and the choice is the owner's:
@@ -355,13 +379,15 @@ consulting charts, CAGR, editable charts, data visualization
         (office-js#3083, #3698), and `editViaRealClick` is `pickedOnly` because
         it blocks on a human. **Zero of 460 rounds ran it.**
 
-      An agent cannot close this one: the slide canvas sits in a cross-origin
-      frame, so a scripted click cannot be aimed at a chart, and a click that
-      misses is indistinguishable from a feature that does not work. What is
-      known is that the live build's banner element carries exactly the words
-      the note quotes. **So this is a single manual click — select the chart,
-      confirm the banner and the button, press it.** Thirty seconds, and it is
-      the first thing a certification reviewer will do.
+      I could not close it HEADLESSLY, which is not the same sentence and this
+      file said the stronger one for two days. The slide canvas sits in a
+      cross-origin frame, so a scripted click cannot be aimed at a chart, and a
+      click that misses is indistinguishable from a feature that does not work —
+      a negative would be worthless, so none was recorded. What is known is that
+      the live build's banner element carries exactly the words the note quotes.
+      **So this is a single manual click — select the chart, confirm the banner
+      and the button, press it.** Thirty seconds, and it is the first thing a
+      certification reviewer will do.
 - [ ] Submit → respond to Microsoft validation feedback (days–weeks).
 
 ## Faster alternative (recommended first)
