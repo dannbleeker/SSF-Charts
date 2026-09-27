@@ -2966,6 +2966,42 @@ What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
 
+### Grouping refused once in each of two rounds on one build — INSIDE THE NOISE FLOOR, recorded so the next cycle checks it, 2026-09-27
+
+**This is not a finding. It is a thing to look at once more**, written down only
+because the alternative is forgetting it and never checking.
+
+Cycle on `dcf21b4`, rounds 483-485:
+
+    483  16:9  Presentation64   20 of 20 grouped,  0 refused
+    484  16:9  Presentation64   17 of 18 grouped,  1 refused
+    485  4:3   Presentation70   17 of 18 grouped,  1 refused
+
+The driver's own baseline is **"usually 0 over 455 prior rounds"**, and its own
+rule for this counter is that a refusal stays inside the noise floor **unless a
+PAIR on one build agrees**. The pair here is 483/484 — legs 1 and 2, same deck,
+same ratio — and it does NOT agree. So by the rule this is noise, and it is
+filed as noise.
+
+**What makes it worth one more look is corroboration from a different
+instrument on the same day and build.** `scripts/store-shots.mjs`, capturing
+listing images, hit repeated ungrouped inserts — 45, 81 and 35 loose shapes on
+separate attempts, each after the pane reported success. That is a second tool
+disagreeing with the baseline in the same direction, which one round's counter
+could not tell you.
+
+**It is also the weakest kind of corroboration**, and the reason this entry
+refuses to call it a finding: those capture runs had bugs of their own — a
+`clear-failed` return that was discarded, so a chart drew on top of the previous
+one's leftovers. At least one "ungrouped" reading there was an artefact of the
+instrument, which is exactly the trap `elements-probe.mjs` already cost a day
+for. The two instruments are not independent enough to add up.
+
+**WHAT WOULD SETTLE IT:** a cycle whose 16:9 PAIR both refuse. That is the
+driver's own threshold and it has not been met. If the next cycle's 483/484
+equivalents are both clean, delete this entry rather than leaving it to accrete
+significance by sitting here.
+
 ### `two slides claiming one slot` has failed 15 times with ZERO host friction — OPEN QUESTION, 2026-09-20
 
 Found by aggregating the archive after round 475 failed it, rather than by the
