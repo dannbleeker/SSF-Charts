@@ -147,6 +147,45 @@ mean to test — PowerPoint caches the pane aggressively, and a whole session ca
 otherwise go into testing code the host never fetched. Hard-reload if it is
 older. Then tick **Verbose trace** in the Testing section and leave it on.
 
+**AND THE WAIT CAN NEVER END, which is not the same as slow — met 2026-09-27.**
+`pages.yml` builds `workflow_run.head_sha`, the commit CI actually tested, which
+is the right choice and is what Phase 1 above describes. The consequence nobody
+had written down is that **the site tracks the last commit whose CI run
+triggered a deploy, not `main`.** Push a second commit before the first deploy
+fires and the site can settle on the earlier one and stay there. `round.mjs`
+refuses with `site-behind` (`deployed !== head`) for as long as it does, so a
+cycle cannot start at all.
+
+    HEAD                           dcf21b4
+    site build.json                bbfcf5b - 2026-09-27 12:18Z
+    gh run list "Deploy Pages"     dcf21b4  completed/success  x2
+
+Three deploys reported success "against `dcf21b4`" while the site served
+`bbfcf5b`. **The `headSha` column in `gh run list` is the branch head, NOT the
+`workflow_run.head_sha` the build checks out** — so the runs look like they
+built HEAD when they built its parent. `gh run rerun` does not help: it
+republished `bbfcf5b` with a fresh timestamp (12:45Z), which reads as a
+successful redeploy and is the most confusing outcome available.
+
+**The escape is `workflow_dispatch`**, which `pages.yml` declares and which
+checks out the ref you name:
+
+```bash
+gh workflow run "Deploy Pages" --ref main
+```
+
+The site reached `dcf21b4` about a minute later.
+
+**Tell this apart from an ordinary slow deploy before spending the half hour**
+it cost here: compare the SHA *inside* `build.json` with `git rev-parse --short
+HEAD`. Site SHA is an ANCESTOR of HEAD and the deploy runs are green → waiting
+never fixes it, dispatch. Site SHA IS HEAD but the timestamp is old → CDN cache,
+waiting works.
+
+A **docs-only commit** is the likeliest way to meet this, because it is the
+change you least expect to matter to the site — and it still moves HEAD, which
+is all `round.mjs` compares.
+
 **Beside it sits "Picture every slide", now ON by default, and it decides what a
 round can prove.** Left off, the round photographs the first twelve slides it
 adds and past that records the slide and says it never asked. That was the
