@@ -491,6 +491,21 @@ product defect — see the note below. FOUR are open.**
        Cropping that banner away is route 3's question in different clothes.
        So what remains of 22 is a PANE image, it needs route 1, and route 1
        needs him. Route 3 remains untouched and his.
+       ROUTE 1 IS DONE TOO, 2026-09-27, and the paragraph above is wrong about
+       what it needed. "Not available headlessly" was a fact about a HEADLESS
+       browser, and headless was a choice. Run Playwright HEADED and photograph
+       the window at the OS level and the compositing problem disappears — a
+       desktop grab takes the pixels the GPU drew.
+       `docs/store-shots/03-pane-and-slide.png` is the authentic frame: ribbon,
+       task pane and slide with a selected chart, one real window, nothing
+       composited. It also makes route 3 moot rather than answering it. The
+       owner signed in once (his alone) and that was the only thing it needed.
+       WHAT IS ACTUALLY LEFT OF 22, and it is small: the frame is 1225x816 and
+       AppSource wants 1366x768, so it needs re-taking at that size rather than
+       upscaling; and it carries the owner's own PROFILE PHOTO top-right plus a
+       deck named "Presentation64". The photo on a public listing is his call,
+       not a defect. The two slide images (01, 02) are already 1366x768 and
+       need nothing.
 
     23  the AppSource submission itself
        — everything above feeds it and none of it is the act. Partner Center
