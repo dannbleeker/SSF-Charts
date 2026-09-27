@@ -211,6 +211,60 @@ consulting charts, CAGR, editable charts, data visualization
   same way: it is the owner's, not the agent's. **A pane image for the listing
   therefore still needs route 1.**
 
+  **AND ROUTE 1 IS NOT AS NARROW AS THIS FILE HAS BEEN SAYING, noted
+  2026-09-26.** Every "not available" above is a fact about a HEADLESS browser,
+  and headless was a choice, not a constraint. Run Playwright **headed** and a
+  real window exists; photograph it at the **OS level** rather than through the
+  page, and the compositing problem disappears entirely, because a desktop
+  screenshot captures the pixels the GPU actually drew. That yields the
+  authentic single frame — ribbon, pane and slide together — that this file
+  calls unavailable, with no AITEST and nothing composited. It closes route 3's
+  question by making it moot rather than by answering it.
+
+  **DONE 2026-09-27, and it works.** `docs/store-shots/03-pane-and-slide.png`
+  is that frame: PowerPoint's own ribbon, the task pane, and the slide with a
+  selected chart, in one real window at 1225x816. Nothing composited, nothing
+  from a headless renderer. The slide canvas that comes back blank through the
+  page photographs perfectly at the OS level, because a desktop grab takes the
+  pixels the GPU drew.
+
+  **What had to be got right, none of it obvious:**
+
+  - **The capture process must declare itself DPI-aware.** At 125% scaling a
+    DPI-unaware process gets logical coordinates from `GetWindowRect` and reads
+    physical pixels in `CopyFromScreen`, so the grab covers 1/1.25 of the window
+    and returns it magnified with the right-hand side — the task pane, the
+    subject — cut off. It looks like a plausible screenshot, which is the
+    problem.
+  - **Never call `SetForegroundWindow` from the capturing process.** Windows
+    refuses it from a background process and the attempt reordered the stack so
+    another window sat ON TOP of the target, putting a strip of that app down
+    the pane's edge.
+  - **Crop the browser chrome, and know which banners may be cropped.** Chromium
+    under Playwright shows "You are using an unsupported command-line flag" —
+    an artefact of the harness that no user ever sees, so removing it makes the
+    image more truthful, not less. That is the opposite of the pane's own "Not
+    running inside PowerPoint" banner, which is a product state and must never
+    be hidden. The test is whose statement it is.
+
+  Two things it needed, neither of them a workaround:
+
+  - **A signed-in profile, which no longer exists.** All three copies were
+    deleted on 2026-09-24 when the project paused for certification, because one
+    held a live Microsoft session token. A fresh one needs the owner to sign in
+    once, and that is his alone.
+  - **Both tools at once.** Computer use grants browsers READ-ONLY — it can
+    photograph a browser window but not click in it — so Playwright does the
+    driving and computer use does the photographing. Neither alone is enough,
+    which is why "computer use on a desktop browser" reads as a dead end in
+    `driving-powerpoint-for-the-web-unattended` and is not one here.
+
+  No longer a plan. Two things it still depends on: a signed-in profile (the
+  owner signs in once -- his alone), and BOTH tools, because computer use grants
+  browsers READ-ONLY. Playwright drives, computer use photographs; neither
+  alone is enough, which is why "computer use on a desktop browser" reads as a
+  dead end in the driving notes and is not one here.
+
   So the slide-with-chart is capturable, the pane is capturable only out of
   host, and **what is not available headlessly is one AUTHENTIC frame containing
   both.** Three ways to close it, and the choice is the owner's:
@@ -355,13 +409,35 @@ consulting charts, CAGR, editable charts, data visualization
         (office-js#3083, #3698), and `editViaRealClick` is `pickedOnly` because
         it blocks on a human. **Zero of 460 rounds ran it.**
 
-      An agent cannot close this one: the slide canvas sits in a cross-origin
-      frame, so a scripted click cannot be aimed at a chart, and a click that
-      misses is indistinguishable from a feature that does not work. What is
-      known is that the live build's banner element carries exactly the words
-      the note quotes. **So this is a single manual click — select the chart,
-      confirm the banner and the button, press it.** Thirty seconds, and it is
-      the first thing a certification reviewer will do.
+      **CLOSED 2026-09-27 — IT WORKS, and it is now the only part of step 3 with
+      direct evidence on the web host.** Driven end to end in a headed browser
+      against the live build:
+
+          select the chart on the slide   -> the pane's banner appears:
+                                            "An SSF chart is selected on the
+                                            slide." with an "Edit it" button
+          press "Edit it"                -> "Chart loaded -- edits will update
+                                            it in place." and the primary button
+                                            changes from "Insert into slide" to
+                                            "Update chart"
+
+      Photographed in `docs/store-shots/03-pane-and-slide.png`, which shows the
+      selected chart and the loaded pane in one frame.
+
+      **HOW IT WAS SELECTED MATTERS, because two earlier attempts failed and
+      neither failure meant anything.** A scripted click aimed by coordinate
+      missed twice — first on the chart's transparent middle, which selects
+      nothing in PowerPoint, then on a solid bar with a mis-derived page offset,
+      because the slide canvas sits in a cross-origin frame and the mapping from
+      screen to page could not be calibrated (Playwright's CDP input does not
+      move the OS cursor, so there is nothing to read back). Both times the
+      banner stayed hidden, and both times that was worthless as evidence.
+      **What worked was the keyboard**: click the canvas, press Tab, and
+      PowerPoint selects the first shape. No coordinates involved.
+
+      That is worth keeping, because "click the shape" is the obvious approach
+      and it is the one that cannot be verified — a click that misses and a
+      feature that does not work produce the identical reading.
 - [ ] Submit → respond to Microsoft validation feedback (days–weeks).
 
 ## Faster alternative (recommended first)
