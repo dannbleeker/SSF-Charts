@@ -298,8 +298,14 @@ export function loadCrashRecords(dir = "crashes", list = readdirSync, read = rea
 export function loadRounds(dir = "rounds", list = readdirSync, read = readFileSync) {
   const unreadable = [];
   const rounds = list(dir)
-    .filter((f) => /^\d{3}-.*\.json$/.test(f))
-    .sort()
+    .filter((f) => /^\d{3,}-.*\.json$/.test(f))
+    // NUMERIC, not lexicographic. Under a bare `.sort()` "1000-x.json" comes
+    // BEFORE "999-x.json", because "1" < "9" — so at round 1000 the newest
+    // round stops being last and every "the newest round says…" reading here
+    // quietly reports an older one. Same trigger as the `\d{3,}` widening on
+    // the line above, and it has to move with it: widening alone would only
+    // change which half breaks.
+    .sort((a, b) => Number(/^(\d+)-/.exec(a)?.[1] ?? 0) - Number(/^(\d+)-/.exec(b)?.[1] ?? 0))
     .map((f) => {
       try {
         return JSON.parse(read(`${dir}/${f}`, "utf8"));

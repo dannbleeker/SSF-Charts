@@ -3167,6 +3167,32 @@ export async function updateChartsInSlides(
      */
     const wrecked = new Set<number>();
     let firstFailure: unknown;
+    /**
+     * CHARTS THAT LANDED WITHOUT BEING REDRAWN, which `rendered` cannot count.
+     *
+     * Two success routes run through this loop. `tryInPlaceUpdate` writes only
+     * the changed shapes, syncs them, rewrites the tags and `continue`s — it
+     * deliberately never touches `rendered`, because those shapes already exist
+     * and must not be handed to `groupAndTagAll`, and because `placed` is keyed
+     * on `rendered.length`. The redraw route deletes, draws and pushes.
+     *
+     * The "did anything land?" test below counted only the second, so a batch
+     * where every REDRAWN chart failed while at least one landed in place had
+     * `rendered.length === 0` and threw — reporting total failure over work
+     * that had already committed. That is the ordinary shape of a Same Scale
+     * run: the archive measures 14.5% redrawn, so in-place is the majority and
+     * the redrawn minority stalling is exactly what its error handling is for.
+     *
+     * Two costs, the second worse than the wrong message. `doSameScale` has no
+     * try/catch, so the throw reaches `guard()` and the pane says "Failed: …"
+     * while N-1 charts carry the new scale. And it jumps PAST the wreckage
+     * sweep: `onFailed` has already collected the stalled chart's stray ids,
+     * but `deleteShapesById` runs after the awaited call, so the half-drawn
+     * chart is left on the slide. That is the regression the test "tells the
+     * caller what EVERY stalled chart destroyed" exists to prevent, arriving
+     * through a different door.
+     */
+    let landedInPlace = 0;
     for (const [i, entry] of alive.entries()) {
       // Stop BEFORE this chart's delete, and break rather than throw. Every
       // chart past here is still whole — untouched old shapes, nothing queued —
@@ -3229,8 +3255,13 @@ export async function updateChartsInSlides(
           config: entry.wasConfig && tagValue(entry.wasConfig),
           scene: entry.wasScene && tagValue(entry.wasScene),
         })
-      )
+      ) {
+        // Counted, NOT pushed into `rendered`. See `landedInPlace`: pushing it
+        // would hand `groupAndTagAll` a chart whose shapes it never drew, and
+        // shift every later chart's `placed` index onto another chart's ids.
+        landedInPlace++;
         continue;
+      }
       const getSlide: SlideThunk = () => context.presentation.slides.getItemOrNullObject(it.target.slideId);
       // Everything the redraw manages to commit, whether or not it finishes.
       // On the failure path this is the litter to clear; see the catch.
@@ -3360,10 +3391,13 @@ export async function updateChartsInSlides(
         onFailed?.(it, wrecked);
       }
     }
-    // Nothing landed at all: that is the single-chart case, and its caller
-    // recovers by catching. Swallowing it would strand `updateChartResilient`
-    // on layer 1 with a chart it just deleted.
-    if (!rendered.length && firstFailure !== undefined) throw firstFailure;
+    // Nothing landed AT ALL — no redraw finished and no chart updated in place.
+    // That is the single-chart case, and its caller recovers by catching;
+    // swallowing it would strand `updateChartResilient` on layer 1 with a chart
+    // it just deleted. `landedInPlace` is what stops a partly-successful batch
+    // taking this exit: with one item a chart cannot both land in place and
+    // fail, so the single-chart contract is untouched.
+    if (!rendered.length && !landedInPlace && firstFailure !== undefined) throw firstFailure;
 
     // 4-5. Group, then tag — one sync each, however many charts.
     const tagged = await step("grouping and tagging the redrawn charts", () =>

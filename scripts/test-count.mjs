@@ -37,13 +37,30 @@ const MARK_FILE = new URL("../test/fixtures/test-count.json", import.meta.url);
  */
 const SLACK = 0;
 
-/** What a vitest JSON report says the suite ran. */
+/**
+ * What a vitest JSON report says the suite RAN — not what it collected.
+ *
+ * `numTotalTests` counts tests that never executed, so adding `.skip` to a
+ * `describe` keeps that number identical while the suite shrinks in the only
+ * sense this gate is about. The one edit most likely to hide a deletion was
+ * the one edit this gate could not see.
+ *
+ * `rounds-gate.mjs` already states the rule for the layer above — "A skipped
+ * scenario is not a passing one" — and this file's own docstring says the
+ * point is that a deletion becomes "something a reviewer sees rather than
+ * something the suite absorbs". A skip absorbed it.
+ *
+ * Subtracted from the report's own totals rather than recomputed, because
+ * those totals are the only authoritative thing here. `?? 0` on each field: an
+ * older or partial report may omit one, and treating a missing count as zero
+ * degrades to exactly the previous behaviour instead of throwing.
+ */
 export function countOf(report) {
   const total = report?.numTotalTests;
   if (typeof total !== "number" || !Number.isFinite(total)) {
     throw new Error("that is not a vitest JSON report — no numTotalTests in it");
   }
-  return total;
+  return total - (report.numPendingTests ?? 0) - (report.numTodoTests ?? 0);
 }
 
 /** The verdict, with the sentence a reader needs. */

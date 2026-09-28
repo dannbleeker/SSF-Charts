@@ -26,6 +26,7 @@
  */
 import { readFileSync } from "fs";
 import JSZip from "jszip";
+import { isMain } from "./is-main.mjs";
 
 const CONFIG_TAG = "POWERCHART_CONFIG";
 const ORIGIN_TAG = "POWERCHART_ORIGIN";
@@ -335,7 +336,12 @@ function report(deck, faults) {
 }
 
 // CLI only when invoked directly; importable as a library for the tests.
-const invokedDirectly = process.argv[1] && process.argv[1].endsWith("verify-deck.mjs");
+//
+// `isMain`, not `endsWith` — the identical guard as `scripts/triage.mjs` had,
+// and found the same way on 2026-09-28: `test/is-main.test.ts` only admitted
+// files mentioning `import.meta.url`, and this spelling never does, so the
+// sweep written to catch hand-rolled CLI guards could see neither of them.
+const invokedDirectly = isMain(import.meta.url, process.argv[1]);
 const [, , path, ...flags] = process.argv;
 if (!invokedDirectly) {
   // imported — nothing to do

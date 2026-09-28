@@ -34,7 +34,7 @@ describe("the round archive", () => {
   // then bit this test within the hour, both times by counting the ledger as a
   // round. One shape, two places; if a third reader of this directory appears it
   // needs the same filter.
-  const files = readdirSync(dir).filter((f) => /^\d{3}-.*\.json$/.test(f));
+  const files = readdirSync(dir).filter((f) => /^\d{3,}-.*\.json$/.test(f));
 
   /**
    * PARSED ONCE FOR THE WHOLE BLOCK, because two tests below each want every
@@ -91,7 +91,7 @@ describe("the round archive", () => {
       const build = String(round.build ?? "").split(" ")[0];
       expect(build, `${f} carries no build stamp`).toMatch(/^[0-9a-f]{7}$/);
       expect(f, `${f} is named for a build it does not carry (${build})`).toContain(build);
-      expect(f, `${f} does not start with a round number`).toMatch(/^\d{3}-/);
+      expect(f, `${f} does not start with a round number`).toMatch(/^\d{3,}-/);
     });
   });
 
@@ -132,13 +132,13 @@ describe("the round archive", () => {
     // argument handling and a unit test of the reporter would have passed
     // throughout.
     const sorted = [...files].sort();
-    const newestBuild = /^\d{3}-(.*)\.json$/.exec(sorted[sorted.length - 1])![1];
+    const newestBuild = /^\d{3,}-(.*)\.json$/.exec(sorted[sorted.length - 1])![1];
     const out = spawnSync(process.execPath, ["scripts/triage.mjs", "rounds"], { encoding: "utf8" }).stdout ?? "";
     const header = out.split("\n").find((l) => l.trimStart().startsWith("build ")) ?? "";
     expect(header, "reported some round other than the newest").toContain(newestBuild);
     // An explicitly named file still means THAT file: two rounds named on the
     // command line means the first of them, and only the directory case flips.
-    const firstBuild = /^\d{3}-(.*)\.json$/.exec(sorted[0])![1];
+    const firstBuild = /^\d{3,}-(.*)\.json$/.exec(sorted[0])![1];
     const named =
       spawnSync(process.execPath, ["scripts/triage.mjs", dir + sorted[0], dir + sorted[sorted.length - 1]], {
         encoding: "utf8",

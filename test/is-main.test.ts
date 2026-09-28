@@ -107,8 +107,24 @@ describe("every tool script asks the same question the same way", () => {
       // prose, and a detector that reads its own postmortem as a violation is
       // one somebody deletes.
       const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-      const usesImportMeta = /import\.meta\.url/.test(code.replace(/new URL\([^)]*import\.meta\.url[^)]*\)/g, ""));
-      if (!usesImportMeta) continue;
+      /**
+       * THE POPULATION IS "ASKS WHETHER IT IS THE CLI", not "mentions this URL".
+       *
+       * Widened 2026-09-28. The filter admitted only files containing
+       * `import.meta.url` — one of the two ways to write the check, and the one
+       * the CORRECT form happens to use. A script hand-rolling the decision the
+       * OTHER way, reaching for `process.argv[1]` alone, was never in the
+       * population, so the sweep that exists to catch hand-rolled CLI guards
+       * could not see that hand-rolled CLI guard.
+       *
+       * A sweep is only as wide as its filter, and the filter was the part
+       * nobody re-read. The verdict is unchanged: a correct
+       * `isMain(import.meta.url, process.argv[1])` contains both tokens, so
+       * every correct caller still passes.
+       */
+      const withoutUrlBuilders = code.replace(/new URL\([^)]*import\.meta\.url[^)]*\)/g, "");
+      const asksIfItIsTheCli = /import\.meta\.url/.test(withoutUrlBuilders) || /process\.argv\[1\]/.test(code);
+      if (!asksIfItIsTheCli) continue;
       guards++;
       if (!/isMain\(\s*import\.meta\.url\s*,\s*process\.argv\[1\]\s*\)/.test(code)) {
         offenders.push(file);

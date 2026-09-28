@@ -30,6 +30,7 @@ import { readFileSync, readdirSync } from "fs";
 import { checkClaims } from "./claims.mjs";
 import { join } from "path";
 import { readDeck, faultsIn } from "./verify-deck.mjs";
+import { isMain } from "./is-main.mjs";
 // THE ONE COPY, imported rather than repeated. `host-probe.ts` and
 // `host-baseline.mjs` are pinned to each other by a test; this file kept a THIRD
 // copy inside a function body, and on 2026-08-25 a new word — `no-named-slide` —
@@ -6394,7 +6395,14 @@ export function traceNovelty(rounds, { minCount = 10, factor = 3, window = 5 } =
   };
 }
 
-const invokedDirectly = process.argv[1] && process.argv[1].endsWith("triage.mjs");
+// `isMain`, not `endsWith`. Found 2026-09-28 by the widened sweep in
+// `test/is-main.test.ts` — this file hand-rolled the CLI check and was invisible
+// to that sweep, because its filter only admitted files mentioning
+// `import.meta.url` and this spelling never does. `endsWith` is one of the
+// forms that file records as wrong: it matches any path ENDING in the name
+// (`.../not-triage.mjs`), and it compares a decoded filesystem path against a
+// literal, which is what broke on Windows.
+const invokedDirectly = isMain(import.meta.url, process.argv[1]);
 if (invokedDirectly) {
   const args = process.argv.slice(2);
   const flags = args.filter((a) => a.startsWith("--"));
@@ -6422,10 +6430,17 @@ if (invokedDirectly) {
     // while the pooling underneath said 4, and the open prediction was judged
     // against the ledger rather than against the newest round — reporting
     // "not on this sheet" for a question that was answered.
-    return entries
-      .filter((f) => /^\d{3}-.*\.json$/.test(f))
-      .sort()
-      .map((f) => join(p, f));
+    return (
+      entries
+        .filter((f) => /^\d{3,}-.*\.json$/.test(f))
+        // NUMERIC, not lexicographic — "1000-x.json" sorts before "999-x.json"
+        // under a bare `.sort()`. The comment above depends on the LAST entry
+        // being the newest round; at round 1000 that stops being true and the
+        // open prediction is judged against the wrong one, silently. Moves with
+        // the `\d{3,}` widening on the line above.
+        .sort((a, b) => Number(/^(\d+)-/.exec(a)?.[1] ?? 0) - Number(/^(\d+)-/.exec(b)?.[1] ?? 0))
+        .map((f) => join(p, f))
+    );
   });
   /**
    * The round REPORTED ON is the newest; every round is still pooled.

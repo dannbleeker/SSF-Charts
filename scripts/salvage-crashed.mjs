@@ -263,7 +263,7 @@ export function roundFromCrash(crash, expectedNames, source) {
 /** Scenario names per build, from what has actually been filed. */
 export function expectedByBuild(dir = "rounds", read = readFileSync, list = readdirSync) {
   const byBuild = new Map();
-  for (const f of list(dir).filter((n) => /^\d{3}-.*\.json$/.test(n))) {
+  for (const f of list(dir).filter((n) => /^\d{3,}-.*\.json$/.test(n))) {
     let r;
     try {
       r = JSON.parse(read(`${dir}/${f}`, "utf8"));

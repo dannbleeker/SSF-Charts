@@ -532,9 +532,23 @@ export function readiness({
   };
 }
 
-/** The next round number, from the archive. */
+/**
+ * The next round number, from the archive.
+ *
+ * THREE OR MORE DIGITS, not exactly three. `/^(\d{3})-/` does not match
+ * "1000-abc.json" at all — the fourth character is a digit where the pattern
+ * needs its dash — so at round 1000 this and every other reader would stop
+ * seeing new rounds AT THE SAME MOMENT, and the archive would split in two:
+ * the gate, triage, salvage and the tests counting one population while the
+ * driver wrote into another, with nothing failing anywhere. Found 2026-09-28
+ * at round 462, so the trigger is real and simply has not arrived.
+ *
+ * The PAD stays three wide deliberately: `padStart` never truncates, so 29
+ * keeps its "029" and 1000 is written "1000". Widening the pad would rename
+ * every file already in the archive.
+ */
 export function nextRoundNumber(files) {
-  const ns = files.map((f) => Number(/^(\d{3})-/.exec(f)?.[1])).filter((n) => Number.isFinite(n));
+  const ns = files.map((f) => Number(/^(\d{3,})-/.exec(f)?.[1])).filter((n) => Number.isFinite(n));
   return String((ns.length ? Math.max(...ns) : 0) + 1).padStart(3, "0");
 }
 
@@ -4410,7 +4424,7 @@ export function archive(
   // whatever the real round happened to say.
   const body = `${JSON.stringify(round, null, 2)}\n`;
   const twin = list(dir)
-    .filter((f) => /^\d{3}-.*\.json$/.test(f))
+    .filter((f) => /^\d{3,}-.*\.json$/.test(f))
     .find((f) => {
       // A NAME THIS LISTER RETURNS NEED NOT BE A FILE. `list` defaults to
       // `everyRoundEverFiled`, whose entire purpose is to name rounds that are
