@@ -111,7 +111,20 @@ describe("the backlog's open count", () => {
     // It was never a product defect: the probe that found it caused it, by
     // polling the slide through the draw. Recorded because an item that opens
     // and closes inside a day is exactly the kind this list has lost before.
-    expect(ids, "section 1's real list").toEqual(["5", "21", "22", "23"]);
+    //
+    // 22 CLOSED 2026-09-28, and it is the first of these to close by WORK
+    // rather than by a decision. It sat as "his screenshots" for two weeks on a
+    // reason that was wrong twice over — first that the slide could not be
+    // captured, then that the pane could not be — and in the end needed one
+    // sign-in from him and nothing else. The two calls it was holding for him,
+    // a profile photo and a deck name, were never real: both live in the Office
+    // header, which the crop removes. An item parked here as owner-gated is
+    // worth re-reading occasionally; this one had stopped being.
+    //
+    // It leaves the list by wearing "CLOSED" rather than by deletion, which the
+    // `[a-z]` in `entry` is what makes work — an entry counts as open only
+    // while its description still reads as one.
+    expect(ids, "section 1's real list").toEqual(["5", "21", "23"]);
     expect(
       openIds([
         "## 1. Open",

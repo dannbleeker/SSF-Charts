@@ -347,7 +347,10 @@ evening, on a deck created for it rather than a harness one. 3 closed on
 2026-09-06: its remainder was answered NO, and the budget it argued about was
 raised 90 -> 105 on the first evidence that ever bore on it. 24 was opened on
 2026-09-17 and CLOSED on 2026-09-18 with no product work, because it was never a
-product defect — see the note below. FOUR are open.**
+product defect — see the note below. **22 closed on 2026-09-28**, when the two
+decisions it was waiting on turned out not to need making: cropping the frame to
+the ribbon row removes the Office header, and with it both the deck name and the
+owner's profile photo. THREE are open, counted off the list.**
 
 > The count here read "six" against a list of four, and then "five" against a
 > list of three. Stale both times, and this file states its own tie-breaker:
@@ -380,6 +383,16 @@ product defect — see the note below. FOUR are open.**
 > and none of it moves 5, 21, 22 or 23 — every one of those still waits on his
 > identity, his Mac, his screenshots or his submission. **FOUR are open, counted
 > off the list on 2026-09-17.**
+>
+> **AND 22 IS NOW CLOSED, 2026-09-28 — by work, not by a decision.** It sat here
+> as "his screenshots" for two weeks on a reason that was wrong twice over:
+> first that the slide could not be captured (it can, through Office.js), then
+> that the pane could not be (it can, in a headed window photographed at the OS
+> level). What finally closed it needed one sign-in from him and nothing else,
+> and the two calls the last note left him — his profile photo and a deck named
+> "Presentation64" — were never real: both live in the Office header, which the
+> crop removes. **THREE are open.** A thing parked here as owner-gated is worth
+> re-reading occasionally; this one had stopped being.
 >
 > **FIVE FOR ONE DAY, AND BACK TO FOUR.** Item 24 was opened on 2026-09-17 —
 > "the `table` element does not draw on this host", measured five times, the
@@ -460,7 +473,7 @@ product defect — see the note below. FOUR are open.**
        WebKit, Mac's engine family, 148/148 identical to Node — which kills the
        parse-and-format class of failure and says nothing about Office.js.
 
-    22  the store screenshots, and the choice of how to make them
+    22  CLOSED 2026-09-28 — the store screenshots, and the choice of how to make them
        — 1-5 at 1366x768. Added to this list on 2026-09-13 saying they "need a
        person at a real PowerPoint window", repeating the reason
        `docs/STORE-LISTING.md` had carried since July. HALF OF THAT REASON IS
@@ -500,12 +513,24 @@ product defect — see the note below. FOUR are open.**
        task pane and slide with a selected chart, one real window, nothing
        composited. It also makes route 3 moot rather than answering it. The
        owner signed in once (his alone) and that was the only thing it needed.
-       WHAT IS ACTUALLY LEFT OF 22, and it is small: the frame is 1225x816 and
-       AppSource wants 1366x768, so it needs re-taking at that size rather than
-       upscaling; and it carries the owner's own PROFILE PHOTO top-right plus a
-       deck named "Presentation64". The photo on a public listing is his call,
-       not a defect. The two slide images (01, 02) are already 1366x768 and
-       need nothing.
+       CLOSED 2026-09-28. Re-taken at 1366x768, and the two decisions the
+       previous note left him never had to be made: cropping the frame to start
+       at the RIBBON row drops the Office header, which is where both the deck
+       name and his profile photo live. What the image shows is the ribbon, the
+       slide with a selected chart, and the full pane reading "Chart loaded --
+       edits will update it in place".
+       TWO THINGS THE RE-TAKE NEEDED, neither of them obvious. The window had to
+       be sized so the CROPPED region is 1366x768 rather than the window itself,
+       which means solving for the chrome height first. And a screen grab was no
+       longer possible: at 1366 wide on an 1820 screen the neighbouring window
+       covers the right ~120px, which is the task pane, and there is nowhere to
+       move to. `PrintWindow` with PW_RENDERFULLCONTENT asks the window to render
+       ITSELF, so occlusion stops mattering — the flag is what makes it work on
+       GPU-composited Chrome, and without it a browser returns blank white, so
+       the capture script checks for ink rather than saving a white PNG.
+       All three listing images are now 1366x768:
+       `01-waterfall.png`, `02-stacked.png`, `03-pane-and-slide.png`.
+       Route 3 was never taken and is now moot rather than declined.
 
     23  the AppSource submission itself
        — everything above feeds it and none of it is the act. Partner Center
@@ -515,7 +540,7 @@ product defect — see the note below. FOUR are open.**
        `manifest-excel-prod.xml` adds `src/excel/excel.html`, which is a
        shipping entry point nobody had counted. Corrected 2026-09-17 by
        counting both files rather than re-reading the sentence.
-       What is left is 21, 22, and a decision to press submit — all his.
+       What is left is 21 and a decision to press submit — 22 closed 2026-09-28.
 
 
 **The 4:3 arm is no longer on this list, and was never on it as a numbered
