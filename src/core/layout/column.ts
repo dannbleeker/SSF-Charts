@@ -1,7 +1,15 @@
 import type { ChartConfig, ChartStyle, Decorations, LayoutAnchors, Series } from "../types";
 import { contrastInk, textWidth, type SceneNode, type TextNode } from "../scene";
 import { clipToWidth } from "../elements";
-import { formatNumber, niceTicks, resolveFormat, resolveAxisFormat, segmentLabel, axisTickLabel } from "../format";
+import {
+  authoredDecimals,
+  formatNumber,
+  niceTicks,
+  resolveFormat,
+  resolveAxisFormat,
+  segmentLabel,
+  axisTickLabel,
+} from "../format";
 import { seriesColor } from "../style";
 import { lerpColor } from "../color";
 import {
@@ -525,6 +533,10 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
           series: s.name,
           category: data.categories[c],
           fmt,
+          // An authored decimals count reaches the value axis through
+          // `resolveAxisFormat` and has to reach these too, or a 100% chart
+          // labels its axis "25.0%" and its segments "33%" — see `segmentLabel`.
+          percentDecimals: authoredDecimals(cfg.numberFormat),
         });
         const along = H ? r.w : r.h; // extent along the value axis
         const across = H ? r.h : r.w;
@@ -1243,6 +1255,35 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
     cfg.numberFormat,
   );
   /**
+   * ONE PRECISION PER SERIES WHEN THE SERIES HAVE THEIR OWN AXES.
+   *
+   * `fmt` above is resolved over every line series at once, which is right for a
+   * shared axis: the points are read against one scale and one tick strip, so
+   * they must round the same way. It is wrong for `combo.lineAxes:
+   * "independent"`, where each line is zoomed to its own range and NO numeric
+   * axis is drawn — the block below says so itself: "the point labels carry the
+   * real values since there is no shared numeric axis to read".
+   *
+   * A union format resolves from the LARGEST series, so the small one lost every
+   * digit it had. Measured on `Revenue [1200…1500]` beside `Margin
+   * [0.31…0.45]` — exactly the pairing independent axes exist for — the margin
+   * line drew perfectly and all four of its labels read "0". The same margin
+   * series alone reads 0.31 / 0.34 / 0.38 / 0.45.
+   *
+   * Per-series only in the independent branch, so a shared-axis combo keeps the
+   * one format its tick strip is labelled in and nothing that renders today
+   * moves. An explicit `numberFormat.decimals` still wins either way —
+   * `resolveFormat` returns it untouched.
+   */
+  const lineFmts = lines.map((s) =>
+    independent
+      ? resolveFormat(
+          s.values.filter((v): v is number => v != null),
+          cfg.numberFormat,
+        )
+      : fmt,
+  );
+  /**
    * Each line's value→coordinate map, hoisted out of the draw loop.
    *
    * It was computed inside `lines.forEach`, which was fine while nothing else
@@ -1297,7 +1338,7 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       const here = lines
         .map((s, li) => ({ li, v: s.values[c] }))
         .filter((e): e is { li: number; v: number } => e.v != null)
-        .map((e) => ({ li: e.li, q: toYs[e.li](e.v), em: textWidth(formatNumber(e.v, fmt), 1) }))
+        .map((e) => ({ li: e.li, q: toYs[e.li](e.v), em: textWidth(formatNumber(e.v, lineFmts[e.li]), 1) }))
         .sort((a, b) => a.q - b.q);
       for (let i = 0; i < here.length; i++) {
         const me = here[i];
@@ -1368,7 +1409,7 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       // Width at one point, so the pair constraint solves for size directly:
       // two centred labels clear when their half-widths together fit the gap,
       // i.e. size <= 2 * gap / (emWidth(a) + emWidth(b)).
-      const em = s.values.map((v, c) => (drawn[c] ? textWidth(formatNumber(v as number, fmt), 1) : 0));
+      const em = s.values.map((v, c) => (drawn[c] ? textWidth(formatNumber(v as number, lineFmts[li]), 1) : 0));
       return s.values.map((_v, c) => {
         if (!drawn[c]) return 0;
         let worst = Infinity;
@@ -1442,7 +1483,7 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
         labelOn &&
         pointFs > 0 &&
         (H
-          ? rowFs[li][c] >= MIN_LABEL_FS && comboLabelW >= textWidth(formatNumber(v, fmt), rowFs[li][c])
+          ? rowFs[li][c] >= MIN_LABEL_FS && comboLabelW >= textWidth(formatNumber(v, lineFmts[li]), rowFs[li][c])
           : uprightPointFs >= MIN_LABEL_FS)
       ) {
         // Categories run down a bar chart, so a label ABOVE its point would sit
@@ -1461,7 +1502,7 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
                 y: pt.y - rowFs[li][c] * 0.7,
                 w: comboLabelW,
                 h: rowFs[li][c] * 1.4,
-                text: formatNumber(v, fmt),
+                text: formatNumber(v, lineFmts[li]),
                 fontSize: rowFs[li][c],
                 color: independent ? color : style.text,
                 align: "left",
@@ -1480,7 +1521,7 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
                 y: pt.y - uprightPointFs * 1.65,
                 w: 60,
                 h: uprightPointFs * 1.4,
-                text: formatNumber(v, fmt),
+                text: formatNumber(v, lineFmts[li]),
                 fontSize: uprightPointFs,
                 color: independent ? color : style.text,
                 align: "center",

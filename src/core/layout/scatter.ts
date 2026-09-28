@@ -774,7 +774,25 @@ export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decora
   // Continuous color legend: a discretized gradient bar with min/max labels
   // (renderer-safe — small rects, no SVG gradient).
   if (colorScale) {
-    const cFmt = resolveFormat([colorScale.min, colorScale.max], cfg.numberFormat);
+    /**
+     * THE COLOR ROW IS ITS OWN METRIC, so it takes only the format's
+     * metric-neutral halves.
+     *
+     * `suffix` and `forceSign` are value-axis concerns — the rule
+     * `axisTickLabel` applies to a share axis (which labelled a 100% axis
+     * "25 m%" until it did) and the gantt's gutter columns state outright:
+     * "suffix/forceSign are deliberately not picked up". This legend took the
+     * whole format, so a scatter of revenue declaring `suffix: " €m"` with a
+     * `Color` row of NPS or headcount labelled its gradient "1.0 €m" …
+     * "4.0 €m" — the y axis's unit stamped on a third variable.
+     *
+     * `decimals` and `locale` still carry: an authored precision and the
+     * chart's number system belong to the whole chart, not to one row.
+     */
+    const cFmt = resolveFormat([colorScale.min, colorScale.max], {
+      decimals: cfg.numberFormat?.decimals,
+      locale: cfg.numberFormat?.locale,
+    });
     const steps = 24;
     const barW = COLOR_BAR_W;
     const cell = barW / steps;
@@ -1029,9 +1047,12 @@ export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decora
   // every bubble sits at the 2.5pt floor. A legend that contradicts itself and
   // the marks it explains is worse than none.
   if (cfg.kind === "bubble" && pts.some((p) => Math.abs(p.size ?? 0) > 0)) {
+    // The `Size` row is its own metric too — see the color legend above for why
+    // `suffix`/`forceSign` are left behind. This key read "600 €m" / "300 €m"
+    // for a headcount, and "+600" / "+300" under `forceSign`.
     const sizeFmt = resolveFormat(
       pts.map((p) => Math.abs(p.size ?? 0)),
-      cfg.numberFormat,
+      { decimals: cfg.numberFormat?.decimals, locale: cfg.numberFormat?.locale },
     );
     const refMax = niceTicks(0, maxSize, 3).pop()!;
     const refs = [refMax, refMax / 2];

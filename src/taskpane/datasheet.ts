@@ -506,9 +506,38 @@ export function contiguousStacks(data: ChartData): ChartData {
   return series.every((s, i) => s === data.series[i]) ? data : { ...data, series };
 }
 
+/**
+ * A label cell, ALWAYS as a string — the same coercion `normalizeConfig` runs.
+ *
+ * `SheetModel.cells` is declared `string[][]` and every reader leans on it:
+ * `sheetToData` calls `.trim()` on the name cell, `transposeSheet` calls
+ * `.startsWith("=")`, and `mountDatasheet` writes the cell into an input's
+ * `value`. `dataToSheet` is the only place a ChartData becomes a SheetModel and
+ * it TRUSTED `Series.name: string` — which a config arriving as JSON is under no
+ * obligation to honour.
+ *
+ * A series written as `{ "values": [1, 2, 3] }` is the case that matters, and it
+ * is not exotic. `src/core/chart.ts` calls it "the obvious way to write a
+ * single-series chart" and repairs it; `valueExtent` carries its own note about
+ * the skill writing exactly that into a POWERCHART_CONFIG tag and was repaired
+ * too. THE PANE WAS THE CALL SITE MISSED: `s.name` arrived as `undefined`, the
+ * grid showed the literal word "undefined" under the series, and
+ * `currentConfig()` then died on `undefined.trim()` inside `sheetToData` — so
+ * the preview read "Could not render", and Insert, Update chart, Save template,
+ * Copy link and JSON export every one failed, on a chart the engine, the SVG
+ * preview and the skill's own .pptx all render correctly. Opening such a chart
+ * from its shape tag ("Edit selected chart") is the primary way in.
+ *
+ * Categories are coerced for the same reason — `["2022"]` written as `[2022]` is
+ * the other obvious thing an author does — so the SheetModel this returns really
+ * does hold strings. A no-op on any label that already is one, so a well-formed
+ * config produces a byte-identical grid.
+ */
+const cellText = (v: unknown): string => (v == null ? "" : typeof v === "string" ? v : String(v));
+
 export function dataToSheet(input: ChartData): SheetModel {
   const data = contiguousStacks(input);
-  const cells: string[][] = [["", ...data.categories]];
+  const cells: string[][] = [["", ...data.categories.map(cellText)]];
   const numRow = (name: string, values: (number | null)[]) => [
     name,
     ...data.categories.map((_, i) => (values[i] == null ? "" : String(values[i]))),
@@ -532,9 +561,10 @@ export function dataToSheet(input: ChartData): SheetModel {
     }
     prevStack = stack;
     // Calendar Gantt round trip: show epoch-day values as ISO dates again.
-    const asDate = data.dates && GANTT_DATE_ROW.test(s.name.trim());
+    const name = cellText(s.name);
+    const asDate = data.dates && GANTT_DATE_ROW.test(name.trim());
     cells.push([
-      s.name,
+      name,
       // One cell per CATEGORY, as `numRow` above already does. Walking the
       // values instead produced a row shorter than the header whenever a series
       // carried fewer values than there are categories — and `mountDatasheet`
@@ -588,7 +618,11 @@ export function sheetToData(sheet: SheetModel, waterfallTotals?: Set<number>): C
   let stack = 0;
   let usedStacks = false;
   rows.forEach((r) => {
-    const blank = r.every((c) => c.trim() === "");
+    // `?? ""`, matching every other cell read in this function (`r[0] ?? ""`,
+    // `r[i + 1] ?? ""`, `head[i + 1] ?? …`). This one read raw and was the line
+    // the non-string series name above died on; a SheetModel crosses a module
+    // boundary, so the reader defends itself as its siblings already do.
+    const blank = r.every((c) => (c ?? "").trim() === "");
     if (blank) {
       if (series.length) {
         stack++;
@@ -602,7 +636,24 @@ export function sheetToData(sheet: SheetModel, waterfallTotals?: Set<number>): C
     } else if (XEXTENT_ROW.test(name)) {
       xExtent = parseRow(r);
     } else {
-      series.push({ name: name || `Series ${series.length + 1}`, values: parseRow(r, waterfallTotals), stack });
+      // AN EMPTY NAME CELL STAYS EMPTY, and this used to invent
+      // `Series ${n}` here. That is the right answer for a LABEL and the wrong
+      // one for DATA: this value is written back into the config, into the
+      // POWERCHART_CONFIG shape tag and into a saved template.
+      //
+      // A series authored as `{ "values": [1, 2] }` has no name, the engine
+      // normalises it to `""`, and `buildChart` draws no series label for it —
+      // so a chart opened in the pane and re-inserted came back carrying
+      // "Series 1" / "Series 2" printed beside the bars that had never had a
+      // name. A round trip may not add ink.
+      //
+      // Both callers that wanted the placeholder keep it at their own door,
+      // where it stays a display string: `currentSeriesNames` (the colour
+      // swatch captions) and `src/excel/excel.ts` (a spreadsheet range whose
+      // column A is blank). The two grid buttons that add a row never relied on
+      // it — "+ Row" and the paste-grown row both SEED the name cell, for the
+      // separate reason that a fully blank row is the stack separator.
+      series.push({ name, values: parseRow(r, waterfallTotals), stack });
     }
   });
   if (!usedStacks) for (const s of series) delete s.stack;

@@ -418,9 +418,58 @@ export function estimateOfficeShapes(scene: Scene): number {
  * unclipped where it should have been cut, and carried overlaps no fit could
  * see. Half-width katakana (U+FF61-FF9F) is deliberately excluded: it is narrow,
  * which is the entire point of that block.
+ *
+ * THE EMOJI LINE USED TO START AT U+1F300 AND THE BMP ONES FELL OFF THE BOTTOM.
+ * "emoji and pictographs" is the rule, and about forty emoji do not live in the
+ * astral planes at all — they sit in Miscellaneous Symbols, Dingbats,
+ * Miscellaneous Technical and Geometric Shapes, and they have the same
+ * East_Asian_Width=Wide and Emoji_Presentation=Yes as their astral twins. So
+ * the engine measured one em for 🌟 and 0.54 for ⭐, 🟢 and ✅, 🔴 and ❌ — the same
+ * glyph size, charged two different ways, and a status label like "✅ On track"
+ * came out 5.5pt narrow at 12pt: the same 46%-per-glyph error the CJK note above
+ * describes, in the same direction (judged to fit where it does not).
+ *
+ * The ranges below are exactly UAX #11's Wide entries in the BMP outside the CJK
+ * blocks already listed. AMBIGUOUS-WIDTH SYMBOLS ARE NOT HERE and must not be
+ * added: ✓ (U+2713), ✗ (U+2717), ▴/▾ (U+25B4/U+25BE) and → really do render at a
+ * Latin advance, and this engine draws all four itself — `buildCheckbox`'s
+ * glyphs and the funnel's conversion markers would start measuring double.
  */
 function fullWidth(cp: number): boolean {
   return (
+    (cp >= 0x231a && cp <= 0x231b) || // ⌚⌛ — BMP emoji, East_Asian_Width=Wide
+    (cp >= 0x23e9 && cp <= 0x23ec) ||
+    cp === 0x23f0 ||
+    cp === 0x23f3 ||
+    (cp >= 0x25fd && cp <= 0x25fe) ||
+    (cp >= 0x2614 && cp <= 0x2615) ||
+    (cp >= 0x2648 && cp <= 0x2653) ||
+    cp === 0x267f ||
+    cp === 0x2693 ||
+    cp === 0x26a1 ||
+    (cp >= 0x26aa && cp <= 0x26ab) ||
+    (cp >= 0x26bd && cp <= 0x26be) ||
+    (cp >= 0x26c4 && cp <= 0x26c5) ||
+    cp === 0x26ce ||
+    cp === 0x26d4 ||
+    cp === 0x26ea ||
+    (cp >= 0x26f2 && cp <= 0x26f3) ||
+    cp === 0x26f5 ||
+    cp === 0x26fa ||
+    cp === 0x26fd ||
+    cp === 0x2705 ||
+    (cp >= 0x270a && cp <= 0x270b) ||
+    cp === 0x2728 ||
+    cp === 0x274c ||
+    cp === 0x274e ||
+    (cp >= 0x2753 && cp <= 0x2755) ||
+    cp === 0x2757 ||
+    (cp >= 0x2795 && cp <= 0x2797) ||
+    cp === 0x27b0 ||
+    cp === 0x27bf ||
+    (cp >= 0x2b1b && cp <= 0x2b1c) ||
+    cp === 0x2b50 ||
+    cp === 0x2b55 ||
     (cp >= 0x1100 && cp <= 0x115f) || // Hangul Jamo
     (cp >= 0x2e80 && cp <= 0x303e) || // CJK radicals, Kangxi, CJK punctuation
     (cp >= 0x3041 && cp <= 0x33ff) || // kana, Hangul compat, CJK compat
@@ -437,9 +486,90 @@ function fullWidth(cp: number): boolean {
   );
 }
 
-/** One code point's width, the unit `textWidth` sums. */
+/**
+ * A code point that takes NO advance width at all — a combining mark.
+ *
+ * A mark is drawn ON its base letter, not beside it, so "e" and "é" are
+ * the same number of points wide and render as the same glyph. Charged the
+ * Latin average they came out DOUBLE, and which of the two a label is made of
+ * is not something the author chose: `"é"` is one code point in NFC and two in
+ * NFD, and **macOS hands out NFD** — a category name pasted from a Mac
+ * datasheet arrives decomposed, the same text a Windows paste delivers
+ * composed.
+ *
+ * So the engine measured the same visible string two different ways depending
+ * on where it was copied from, and every fit downstream followed: at 12pt on a
+ * 120x90 frame the NFC title was drawn at 9.5pt and the NFD one at 9.0, a
+ * treemap drew 4 labels composed and 2 decomposed, and a butterfly lost one.
+ * 252 charts out of a 25-kind × 5-frame × 3-font sweep laid out differently
+ * with no visible difference in their text. Over-measuring is the quieter
+ * direction — it drops labels rather than spilling ink off the chart — which is
+ * why it survived the CJK pass sitting right next to it.
+ *
+ * The blocks here are the Mn/Me (non-spacing and enclosing) marks a chart
+ * actually meets: the Latin/Greek/Cyrillic diacritics NFD produces, the Hebrew
+ * points, the Arabic harakat, the Thai vowel signs and tone marks, and the
+ * combining blocks for symbols and half-marks. It is not the whole Unicode mark
+ * table, the same way `fullWidth` above is not the whole East-Asian-width
+ * table — both are lists of the ranges that reach a business chart.
+ *
+ * VARIATION SELECTORS (U+FE00-FE0F) ARE DELIBERATELY NOT HERE, though they are
+ * Mn. `❤️` is U+2764 plus U+FE0F, and the selector is the only reason that pair
+ * measures 1.08em — which is about right for the emoji it actually renders as,
+ * where the base alone would be charged 0.54. Zeroing the selector would make
+ * an emoji-presentation sequence measure half its glyph, which is the same
+ * silent halving `charWidth` refuses for surrogate pairs just below.
+ */
+function zeroWidth(cp: number): boolean {
+  return (
+    (cp >= 0x0300 && cp <= 0x036f) || // Combining Diacritical Marks — what NFD makes
+    (cp >= 0x0483 && cp <= 0x0489) || // Cyrillic combining
+    (cp >= 0x0591 && cp <= 0x05bd) || // Hebrew points
+    cp === 0x05bf ||
+    cp === 0x05c1 ||
+    cp === 0x05c2 ||
+    cp === 0x05c4 ||
+    cp === 0x05c5 ||
+    cp === 0x05c7 ||
+    (cp >= 0x0610 && cp <= 0x061a) || // Arabic marks
+    (cp >= 0x064b && cp <= 0x065f) ||
+    cp === 0x0670 ||
+    (cp >= 0x06d6 && cp <= 0x06dc) ||
+    (cp >= 0x06df && cp <= 0x06e4) ||
+    cp === 0x06e7 ||
+    cp === 0x06e8 ||
+    (cp >= 0x06ea && cp <= 0x06ed) ||
+    cp === 0x0e31 || // Thai vowel signs and tone marks
+    (cp >= 0x0e34 && cp <= 0x0e3a) ||
+    (cp >= 0x0e47 && cp <= 0x0e4e) ||
+    (cp >= 0x1ab0 && cp <= 0x1aff) || // Combining Diacritical Marks Extended
+    (cp >= 0x1dc0 && cp <= 0x1dff) || // Combining Diacritical Marks Supplement
+    (cp >= 0x20d0 && cp <= 0x20f0) || // Combining marks for symbols
+    (cp >= 0xfe20 && cp <= 0xfe2f) // Combining half marks
+  );
+}
+
+/**
+ * One code point's width, the unit `textWidth` sums.
+ *
+ * An ASTRAL code point that is NOT in the full-width set — a flag's two regional
+ * indicators (U+1F1E6-1F1FF), a playing card, a mahjong tile, an enclosed
+ * ideograph, a mathematical alphanumeric — is charged TWO narrow units, which is
+ * the 1.08em it was worth back when this counted UTF-16 code units. That number
+ * is kept deliberately: `textWidth`'s own note says a surrogate pair measured
+ * ~1.08em "about right for a pictograph by accident", and halving it is the
+ * silent regression that note exists to refuse.
+ *
+ * The rule has to live in ONE place because two accountings that disagree by a
+ * factor of two is exactly what `ellipsize` was tripping over: it seeds a
+ * running width from `textWidth` and subtracts this per dropped code point, so
+ * the moment the two charge a code point differently the clip returns text
+ * wider than the width it was asked to fit.
+ */
 function charWidth(cp: number, fontSize: number, bold: boolean): number {
-  return fullWidth(cp) ? fontSize : fontSize * (bold ? 0.58 : 0.54);
+  if (zeroWidth(cp)) return 0;
+  if (fullWidth(cp)) return fontSize;
+  return fontSize * (bold ? 0.58 : 0.54) * (cp > 0xffff ? 2 : 1);
 }
 
 /**
@@ -490,19 +620,45 @@ export function textWidth(text: string, fontSize: number, bold = false): number 
    * EMOJI KEEP THEIR OLD WIDTH BY A DIFFERENT ROUTE. A surrogate pair used to
    * be counted as two Latin characters — 1.08em, which is about right for a
    * pictograph by accident. Counting code points naively would have HALVED
-   * them: a silent regression on the way to fixing something else. Here a pair
-   * is one code point charged a full em.
+   * them: a silent regression on the way to fixing something else. A pair whose
+   * code point is full-width is charged a full em; one that is NOT — a flag's
+   * regional indicators, a playing card, a mathematical alphanumeric — keeps the
+   * two narrow units it always had. See `charWidth`, which is now the only place
+   * that rule is written.
+   *
+   * THAT ASTRAL RULE USED TO DEPEND ON THE REST OF THE STRING, which is the
+   * defect this loop shape carried. The sum was written two ways — a code-point
+   * count when the string held a full-width glyph, `s.length` when it did not —
+   * so "🇩🇰" measured 2.16em alone and 1.08em next to a kanji. `ellipsize` seeds
+   * its running width from here and subtracts `charWidth`, so a clip that
+   * removed the last full-width character flipped the accounting underneath
+   * itself and returned a string up to TWICE the width it was asked to fit:
+   * `clipToWidth("🇩🇰🇸🇪🇳🇴 北欧の売上", 12, 40)` came back 71.3pt wide. Downstream
+   * that is a row label 29pt off the left edge of a 160pt heatmap — drawn onto
+   * whatever the chart sits beside, since neither PowerPoint renderer clips.
+   *
+   * One accounting now, summed per code point, and it is ADDITIVE: a code
+   * point's width no longer depends on its neighbours. Latin is still
+   * bit-identical (no surrogate pairs, so the unit count IS `s.length`), pure
+   * CJK is unchanged, and a lone 📊 is still one em.
    */
-  let units = 0;
   let wide = 0;
+  let narrowUnits = 0;
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
-    const pair = c >= 0xd800 && c <= 0xdbff && i + 1 < s.length;
-    if (fullWidth(pair ? s.codePointAt(i)! : c)) wide++;
-    units++;
+    const next = i + 1 < s.length ? s.charCodeAt(i + 1) : 0;
+    // A HIGH surrogate is only half a pair if a LOW one follows it. Without the
+    // second half of this test a lone high surrogate swallowed the character
+    // after it, and that character then cost nothing at all.
+    const pair = c >= 0xd800 && c <= 0xdbff && next >= 0xdc00 && next <= 0xdfff;
+    const cp = pair ? s.codePointAt(i)! : c;
     if (pair) i++;
+    // A combining mark is drawn on its base and adds nothing — see `zeroWidth`.
+    if (zeroWidth(cp)) continue;
+    if (fullWidth(cp)) wide++;
+    else narrowUnits += pair ? 2 : 1;
   }
-  return wide ? (wide + (units - wide) * narrow) * fontSize : s.length * fontSize * narrow;
+  return (wide + narrowUnits * narrow) * fontSize;
 }
 
 /**

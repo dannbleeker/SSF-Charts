@@ -103,6 +103,18 @@ function asFormat(fmt: Partial<NumberFormat> | null | undefined): Partial<Number
 }
 
 /**
+ * The decimals count the AUTHOR wrote, or undefined when the chart is on "auto".
+ *
+ * `resolveFormat`'s answer cannot tell those two apart — it always returns a
+ * number — so anything that must obey an explicit setting without inventing one
+ * asks here. `segmentLabel`'s percent part is the case that needed it.
+ */
+export function authoredDecimals(fmt?: Partial<NumberFormat> | null): number | undefined {
+  const d = asFormat(fmt).decimals;
+  return typeof d === "number" ? safeDecimals(d) : undefined;
+}
+
+/**
  * Same, for an AXIS's tick labels, where magnitude alone is not enough.
  *
  * A tick strip must let the reader tell one tick from the next: an axis over
@@ -252,7 +264,30 @@ export function niceTicks(min: number, max: number, count = 5): number[] {
  */
 export function segmentLabel(
   parts: ("value" | "percent" | "series" | "category")[],
-  ctx: { value: number; fraction: number | null; series: string; category: string; fmt: Partial<NumberFormat> },
+  ctx: {
+    value: number;
+    fraction: number | null;
+    series: string;
+    category: string;
+    fmt: Partial<NumberFormat>;
+    /**
+     * Decimals for the PERCENT part, when the author named one.
+     *
+     * It cannot be read off `ctx.fmt`: that is a RESOLVED format, so its
+     * `decimals` is always a number and always derived from the VALUES'
+     * magnitude — a pie of 0-to-10 numbers would silently start printing
+     * "29.0%" because its values happen to want one decimal. So the caller
+     * passes the authored count (see `authoredDecimals`) and nothing else.
+     *
+     * Why it matters: a 100% chart with `numberFormat.decimals: 1` labelled its
+     * axis 0.0% / 25.0% / … / 100.0% — `resolveAxisFormat` honours an explicit
+     * count — and its three equal segments "33%", "33%", "33%". The author
+     * asked for the precision that makes the parts add up, one of the two
+     * places that consume it obeyed, and the chart contradicted itself: 99% of
+     * a column drawn full height under an axis that reads 100.0%.
+     */
+    percentDecimals?: number;
+  },
 ): string {
   // `decorations.labelContent` is a LIST, and a config that wrote a bare
   // `"value"` instead of `["value"]` — an easy thing to write by hand or to
@@ -266,7 +301,9 @@ export function segmentLabel(
         case "value":
           return formatNumber(ctx.value, ctx.fmt);
         case "percent":
-          return ctx.fraction == null ? null : formatPercent(ctx.fraction, 0, false, ctx.fmt.locale);
+          return ctx.fraction == null
+            ? null
+            : formatPercent(ctx.fraction, ctx.percentDecimals ?? 0, false, ctx.fmt.locale);
         case "series":
           return ctx.series;
         case "category":

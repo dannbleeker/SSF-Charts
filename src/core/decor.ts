@@ -1,6 +1,6 @@
-import type { ChartConfig, ChartStyle, Decorations, LayoutAnchors } from "./types";
+import type { ChartConfig, ChartStyle, Decorations, LayoutAnchors, NumberFormat } from "./types";
 import { textWidth, type SceneNode } from "./scene";
-import { cagr, formatNumber, formatPercent } from "./format";
+import { cagr, formatNumber, formatPercent, resolveFormat } from "./format";
 import { MIN_LABEL_FS, titleInkBottom, titleNode } from "./layout/frame";
 
 /**
@@ -28,6 +28,35 @@ import { MIN_LABEL_FS, titleInkBottom, titleNode } from "./layout/frame";
 function meanOfMeasured(a: LayoutAnchors): number {
   const measured = a.columnValue.filter((_, i) => a.columnHasData?.[i] ?? true);
   return measured.reduce((s, v) => s + v, 0) / (measured.length || 1);
+}
+
+/**
+ * The format for a DERIVED number drawn beside the chart's own labels — a mean
+ * line, a difference — at the finer of two precisions: the one the surrounding
+ * data is labelled in, and the one the derived number itself asks for.
+ *
+ * Both halves are load-bearing, and each was wrong on its own.
+ *
+ * ONLY THE VALUE'S OWN. This is what these two labels used to do, by handing
+ * `cfg.numberFormat` straight to `formatNumber` — whose "auto" ladder stops at
+ * two decimals below 1, where `resolveFormat` widens to six. On bars labelled
+ * 0.0040 / 0.0050 / 0.0060 the mean line, drawn correctly at 0.005, captioned
+ * itself "Ø 0.01": twice the mean, and outside the range of every bar.
+ *
+ * ONLY THE CHART'S. A mean is fractional where its columns are whole, so
+ * [-40, -20, -10, 60] — labelled at no decimals, because 60 needs none — turned
+ * its true mean of -2.5 into "Ø -3". Nothing on the chart says -3.
+ *
+ * The finer of the two is right for both, and it is the rule
+ * `resolveAxisFormat` already applies to a tick strip (`max(magnitude
+ * precision, step precision)`). An authored `decimals` collapses both sides
+ * onto itself, so it still wins outright.
+ */
+function finerFormat(around: number[], value: number, fmt: ChartConfig["numberFormat"]): NumberFormat {
+  const context = resolveFormat(around, fmt);
+  const own = resolveFormat([value], fmt);
+  const dec = (f: NumberFormat) => (typeof f.decimals === "number" ? f.decimals : 0);
+  return { ...context, decimals: Math.max(dec(context), dec(own)) };
 }
 
 /**
@@ -288,10 +317,17 @@ export function decorationNodes(
      * same reason, and falls back to the ABSOLUTE difference: true on every
      * base, and it still says which way the number went.
      */
+    // RESOLVED against the two ends it measures, not handed the raw
+    // `numberFormat` — see the note on the value-line label below, which had the
+    // identical defect. `numberFormat.decimals` defaults to "auto", and
+    // `formatNumber`'s own auto ladder stops at two decimals under 1, so an
+    // arrow between columns the chart labels 0.0040 and 0.0060 captioned itself
+    // "+0.01". `chart.ts` resolves the target-gap label over the same two ends.
+    const diffFmt = finerFormat([vFrom, vTo], vTo - vFrom, cfg.numberFormat);
     const label =
       usePct && vFrom > 0
         ? formatPercent(vTo / vFrom - 1, 0, true, cfg.numberFormat?.locale)
-        : formatNumber(vTo - vFrom, { ...cfg.numberFormat, forceSign: true });
+        : formatNumber(vTo - vFrom, { ...diffFmt, forceSign: true });
     // The label reads to the RIGHT of the arrow, in a margin `computeFrame`
     // reserves for it — but only the cartesian frame reserves one. A line chart
     // puts its last category hard against the plot edge, so on an ordinary
@@ -325,6 +361,23 @@ export function decorationNodes(
       // this file, which the difference arrow's anchor shares.
       const value = vl.mode === "mean" ? meanOfMeasured(a) : vl.value;
       const y = a.valueToY!(value);
+      /**
+       * THE CHART'S OWN PRECISION, not `formatNumber`'s per-value fallback.
+       *
+       * `cfg.numberFormat` was handed straight to `formatNumber`, whose "auto"
+       * ladder stops at two decimals below 1 — while `resolveFormat`, which
+       * every data label in the engine goes through, widens to six so a chart of
+       * rates, yields or defect fractions keeps its digits. The two ladders
+       * disagreeing put a WRONG NUMBER in ink, not merely a coarse one:
+       *
+       *     bars 0.004 / 0.005 / 0.006   labelled 0.0040 / 0.0050 / 0.0060
+       *     mean line drawn at 0.005     labelled "Ø 0.01"
+       *
+       * — twice the mean, above every bar on the chart, on a line whose y is
+       * correct. On any chart where the two ladders already agree this is the
+       * string it always was.
+       */
+      const vlFmt = finerFormat(a.columnValue, value, cfg.numberFormat);
       nodes.push(
         {
           kind: "line",
@@ -343,7 +396,7 @@ export function decorationNodes(
           y: y - fs * 1.5,
           w: 100,
           h: fs * 1.4,
-          text: (vl.mode === "mean" ? "Ø " : "") + formatNumber(value, cfg.numberFormat),
+          text: (vl.mode === "mean" ? "Ø " : "") + formatNumber(value, vlFmt),
           fontSize: fs * 0.95,
           color: style.mutedText,
           align: "left",

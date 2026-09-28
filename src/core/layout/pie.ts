@@ -1,7 +1,7 @@
 import type { ChartConfig, ChartStyle, Decorations } from "../types";
 import { contrastInk, polar, textWidth, type SceneNode } from "../scene";
 import { clipToWidth } from "../elements";
-import { formatNumber, resolveFormat, segmentLabel } from "../format";
+import { authoredDecimals, formatNumber, resolveFormat, segmentLabel } from "../format";
 import { MIN_LABEL_FS, footnoteH, titleHeight, titleNode, titleInkBottom } from "./frame";
 import type { LayoutResult } from "./column";
 
@@ -136,6 +136,7 @@ export function layoutPie(cfg: ChartConfig, style: ChartStyle, decor: Decoration
       series: data.series[0]?.name ?? "",
       category: c === "other" ? (cfg.labels?.other ?? "Other") : data.categories[c as number],
       fmt,
+      percentDecimals: authoredDecimals(cfg.numberFormat),
     });
 
   /**
@@ -394,6 +395,7 @@ export function layoutPie(cfg: ChartConfig, style: ChartStyle, decor: Decoration
           series: data.series[0]?.name ?? "",
           category: data.categories[c],
           fmt,
+          percentDecimals: authoredDecimals(cfg.numberFormat),
         });
         nodes.push({
           kind: "text",
@@ -493,6 +495,7 @@ function layoutGauge(
       series: data.series[0]?.name ?? "",
       category: data.categories[c],
       fmt,
+      percentDecimals: authoredDecimals(cfg.numberFormat),
     });
   // The side margin has to hold the LABELS. `fs * 3` is 30pt at the default
   // font, and "Others 12%" is 58 — so the outer labels of the shipped showcase

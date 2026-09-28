@@ -188,4 +188,34 @@ describe("saved chart templates", () => {
     pick("user:constructor");
     expect(($("chart-w") as HTMLInputElement).value, "applied something that was not a template").toBe(before);
   });
+
+  /**
+   * A browser that will not let the pane write.
+   *
+   * The READ side of this table has been guarded since it was written —
+   * `readStored` and `loadTemplates` both swallow a throwing `localStorage` —
+   * and the picture preference in the same file carries the argument in full:
+   * "a browser with storage blocked must not take the pane down over a
+   * checkbox". Both WRITES were left bare.
+   *
+   * An Office task pane is a third-party iframe, so a browser with site data
+   * blocked is the environment those guards exist for, and a full origin quota
+   * gets there too. The throw escaped the click handler, `renderTemplateList()`
+   * never ran, and Save was indistinguishable from Save-with-nothing-to-do: the
+   * name row closed, the picker did not change, and nothing was said. The user
+   * finds out the next time they open the pane.
+   */
+  it("says so when the browser refuses the write, instead of failing in silence", async () => {
+    const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation((key: string) => {
+      if (key === TEMPLATES_KEY) throw new DOMException("quota", "QuotaExceededError");
+    }) as unknown as ReturnType<typeof vi.spyOn>;
+    try {
+      await saveAs("will not fit");
+      expect($("host-note").textContent ?? "", "a save that did not happen said nothing at all").toMatch(
+        /Couldn't save that template/,
+      );
+    } finally {
+      setItem.mockRestore();
+    }
+  });
 });
