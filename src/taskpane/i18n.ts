@@ -125,6 +125,11 @@ export const EN = {
 
   // Runtime status — {placeholder} templates (filled by t(key, params)).
   "Failed: {error}": "Failed: {error}",
+  // Auto-update is the one write path with no button behind it, so a failure
+  // there has no clicked control to report against. It names itself, because a
+  // user who pressed nothing needs to know WHICH thing failed — and because the
+  // first act of the update it was running is destructive. See `maybeAutoUpdate`.
+  "Auto-update failed: {error}": "Auto-update failed: {error}",
   "Couldn't render PNG: {error}": "Couldn't render PNG: {error}",
   // The one note the datasheet raises on its own. A translator should keep the
   // two worked examples: they are what let a user check the reading at a glance

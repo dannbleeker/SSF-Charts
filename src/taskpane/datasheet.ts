@@ -106,6 +106,69 @@ const EU_DECIMAL = /^[+-]?\d+,\d+$/;
 const percentBody = (t: string): string => t.replace(/\s*%$/, "");
 
 /**
+ * A CLIPBOARD BLOCK READ AS QUOTED TSV, which is what Excel actually writes.
+ *
+ * This used to be `text.replace(/\r/g, "").split("\n")` and then `split("\t")`
+ * per row — unquoted TSV. Excel's `text/plain` clipboard quotes any cell whose
+ * content holds a line break, a tab or a double quote, and keeps the break
+ * inside the quotes, exactly as it does for CSV. Nothing here knew that.
+ *
+ * So a wrapped header — the most ordinary thing in a finance table, Alt+Enter
+ * inside a cell — arrived as `"Revenue\n(EURm)"\t2024\t2025` and the break was
+ * read as the end of the row. One pasted row became two, every later row landed
+ * on the wrong series, and the sheet said nothing. Same family as the
+ * CHAR(11)/CHAR(10) lesson: the character Alt+Enter really produces is the one
+ * nothing was looking for.
+ *
+ * AND THE TRAILING BLANK, which is the second defect in the same three lines.
+ * Excel appends exactly ONE row terminator, but the old code popped empty lines
+ * in a `while`. In a single-column copy a blank CELL is an empty line — the
+ * comment it sat under said precisely that, and used it to justify keeping
+ * INTERIOR blanks before eating the trailing ones. Copying `10, 20, 30, ,` (two
+ * deliberate blanks at the end) wrote three cells and left the sheet's old
+ * fourth and fifth values showing underneath. Exactly one terminator is
+ * dropped now, because exactly one is what is appended.
+ */
+export function parseClipboardGrid(text: string): string[][] {
+  const s = String(text ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (quoted) {
+      // `""` inside a quoted cell is one literal quote — Excel's own escape.
+      if (ch === '"' && s[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
+      else cell += ch;
+      continue;
+    }
+    // A quote only OPENS a cell at its start. A stray quote mid-cell is data,
+    // which is how a cell like `5" pipe` survives.
+    if (ch === '"' && cell === "") quoted = true;
+    else if (ch === "\t") {
+      row.push(cell);
+      cell = "";
+    } else if (ch === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else cell += ch;
+  }
+  row.push(cell);
+  rows.push(row);
+  const last = rows[rows.length - 1];
+  if (rows.length > 1 && last.length === 1 && last[0] === "") rows.pop();
+  return rows;
+}
+
+/**
  * IS THIS PASTE WRITTEN IN THE EUROPEAN CONVENTION — dot for thousands, comma
  * for the decimal?
  *
@@ -793,24 +856,22 @@ export function mountDatasheet(
     const text = e.clipboardData?.getData("text/plain") ?? "";
     if (!text.includes("\t") && !text.includes("\n")) return; // single cell — default behavior
     e.preventDefault();
-    // Drop only the TRAILING blank lines Excel appends. Filtering every empty
-    // line dropped interior ones too — and in a single-column copy a blank cell
-    // IS an empty line, so a gap in the data silently pulled every later value
-    // up a row and onto the wrong category. (A multi-column blank row arrives as
-    // "\t\t", which is why this only ever bit single-column pastes.)
-    const rows = text.replace(/\r/g, "").split("\n");
-    while (rows.length && rows[rows.length - 1] === "") rows.pop();
+    // Quoted TSV, and exactly one trailing terminator — see `parseClipboardGrid`.
+    // Interior blanks are kept, because in a single-column copy a blank cell IS
+    // an empty line and dropping it pulls every later value onto the wrong
+    // category. (A multi-column blank row arrives as "\t\t", which is why that
+    // only ever bit single-column pastes.)
+    const grid = parseClipboardGrid(text);
     /**
      * DECIDED ONCE, FOR THE WHOLE BLOCK, because that is the only place the
      * evidence exists. A single cell cannot say whether "1.234" is a thousand
      * or a fraction; a paste that also carries "987,5" can. See `looksEuropean`.
      */
-    const grid = rows.map((r) => r.split("\t"));
     const european = looksEuropean(grid);
     let converted = 0;
     const grewFrom = model.cells.length;
-    rows.forEach((row, dr) => {
-      row.split("\t").forEach((val, dc) => {
+    grid.forEach((row, dr) => {
+      row.forEach((val, dc) => {
         const r = ri + dr;
         const c = ci + dc;
         while (model.cells.length <= r) model.cells.push(model.cells[0].map(() => ""));

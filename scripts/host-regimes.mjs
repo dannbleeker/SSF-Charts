@@ -36,7 +36,7 @@
  * not a measurement.
  */
 import { readFileSync } from "fs";
-import { NEVER_ASKED, sheetOf } from "./host-baseline.mjs";
+import { NEVER_ASKED, UNINFORMATIVE_ANSWERS, sheetOf } from "./host-baseline.mjs";
 import { isMain } from "./is-main.mjs";
 
 /** The samples a round recorded per question, with the build that produced them. */
@@ -64,8 +64,30 @@ export function readRoundSamples(path) {
  *   coin       — some regime carries two different answers, so host state does
  *                not account for the flip
  */
-export function explainBy(samples, field = "regime", neverAsked = NEVER_ASKED) {
-  const real = (samples ?? []).filter((s) => s && !neverAsked.has(s.answer));
+export function explainBy(samples, field = "regime", neverAsked = NEVER_ASKED, uninformative = UNINFORMATIVE_ANSWERS) {
+  /**
+   * BOTH TIERS OF NON-ANSWER, not just the first.
+   *
+   * `NEVER_ASKED` is "the question was never put". `UNINFORMATIVE_ANSWERS` is
+   * "the question was put and produced nothing to name" — `other`, `unreadable`,
+   * `silent`, `not-a-short-read`, `none-of-ours`, `no-shapes-to-list`. This
+   * filtered only the first, so the second counted as a FACE: a question
+   * answered `yes` twice and `unreadable` once looked like a question that had
+   * changed its answer, and the machinery below then set about explaining a
+   * flip that never happened.
+   *
+   * Measured 2026-09-28 against the committed archive: `host-regimes.mjs
+   * rounds/302-aa459dd.json` reported `picture-then-shape-read` as EXPLAINED by
+   * regime, and another question as COIN because "healthy gave threw and
+   * unreadable". The host answered consistently; the non-answer was the second
+   * face. Both verdicts were manufactured.
+   *
+   * This file's own docstring already states the rule — a word that says
+   * "nothing about the host" must not count as a face — and `host-baseline.mjs`
+   * applies both tiers at its line 1211. The rule was right and one of its two
+   * halves was missing here.
+   */
+  const real = (samples ?? []).filter((s) => s && !neverAsked.has(s.answer) && !uninformative.has(s.answer));
   const faces = [...new Set(real.map((s) => s.answer))];
   const byRegime = new Map();
   for (const s of real) {

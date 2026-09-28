@@ -82,6 +82,65 @@ describe("does host state account for a mid-round flip", () => {
     expect(r.verdict).toBe("steady");
     expect(r.real).toBe(2);
   });
+
+  /**
+   * THE OTHER HALF OF THAT RULE, which was missing — found 2026-09-28.
+   *
+   * There are TWO tiers of non-answer, both in `host-baseline.mjs`:
+   * `NEVER_ASKED` ("the question was never put", covered by the test above) and
+   * `UNINFORMATIVE_ANSWERS` ("it was put and produced nothing to name" — other,
+   * unreadable, silent, not-a-short-read, none-of-ours, no-shapes-to-list).
+   * `explainBy` filtered only the first, so the second counted as a FACE: a
+   * question answered `yes` twice and `unreadable` once looked like it had
+   * changed its answer, and the machinery then explained a flip that never
+   * happened.
+   *
+   * Measured against the committed archive: `host-regimes.mjs
+   * rounds/302-aa459dd.json` reported `picture-then-shape-read` as EXPLAINED by
+   * regime, and another question as COIN because "healthy gave threw and
+   * unreadable". Both verdicts were manufactured out of a non-answer.
+   * `host-baseline.mjs` applies both tiers at its own line 1211 — the rule was
+   * right and one of its halves had not reached here.
+   */
+  it("does not count an uninformative answer as a face", () => {
+    const r = explainByRegime([
+      s("yes", 1, "healthy"),
+      s("yes", 2, "healthy"),
+      s("unreadable", 3, "collection-refused"),
+    ]);
+    expect(
+      r.verdict,
+      `"unreadable" means the question was put and named nothing. Counting it as a second answer turns ` +
+        `a steady question into a flip, and then sets about explaining the flip.`,
+    ).toBe("steady");
+    expect(r.real).toBe(2);
+  });
+
+  it.each(["other", "unreadable", "silent", "not-a-short-read", "none-of-ours", "no-shapes-to-list"])(
+    "ignores %s in the faces and in the regime mapping alike",
+    (word) => {
+      const r = explainByRegime([s("yes", 1, "healthy"), s(word, 2, "healthy")]);
+      expect(r.verdict).toBe("steady");
+      expect(r.faces).toEqual(["yes"]);
+      // And it must not survive into the per-regime mapping, or a regime would
+      // look like it carried two answers while the host said one thing.
+      for (const m of r.mapping as { answers: string[] }[]) expect(m.answers).not.toContain(word);
+    },
+  );
+
+  it("still calls a genuine two-answer flip a coin", () => {
+    // THE DIRECTION THAT MATTERS: the fix must not silence real disagreement.
+    // Two REAL answers, in the shape a coin actually needs — two buckets with
+    // one of them split. (Two answers in a SINGLE bucket is `blind`, which the
+    // renderer test above records this file getting wrong once already.)
+    const r = explainByRegime([
+      s("short-2", 1, "healthy"),
+      s("short-1", 2, "healthy"),
+      s("short-1", 3, "slide-trouble"),
+    ]);
+    expect(r.verdict).toBe("coin");
+    expect(r.faces).toEqual(["short-2", "short-1"]);
+  });
 });
 
 describe("a trigger and its partner: one mechanism or two", () => {

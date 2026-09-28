@@ -171,6 +171,25 @@ function normalizeData(raw: ChartData): ChartData {
   const categories = (Array.isArray(data.categories) ? data.categories : []).slice(0, MAX_CATEGORIES).map(labelText);
   const n = categories.length;
   const cell = (v: number | null | undefined): number | null => (v == null ? null : Number.isFinite(v) ? v : null);
+  /**
+   * DID A GANTT ROW ACTUALLY ARRIVE AS A CALENDAR?
+   *
+   * The conversion below turns an ISO string into days-since-epoch, and the
+   * number that comes out cannot say where it came from. `layoutGantt` gates
+   * EVERYTHING calendar on `data.dates` — week and month ticks, the tick label
+   * format, the today marker — so without this the axis of a date Gantt was
+   * drawn by `niceTicks` and labelled in raw epoch days: "20458", "20486".
+   *
+   * Only `datasheet.ts` set the flag, so only a PASTE produced a calendar. The
+   * skill's own documented config — ISO strings in Start/End rows, which
+   * SKILL.md states as a hard rule — came through here, had its dates parsed
+   * correctly, and then rendered as a numeric axis. Bars land in the right
+   * relative places, which is what made it look deliberate.
+   *
+   * `|| undefined` rather than `false`, matching `sheetToData`'s own idiom, so
+   * a config that never carried dates is byte-identical to before.
+   */
+  let sawDate = false;
   const series = (Array.isArray(data.series) ? data.series : [])
     .slice(0, MAX_SERIES)
     // A null entry survived as `{ values: [...] }` with no name, and every
@@ -191,7 +210,10 @@ function normalizeData(raw: ChartData): ChartData {
       const dateRow = GANTT_DATE_ROW.test(labelText(s.name).trim());
       const values = Array.from({ length: n }, (_, c) => {
         const raw = rawValues[c];
-        return dateRow && typeof raw === "string" ? parseDateToken(raw) : cell(raw);
+        if (!dateRow || typeof raw !== "string") return cell(raw);
+        const day = parseDateToken(raw);
+        if (day != null) sawDate = true;
+        return day;
       });
       // ALWAYS a string, including when there was no name at all.
       //
@@ -223,7 +245,16 @@ function normalizeData(raw: ChartData): ChartData {
   // `Array.from` reads them by index; this makes the two cases agree.
   const pad = <T>(arr: (T | null)[] | undefined): (T | null)[] | undefined =>
     Array.isArray(arr) ? Array.from({ length: n }, (_, c) => arr[c] ?? null) : undefined;
-  return { ...data, categories, series, hundredPercent: pad(data.hundredPercent), xExtent: pad(data.xExtent) };
+  return {
+    ...data,
+    categories,
+    series,
+    hundredPercent: pad(data.hundredPercent),
+    xExtent: pad(data.xExtent),
+    // An author who wrote `dates` keeps what they wrote; otherwise it is set
+    // only when a Gantt row really did parse as a calendar. See `sawDate`.
+    dates: data.dates ?? (sawDate || undefined),
+  };
 }
 
 /**

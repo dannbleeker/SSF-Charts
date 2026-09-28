@@ -3268,7 +3268,32 @@ function maybeAutoUpdate() {
       maybeAutoUpdate();
       return;
     }
-    void doInsert(false).catch(() => {});
+    /**
+     * A FAILED AUTO-UPDATE HAS TO SAY SO. This swallowed it whole.
+     *
+     * Every other write path in the pane runs inside `guard()`, whose catch is
+     * what turns a thrown update into `note("Failed: {error}", "err")`. The
+     * auto-update timer is the one that does not, and it discarded the
+     * rejection into an empty catch — so nothing reported it, and nothing else
+     * was going to.
+     *
+     * That matters more here than anywhere else, because `updateChartResilient`
+     * only throws AFTER its destructive first act: layer 1 deletes the old
+     * chart and `deleteShapesById` sweeps the wreckage, and if the slide swap
+     * and the picture fallback both fail as well, it rethrows. The visible
+     * outcome was a chart vanishing from the slide with the pane saying nothing
+     * at all — to a user who had pressed no button and had no reason to look.
+     *
+     * Named rather than borrowing "Failed: {error}", because there is no
+     * clicked control to attribute it to and the user needs to know WHICH thing
+     * failed. A stop is the user's own doing and stays silent, exactly as in
+     * `guard`.
+     */
+    void doInsert(false).catch((err: unknown) => {
+      if (isStopped(err)) return;
+      trace("pane", "auto-update failed", { error: errorText(err) });
+      note("Auto-update failed: {error}", "err", { error: errorText(err) });
+    });
   }, 900);
 }
 // Unticking has to cancel a push that is already in flight; ticking on its own
