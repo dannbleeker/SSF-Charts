@@ -84,6 +84,28 @@ const EU_GROUPED = /^[+-]?\d{1,3}(\.\d{3})+(,\d+)?$/;
 const EU_DECIMAL = /^[+-]?\d+,\d+$/;
 
 /**
+ * A TRAILING PERCENT SIGN, SPLIT OFF SO THE NUMBER UNDERNEATH CAN BE READ.
+ *
+ * All three patterns above are anchored, so `"12,5%"` matches none of them —
+ * and a share table is the single most likely thing to be pasted in here. The
+ * consequence, measured 2026-09-28 on a sheet whose every number carried a
+ * percent sign: `looksEuropean` returned FALSE where the identical sheet
+ * without the signs returned true, and `fromEuropeanNumber("12,5%")` handed
+ * back `"12,5%"` untouched. The block was then read as American, so the decimal
+ * comma was never converted.
+ *
+ * `rawCellValue` already strips a trailing "%" before parsing — the two places
+ * that care about percent cells disagreed about whether they exist. This is the
+ * same shape as the CHAR(11)/CHAR(10) lesson: a rule written for one spelling
+ * of a cell silently skips the others.
+ *
+ * Applied to BOTH sides of the evidence, not just the European one. Counting
+ * "12,5%" as European while ignoring "1,234%" as American would bias the vote
+ * rather than fix it.
+ */
+const percentBody = (t: string): string => t.replace(/\s*%$/, "");
+
+/**
  * IS THIS PASTE WRITTEN IN THE EUROPEAN CONVENTION — dot for thousands, comma
  * for the decimal?
  *
@@ -115,7 +137,10 @@ export function looksEuropean(cells: string[][]): boolean {
   let american = false;
   for (const row of cells) {
     for (const cell of row) {
-      const t = String(cell ?? "").trim();
+      // A trailing "%" is stripped before ANY of these are asked, because every
+      // pattern here is anchored and a share table is the likeliest paste of
+      // all. See `percentBody`.
+      const t = percentBody(String(cell ?? "").trim());
       if (!t) continue;
       if (EU_GROUPED.test(t) && t.includes(",")) european = true;
       else if (EU_DECIMAL.test(t) && !US_GROUPED.test(t)) european = true;
@@ -145,9 +170,15 @@ export function looksEuropean(cells: string[][]): boolean {
  * comes back untouched.
  */
 export function fromEuropeanNumber(text: string): string {
-  const t = String(text ?? "").trim();
-  if (EU_GROUPED.test(t)) return t.replace(/\./g, "").replace(",", ".");
-  if (EU_DECIMAL.test(t)) return t.replace(",", ".");
+  const raw = String(text ?? "").trim();
+  // The percent sign is carried through rather than dropped: `rawCellValue`
+  // strips it later, and a share table must still READ as a share in the grid.
+  // Without this split "12,5%" matched nothing and came back unconverted, so
+  // the comma survived into a cell the rest of the sheet reads as a number.
+  const t = percentBody(raw);
+  const pct = raw.slice(t.length);
+  if (EU_GROUPED.test(t)) return t.replace(/\./g, "").replace(",", ".") + pct;
+  if (EU_DECIMAL.test(t)) return t.replace(",", ".") + pct;
   return text;
 }
 

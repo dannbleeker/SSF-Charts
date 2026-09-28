@@ -4,6 +4,33 @@ import { cagr, formatNumber, formatPercent } from "./format";
 import { MIN_LABEL_FS, titleInkBottom, titleNode } from "./layout/frame";
 
 /**
+ * THE MEAN OF WHAT WAS MEASURED, not of what was left after coercion.
+ *
+ * Every layout builds `columnValue` with `?? 0`, so a blank category arrives
+ * here as a zero AND as a denominator: the mean of `[100, null, 200]` comes out
+ * 100 where the mean of the numbers actually supplied is 150. Both halves are
+ * wrong, which is why dropping the blank from the SUM alone does not fix it.
+ *
+ * `columnHasData` is optional and absent means every category counts — the
+ * honest default for a `columnValue` built from something that is never blank.
+ * See LayoutAnchors.
+ *
+ * ONE DEFINITION, BECAUSE THERE WERE TWO CALLERS AND THEY DISAGREED. The filter
+ * was written for the value line, and the difference arrow's `fromValueLine`
+ * anchor kept an unfiltered copy — so a chart carrying both drew TWO means.
+ * Measured 2026-09-28 on `[100, null, 200]`: the value line sat at 150 labelled
+ * "Ø 150" while the arrow's baseline sat at 100, and the arrow printed "+100%"
+ * where the truth is "+33%". A wrong number in ink is the worst thing this
+ * renderer can do. The commit that added the filter (`35840f6`) closed with
+ * "the second time this week the fix was already written and one call site was
+ * missed"; a shared function is what stops the third.
+ */
+function meanOfMeasured(a: LayoutAnchors): number {
+  const measured = a.columnValue.filter((_, i) => a.columnHasData?.[i] ?? true);
+  return measured.reduce((s, v) => s + v, 0) / (measured.length || 1);
+}
+
+/**
  * think-cell's signature annotations, computed from layout anchors so they
  * work identically across chart types.
  */
@@ -219,7 +246,9 @@ export function decorationNodes(
     const vls = decor.valueLines ?? (decor.valueLine ? [decor.valueLine] : []);
     if (vlIdx != null && vls[vlIdx] && a.valueToY) {
       const vl = vls[vlIdx];
-      vFrom = vl.mode === "mean" ? a.columnValue.reduce((s, v) => s + v, 0) / (a.columnValue.length || 1) : vl.value;
+      // The SAME basis the value line itself is drawn on — see `meanOfMeasured`.
+      // These were two computations and they disagreed on any blank category.
+      vFrom = vl.mode === "mean" ? meanOfMeasured(a) : vl.value;
       yFrom = a.valueToY(vFrom);
     }
     const x = a.categoryX[to] + a.categoryWidth[to] / 2 + 10;
@@ -292,21 +321,9 @@ export function decorationNodes(
   const valueLines = decor.valueLines ?? (decor.valueLine ? [decor.valueLine] : []);
   if (valueLines.length && a.valueToY) {
     valueLines.forEach((vl, i) => {
-      /**
-       * THE MEAN OF WHAT WAS MEASURED, not of what was left after coercion.
-       *
-       * Every layout builds `columnValue` with `?? 0`, so a blank category
-       * arrived here as a zero AND as a denominator: the mean of
-       * `[100, null, 200]` came out 100, drawn and labelled, where the mean of
-       * the numbers actually supplied is 150. Both halves were wrong, which is
-       * why dropping the blank from the SUM alone would not have fixed it.
-       *
-       * `columnHasData` is optional and absent means every category counts —
-       * the honest default for a `columnValue` built from something that is
-       * never blank. See LayoutAnchors.
-       */
-      const meanOf = a.columnValue.filter((_, i) => a.columnHasData?.[i] ?? true);
-      const value = vl.mode === "mean" ? meanOf.reduce((s, v) => s + v, 0) / (meanOf.length || 1) : vl.value;
+      // The mean of what was MEASURED — see `meanOfMeasured` at the head of
+      // this file, which the difference arrow's anchor shares.
+      const value = vl.mode === "mean" ? meanOfMeasured(a) : vl.value;
       const y = a.valueToY!(value);
       nodes.push(
         {

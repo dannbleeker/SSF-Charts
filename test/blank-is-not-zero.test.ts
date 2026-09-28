@@ -221,4 +221,72 @@ describe("a blank cell is not a measured zero", () => {
       "a blank cell is being printed as a measured figure — the slide asserts something the data does not say",
     ).toEqual([]);
   });
+
+  /**
+   * THE SITE THIS RATCHET COULD NOT REACH, found 2026-09-28.
+   *
+   * The sweep above asks every KIND, via `sampleConfig(kind)`. Clustered-
+   * stacked is not a kind — it is a config variant, reached by giving series a
+   * `stack` id — so no sample carries one and `column.ts`'s `nStacks > 1`
+   * branch was never entered. And `labelsFor` matches by category suffix
+   * (`-3`), which the sub-stack's `total-3-s0` does not end with. Missed twice
+   * over, for two independent reasons.
+   *
+   * What that hid: the sub-stack branch sits ABOVE the `else if` carrying the
+   * `columnHasData` gate, whose own comment says it "gates BOTH branches below
+   * ... so a third one cannot be added past it". This one was added above it.
+   * A wholly blank category printed `total-1-s0 = "0"` and `total-1-s1 = "0"`,
+   * while the single-stack control over the same blank column correctly
+   * printed no total at all.
+   */
+  const stackedCfg = (a: (number | null)[], b: (number | null)[], c: (number | null)[], d: (number | null)[]) =>
+    ({
+      kind: "stacked",
+      ...DEFAULT_SIZE,
+      data: {
+        categories: ["Q1", "Q2", "Q3"],
+        series: [
+          { name: "Prod A", stack: 0, values: a },
+          { name: "Prod B", stack: 0, values: b },
+          { name: "Serv A", stack: 1, values: c },
+          { name: "Serv B", stack: 1, values: d },
+        ],
+      },
+      decorations: { totals: true },
+    }) as unknown as ChartConfig;
+
+  const subTotals = (cfg: ChartConfig): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const n of buildChart(cfg).nodes) {
+      const name = String((n as TextNode).name ?? "");
+      if (n.kind === "text" && /^total-\d+-s\d+$/.test(name)) out[name] = String((n as TextNode).text ?? "");
+    }
+    return out;
+  };
+
+  it("a clustered-stacked sub-column with nothing in it gets no total", () => {
+    const got = subTotals(stackedCfg([10, null, 30], [5, null, 15], [8, null, 12], [4, null, 6]));
+    expect(Object.keys(got).length, "no sub-stack totals were drawn at all — re-point this test").toBeGreaterThan(0);
+    for (const slot of ["total-1-s0", "total-1-s1"]) {
+      expect(
+        got[slot] ?? "",
+        `Q2 is blank in every series and ${slot} says ${JSON.stringify(got[slot])}. A sum of nothing is 0, ` +
+          `which is right for the stack's reach and wrong for a label: it tells the reader the business ` +
+          `measured zero where nobody filled the cells in.`,
+      ).toBe("");
+    }
+    // …and the categories that DO carry data still print, or the fix deleted
+    // the feature instead of gating it.
+    expect(got["total-0-s0"] ?? "", "a populated sub-stack lost its total").toMatch(/\d/);
+    expect(got["total-2-s1"] ?? "", "a populated sub-stack lost its total").toMatch(/\d/);
+  });
+
+  it("gates per sub-stack, not per category", () => {
+    // One stack blank in Q2, the other not. Only the blank one may go
+    // unlabelled — a category-wide gate would wrongly silence both, which is
+    // the over-correction this class invites.
+    const got = subTotals(stackedCfg([10, 20, 30], [5, 10, 15], [8, null, 12], [4, null, 6]));
+    expect(got["total-1-s0"] ?? "", "the populated stack in a half-blank category lost its total").toMatch(/\d/);
+    expect(got["total-1-s1"] ?? "", "the blank stack was still labelled a measured zero").toBe("");
+  });
 });

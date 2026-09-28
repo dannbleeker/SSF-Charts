@@ -351,7 +351,27 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
       // was gone and the endpoints read as two independent magnitudes. Stacked
       // is still excluded, because a stack has no single point to mark.
       const barStyle = stacked ? "bar" : (decor.barStyle ?? "bar");
-      if (raw != null && v !== 0) {
+      /**
+       * A MEASURED ZERO IS A POINT; A ZERO-HEIGHT BAR IS NOTHING TO DRAW.
+       *
+       * `v !== 0` is right for a rectangle — a bar of no height is invisible
+       * whether or not it is emitted, so skipping it costs nothing. It is wrong
+       * for a DOT or a LOLLIPOP, where the mark is a point AT the value and
+       * zero is an ordinary place on the axis.
+       *
+       * Measured 2026-09-28, `[10, 0, 30]` against `[10, null, 30]` at
+       * `barStyle: "dot"` and `"lollipop"`: both produced the identical scene
+       * for category 1 — the axis heading and nothing else. No dot, no stem, no
+       * label. So a zero somebody measured and a cell nobody filled in were
+       * indistinguishable on the chart, which is this repo's blank-is-not-zero
+       * rule pointing the other way: the harm there is inventing data, the harm
+       * here is silently discarding it.
+       *
+       * `raw != null` still carries the blank, and stacked still forces "bar",
+       * so a stack's zero segment is unaffected.
+       */
+      const marksAPoint = barStyle === "dot" || barStyle === "lollipop";
+      if (raw != null && (v !== 0 || marksAPoint)) {
         if (stacked) {
           const catPos = nStacks > 1 ? centers[c] - colThick / 2 + (sp + 0.5) * stackThick : centers[c];
           const thick = nStacks > 1 ? withGap(stackThick) : colThick;
@@ -559,6 +579,34 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
     // Clustered-stacked: one total per stack sub-column (vertical only).
     if (decor.totals && !pct && nStacks > 1 && !H) {
       stackIds.forEach((id, sp) => {
+        /**
+         * THE SAME GATE THE BRANCH BELOW HAS, AND THIS ONE WENT WITHOUT IT.
+         *
+         * The `else if` below reads `columnHasData(data.series, c)`, and its
+         * comment says it "gates BOTH branches below ... so a third one cannot
+         * be added past it". This branch is not below it — it is ABOVE it, and
+         * was written afterwards, so it slipped past the guard that comment
+         * promised.
+         *
+         * Measured 2026-09-28, four series in two stacks with Q2 blank in all
+         * of them: `total-1-s0 = "0"` and `total-1-s1 = "0"`, while the
+         * single-stack control over the same blank column correctly printed no
+         * `total-1` at all. It is the defect `totals.ts` already records — a sum
+         * of nothing is 0, which is right for the stack's reach and wrong for a
+         * label, because it tells the reader the business measured zero where
+         * the truth is that nobody filled the cells in.
+         *
+         * Gated PER SUB-STACK, because that is the column this label sits over:
+         * one stack can be blank while its neighbour is not, and only the blank
+         * one should go unlabelled.
+         */
+        if (
+          !columnHasData(
+            data.series.filter((s) => (s.stack ?? 0) === id),
+            c,
+          )
+        )
+          return;
         const subX = centers[c] - colThick / 2 + sp * stackThick;
         const subTopQ = qOf(Math.max(0, ups[sp]));
         const total = data.series.reduce((a, s) => a + ((s.stack ?? 0) === id ? (s.values[c] ?? 0) : 0), 0);
