@@ -338,7 +338,7 @@ consulting charts, CAGR, editable charts, data visualization
       by the owner 2026-09-13.**
 - [x] `manifest-prod.xml` validated: `npx office-addin-manifest validate manifest-prod.xml`
       — **all four manifests pass** as of 2026-08-27 (both PowerPoint, both Excel).
-- [ ] Add-in works on **every** platform the manifest claims (web + Windows +
+- [~] Add-in works on **every** platform the manifest claims (web + Windows +
       Mac — testers check all of them). Do Phase 2 validation first.
       **Web: 425+ archived rounds. Windows: one reading, 2026-09-13,
       `docs/evidence/windows-desktop-2026-09-13.json`. Mac: the HOST surface is
@@ -349,6 +349,23 @@ consulting charts, CAGR, editable charts, data visualization
       The 1.10 floor narrows what is being claimed: every certified host now
       runs the same code path, rather than Mac alone running the picture
       fallback.
+
+      **DECIDED 2026-09-28: SUBMIT WITH MAC UNMEASURED.** The owner's call, and
+      the box stays `[~]` rather than `[x]` because it is a decision and not a
+      measurement — ticking it would say Mac was tested, which is the one thing
+      nobody may claim. Nothing in this listing, the manifests or the
+      notes-for-certification asserts that it was; the paragraph above is what
+      the repo knows and it is accurate as written.
+
+      **IF CERTIFICATION COMES BACK ON MAC, DO NOT EDIT `<Requirements>`.** The
+      obvious repair — adding a requirement block to drop a host off the
+      Packages list — fails package validation outright with "No Supported
+      Office Products", because `<Host Name="Presentation" />` is web + Windows
+      + Mac + iPad as ONE unit and there is no platform scoping
+      (office-js#6658). The two real options are to fix the finding, or to
+      withdraw the host in Partner Center. Recorded here because the wrong fix
+      is the one that looks right, and it is the same trap `SSF-Merge` has
+      written down for its own submission.
 - [x] Privacy + Terms pages live (they build to `/privacy.html`, `/terms.html`).
       **Re-verified 2026-09-16: both return 200, as do all 18 URLs across BOTH
       prod manifests.** It said 17 and `manifest-prod.xml`, which undercounted
@@ -402,6 +419,19 @@ consulting charts, CAGR, editable charts, data visualization
       `docs/evidence/windows-desktop-2026-09-13.json`; the picture message is
       `chartPicture` in `app.ts`; and "Tile map and Area" is the measured
       2-of-25 above, not a guess.
+
+      **ONE CLAUSE IN IT IS DERIVED AND NOT MEASURED**, and after the 2026-09-28
+      decision to submit with Mac unmeasured it is worth naming rather than
+      leaving inside a paragraph that says everything is sourced. "They insert
+      as native shapes in the desktop apps" comes from `wantsAutoPicture` in
+      `src/render/powerpoint.ts`, which returns false on `!opts.web` — the
+      auto-picture rescue is web-only, and all three call sites in `app.ts` pass
+      `web: isWebHost()`. On Windows that inference was then CHECKED, one
+      reading, `docs/evidence/windows-desktop-2026-09-13.json`. On Mac it stands
+      on the code alone. That is a fair sentence to ship — it is what the source
+      does, and the 1.10 floor means Mac runs that same source — but it is a
+      prediction, and a Mac tester who sees otherwise has found a real defect
+      rather than a documentation slip.
 
       **THOSE SOURCINGS ARE NOW PINNED BY A TEST**, `test/certification-notes.test.ts`
       — the ribbon labels against `manifest.xml`, the insert button and the

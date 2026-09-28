@@ -124,7 +124,17 @@ describe("the backlog's open count", () => {
     // It leaves the list by wearing "CLOSED" rather than by deletion, which the
     // `[a-z]` in `entry` is what makes work — an entry counts as open only
     // while its description still reads as one.
-    expect(ids, "section 1's real list").toEqual(["5", "21", "23"]);
+    //
+    // 21 CLOSED the same day, 2026-09-28, and closed the other way: by being
+    // ANSWERED. The owner's call was "submit with Mac unmeasured", which the
+    // entry itself had named as one of the two available outcomes — it said in
+    // its own words that it could not be closed by work. Worth pinning here
+    // because the honest state after it is "decided, still unmeasured", and the
+    // failure mode is someone later reading a closed item as a tested one.
+    //
+    // What is left is 5 and 23, and both are the owner's identity or his hand
+    // on the submit button. Nothing on this list is work any more.
+    expect(ids, "section 1's real list").toEqual(["5", "23"]);
     expect(
       openIds([
         "## 1. Open",

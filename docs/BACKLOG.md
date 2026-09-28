@@ -350,7 +350,9 @@ raised 90 -> 105 on the first evidence that ever bore on it. 24 was opened on
 product defect — see the note below. **22 closed on 2026-09-28**, when the two
 decisions it was waiting on turned out not to need making: cropping the frame to
 the ribbon row removes the Office header, and with it both the deck name and the
-owner's profile photo. THREE are open, counted off the list.**
+owner's profile photo. **21 closed the same day**, by the owner answering the
+question it had always been: submit with Mac unmeasured. TWO are open, counted
+off the list.**
 
 > The count here read "six" against a list of four, and then "five" against a
 > list of three. Stale both times, and this file states its own tie-breaker:
@@ -393,6 +395,16 @@ owner's profile photo. THREE are open, counted off the list.**
 > "Presentation64" — were never real: both live in the Office header, which the
 > crop removes. **THREE are open.** A thing parked here as owner-gated is worth
 > re-reading occasionally; this one had stopped being.
+>
+> **AND 21 CLOSED THE SAME DAY, BY BEING ANSWERED RATHER THAN DONE.** The owner
+> read it and said: submit with Mac unmeasured. That is a legitimate close — the
+> entry said in its own words that it "cannot be closed by work", and named the
+> two outcomes, so the decision IS the deliverable. What must not follow it is a
+> quiet upgrade from "decided" to "tested": the checklist box in
+> `docs/STORE-LISTING.md` is `[~]`, Mac is still unmeasured, and a later reader
+> who finds a `[x]` there should treat it as a defect in the paperwork. **TWO
+> are open** — 5, which needs his GitHub identity, and 23, which is him pressing
+> submit. Both are things only he can do, so this list is now entirely his.
 >
 > **FIVE FOR ONE DAY, AND BACK TO FOUR.** Item 24 was opened on 2026-09-17 —
 > "the `table` element does not draw on this host", measured five times, the
@@ -458,7 +470,7 @@ owner's profile photo. THREE are open, counted off the list.**
        is the cheapest of the three and needs no Script Lab.
        Submission is the owner's identity and his alone
 
-    21  the Mac host surface has never been measured, and cannot be here
+    21  CLOSED 2026-09-28 — the Mac host surface has never been measured, and cannot be here
        — the owner stated on 2026-09-13 that he has no access to a Mac. This is
        on the list because it cannot be closed by work: Mac cannot be dropped
        from the manifest (`<Host Name="Presentation" />` is web + Windows + Mac
@@ -472,6 +484,19 @@ owner's profile photo. THREE are open, counted off the list.**
        `docs/evidence/mac-webkit-2026-09-13.json` runs the chart engine on
        WebKit, Mac's engine family, 148/148 identical to Node — which kills the
        parse-and-format class of failure and says nothing about Office.js.
+       ANSWERED BY THE OWNER 2026-09-28: SUBMIT WITH MAC UNMEASURED. It closes
+       as ANSWERED, not as done, and the difference is the whole point of the
+       entry — Mac is still unmeasured, and nothing in the repo or the listing
+       now says otherwise. `docs/STORE-LISTING.md`'s checklist line for it is
+       `[~]`, deliberately not `[x]`: ticking it would assert a test that did
+       not happen, which is the one claim nobody here may make.
+       WHAT THE DECISION COMMITS US TO IF CERTIFICATION COMES BACK ON MAC: fix
+       the finding, or withdraw the host in Partner Center. NOT an edit to
+       `<Requirements>` — dropping a host that way fails package validation
+       outright with "No Supported Office Products", because Presentation is web
+       + Windows + Mac + iPad as one unit (office-js#6658, the same fact that
+       opened this item). The wrong repair is the one that looks obvious under
+       deadline, so it is written down before it is needed.
 
     22  CLOSED 2026-09-28 — the store screenshots, and the choice of how to make them
        — 1-5 at 1366x768. Added to this list on 2026-09-13 saying they "need a
