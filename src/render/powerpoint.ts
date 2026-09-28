@@ -3769,13 +3769,39 @@ export async function listChartsInSelection(): Promise<{ configJson: string; tar
   return boundedRun("reading the charts in the selection", async (context) => {
     const slide = context.presentation.getSelectedSlides().getItemAt(0);
     slide.load("id");
+    /**
+     * THE DECK'S IDS TOO — the same three lines `loadChartFromSelection`
+     * carries, and this was the call site that never got them.
+     *
+     * A SlideRange's id is not roundtrippable (office-js#2474): the deck's id
+     * is the range's id plus a `#suffix`, and `slides.getItem(rangeId)` answers
+     * InvalidArgument where `getItemAt(index)` works. Every target built below
+     * is resolved BY ID on a later edit, so an un-normalised id produces the
+     * silent failure `deckIdForSelectedSlide` documents — the update resolves
+     * it with `getItemOrNullObject`, gets a null object, and the chart is
+     * filtered out as "the slide is gone, nothing to do". The user clicks their
+     * chart, edits it, and nothing happens, with no error anywhere.
+     *
+     * The ids happen to round-trip on this web host today, which is precisely
+     * why it must not be left to luck on a host nobody here has run. Rides the
+     * sync this read already costs.
+     */
+    const deck = context.presentation.slides;
+    deck.load("items/id");
     const shapes = context.presentation.getSelectedShapes();
     shapes.load("items/id,items/left,items/top");
     await context.sync();
     const selected = loadedItems(shapes) ?? [];
     const tags = selected.map((s) => chartTagsOf(s));
     await context.sync();
-    const slideId = loadedValue(() => slide.id);
+    const rangeId = loadedValue(() => slide.id);
+    // Matched against the deck's own list rather than trusted. A host that will
+    // not answer for the deck leaves the range's id as the only thing there is,
+    // which is the behaviour every round on this host has had.
+    const deckIds = (loadedItems(deck) ?? []).map((sl) => loadedValue(() => sl.id)).filter((id): id is string => !!id);
+    const slideId = deckIds.length ? deckIdForSelectedSlide(rangeId, deckIds) : rangeId;
+    if (rangeId && slideId !== rangeId)
+      trace("pane", "the selected slide's id is not the deck's id for it", { rangeId, slideId: slideId ?? null });
     const charts = selected
       .map((s, i) => ({ at: targetRef(s), configJson: tagValue(tags[i].config), ...tags[i] }))
       // A shape whose position the host would not answer for cannot become an
