@@ -7,19 +7,52 @@
 import type { ChartConfig, ChartKind } from "../core/types";
 import { sheetToData, transposeSheet } from "../taskpane/datasheet";
 import { DEFAULT_SIZE } from "../core/chart";
+import { excelSerialToISO, isDateFormat } from "./serial-dates";
 
 /* global Excel, Office */
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-function rangeToConfig(values: unknown[][], kind: ChartKind, title: string, transpose: boolean): ChartConfig {
-  const cells = values.map((row) => row.map((v) => (v == null ? "" : String(v))));
+function rangeToConfig(
+  values: unknown[][],
+  kind: ChartKind,
+  title: string,
+  transpose: boolean,
+  numberFormat?: unknown[][],
+): ChartConfig {
+  /**
+   * A DATE CELL BECOMES AN ISO STRING, NOT ITS SERIAL NUMBER.
+   *
+   * `String(v)` over Excel's `values` turned every date into the number Excel
+   * stores it as, so a Gantt built from a real schedule column arrived as
+   * "46027" and drew a numeric axis — nothing downstream can tell a serial
+   * number from a quantity. `normalizeData` reads ISO strings in Gantt
+   * Start/End rows and marks the data as a calendar; this is what lets it.
+   * Every other cell is untouched.
+   */
+  const cells = values.map((row, r) =>
+    row.map((v, c) => {
+      if (v == null) return "";
+      if (typeof v === "number" && Number.isFinite(v) && isDateFormat(numberFormat?.[r]?.[c])) {
+        return excelSerialToISO(v);
+      }
+      return String(v);
+    }),
+  );
   // The datasheet convention is row 1 = categories, column A = series. A user
   // whose sheet is laid out the other way (series across the top) would silently
   // get a transposed chart — the transpose toggle swaps axes before parsing.
   const sheet = transpose ? transposeSheet({ cells }) : { cells };
   const totals = new Set<number>();
   const data = sheetToData(sheet, kind === "waterfall" ? totals : undefined);
+  // Name a row whose column-A cell was blank. `sheetToData` used to do this and
+  // no longer does — an invented name is wrong where its answer is written back
+  // into a chart the user already authored (see the note at that call) and right
+  // here, where the input is an arbitrary spreadsheet selection and a nameless
+  // row is a gap in the user's sheet rather than a decision they made.
+  data.series.forEach((s, i) => {
+    if (!s.name) s.name = `Series ${i + 1}`;
+  });
   return {
     kind,
     data,
@@ -34,13 +67,16 @@ async function generate() {
   try {
     await Excel.run(async (context) => {
       const range = context.workbook.getSelectedRange();
-      range.load("values,address");
+      // `numberFormat` rides the sync that was already happening — it is what
+      // separates a date from a quantity, and Excel's `values` cannot.
+      range.load("values,numberFormat,address");
       await context.sync();
       const cfg = rangeToConfig(
         range.values as unknown[][],
         ($("kind") as HTMLSelectElement).value as ChartKind,
         ($("title") as HTMLInputElement).value,
         ($("transpose") as HTMLInputElement | null)?.checked ?? false,
+        range.numberFormat as unknown[][],
       );
       ($("output") as HTMLTextAreaElement).value = JSON.stringify(cfg, null, 2);
       note.textContent = `Generated from ${range.address}. Paste into SSF Charts → Automation → Import.`;

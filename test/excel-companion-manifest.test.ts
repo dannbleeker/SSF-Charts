@@ -35,7 +35,24 @@ const read = (name: string) => readFileSync(fileURLToPath(new URL(`../${name}`, 
 
 const EXCEL_MANIFESTS = ["manifest-excel.xml", "manifest-excel-prod.xml"];
 
-const SRC = read("src/excel/excel.ts");
+/**
+ * EVERY module under src/excel, concatenated — not just `excel.ts`.
+ *
+ * The sweep below keys on the handles `Excel.run` hands out, and it used to
+ * read ONE file while a separate test asserted that one file was all there was.
+ * That pairing broke the moment the date helpers were split into
+ * `serial-dates.ts` (2026-09-28) — correctly split, because `excel.ts` wires
+ * the pane on import and nothing in it can be unit-tested without a DOM.
+ *
+ * Reading the whole directory is the version that does not depend on the second
+ * test staying true: a new module reaching the object model is swept whether or
+ * not anyone remembers to list it. The file-list assertion below is kept as a
+ * tripwire on the directory's shape, not as the thing the audit rests on.
+ */
+const EXCEL_TS = readdirSync(fileURLToPath(new URL("../src/excel", import.meta.url)))
+  .filter((f) => f.endsWith(".ts"))
+  .sort();
+const SRC = EXCEL_TS.map((f) => read(`src/excel/${f}`)).join("\n");
 const HTML = read("src/excel/excel.html");
 
 /**
@@ -58,6 +75,17 @@ const AUDITED: Record<string, string | null> = {
   "Range.load": null,
   "Range.values": "1.1",
   "Range.address": "1.1",
+  /**
+   * Added 2026-09-28 with the date fix. `values` hands back a date cell's
+   * SERIAL NUMBER, and a serial number cannot be told from a quantity by
+   * inspection — 46027 is an ordinary revenue figure. The format code is the
+   * only thing that says which it is.
+   *
+   * ExcelApi 1.1, quoted from `Range.numberFormat` in
+   * @types/office-js (`class Range`, not `RangeView`, whose identically-named
+   * member is 1.3). So it does NOT raise the companion's floor.
+   */
+  "Range.numberFormat": "1.1",
 };
 
 /**
@@ -99,10 +127,14 @@ describe("the Excel companion's ExcelApi floor", () => {
   });
 
   it("calls nothing outside the audited set — anywhere in src/excel", () => {
-    // The sweep reads one file, so prove one file is all there is. A second
-    // module reaching the object model would otherwise be invisible to it.
-    const ts = readdirSync(fileURLToPath(new URL("../src/excel", import.meta.url))).filter((f) => f.endsWith(".ts"));
-    expect(ts, "src/excel has grown a second module — re-derive the floor from it too").toEqual(["excel.ts"]);
+    // The sweep now reads EVERY .ts here (see `EXCEL_TS`), so a new module
+    // cannot hide from it. This stays as a tripwire on the directory's shape:
+    // a file appearing is worth a glance even when the audit already covers it.
+    expect(
+      EXCEL_TS,
+      "src/excel changed shape. The surface sweep covers every file here, so this is a prompt to look, " +
+        "not a failure in itself — update the list once you have.",
+    ).toEqual(["excel.ts", "serial-dates.ts"]);
 
     expect(
       [...excelSurface(SRC)].sort(),

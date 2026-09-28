@@ -1268,6 +1268,208 @@ describe("a config whose arrays are not arrays", () => {
 });
 
 /**
+ * A series with no name, which is the way a single-series chart gets written.
+ *
+ * `src/core/chart.ts` calls `{ "values": [1, 2, 3] }` "the obvious way to write
+ * a single-series chart" and repairs it, because it "crashed SEVENTEEN of the
+ * twenty-five kinds". `valueExtent` carries its own note about the skill writing
+ * exactly that into a POWERCHART_CONFIG tag and was repaired too. THE PANE WAS
+ * THE CALL SITE MISSED, and it is the one that has to open the chart again.
+ *
+ * `dataToSheet` put `undefined` in the name cell — the grid showed the literal
+ * word "undefined" — and `currentConfig()` then died on `undefined.trim()`. The
+ * chart still rendered everywhere else, so the pane was the only place it was
+ * broken: the preview read "Could not render", and Insert, Update chart, Save
+ * template, Copy link and JSON export all failed on a chart the skill's own
+ * .pptx draws correctly.
+ *
+ * Driven through the JSON box, which is the same `applyConfig` the shape tag,
+ * the template picker and the `#c=` share link all arrive through.
+ */
+describe("a series the author never named", () => {
+  beforeEach(async () => {
+    await bootPane();
+  });
+
+  /**
+   * Export, and PROVE the export ran.
+   *
+   * jsdom's `dispatchEvent` swallows whatever a listener throws, so a
+   * `currentConfig()` that dies leaves the IMPORTED text sitting in the box —
+   * and `exportConfig()` then parses the very JSON the test just wrote in.
+   * Every assertion about it passes, against a build with the defect. Two of
+   * the tests below were written that way first and proved nothing.
+   */
+  const exported = (): ChartConfig => {
+    const before = ($("json-io") as HTMLTextAreaElement).value;
+    $("json-export").click();
+    const after = ($("json-io") as HTMLTextAreaElement).value;
+    expect(after, "the export button did nothing — currentConfig() threw").not.toBe(before);
+    return JSON.parse(after);
+  };
+
+  const nameless = {
+    kind: "clustered",
+    data: {
+      categories: ["A", "B"],
+      series: [{ values: [1, 2] }, { values: [3, 4] }],
+    },
+  } as unknown as Partial<ChartConfig>;
+
+  it("opens, and the grid does not show the word undefined", () => {
+    importConfig(nameless);
+    const names = [...document.querySelectorAll<HTMLInputElement>('#datasheet input[data-col="0"]')].map(
+      (i) => i.value,
+    );
+    expect(names, "the name cell rendered a non-string straight into the input").not.toContain("undefined");
+  });
+
+  it("exports instead of taking every action in the pane down with it", () => {
+    // `currentConfig()` is what Insert, Update chart, Save template, Copy link,
+    // the JSON export and the preview all call first, so one throw there is all
+    // six at once.
+    importConfig(nameless);
+    const out = exported();
+    expect(out.data.series.map((s) => s.values)).toEqual([
+      [1, 2],
+      [3, 4],
+    ]);
+  });
+
+  it("renders a preview rather than an error message", async () => {
+    // What the user actually saw: the preview pane replaced by
+    // "Could not render: Cannot read properties of undefined (reading 'trim')".
+    importConfig(nameless);
+    await vi.waitFor(() => {
+      expect($("preview").querySelector("svg"), "no chart was drawn").toBeTruthy();
+    }, SETTLE);
+    expect($("preview").textContent ?? "", "the pane reported its own crash to the user").not.toMatch(
+      /Could not render/,
+    );
+  });
+
+  it("does not print a name on a chart that never had one", () => {
+    // The other half, and the one a crash fix can quietly get wrong: the grid
+    // cannot express "unnamed", so `sheetToData` used to invent `Series ${n}`.
+    // That is right for a caption and wrong for data — it is written back into
+    // the config, the shape tag and the saved template — so a round trip put
+    // "Series 1" and "Series 2" on the slide beside bars the author had left
+    // deliberately unlabelled. A round trip may not add ink.
+    const text = (cfg: ChartConfig) =>
+      buildChart(cfg)
+        .nodes.map((n) => (n as { text?: string }).text)
+        .filter((t): t is string => typeof t === "string");
+    const before = text(JSON.parse(JSON.stringify(nameless)) as ChartConfig);
+    importConfig(nameless);
+    expect(text(exported()), "the round trip named the series").toEqual(before);
+  });
+
+  it("keeps a name that is not a string, rather than dying on it", () => {
+    // Same root: `Series.name: string` is a promise JSON does not keep.
+    // `{ "name": 2024 }` is what a year-labelled series looks like when the
+    // author forgot the quotes, and the engine already coerces it.
+    importConfig({
+      kind: "clustered",
+      data: { categories: ["A", "B"], series: [{ name: 2024, values: [1, 2] }] },
+    } as unknown as Partial<ChartConfig>);
+    expect(exported().data.series[0].name).toBe("2024");
+  });
+
+  it("carries a nameless Gantt date row through as a calendar, not as epoch days", () => {
+    // The `data.dates` path reads the row NAME to decide whether to write the
+    // cell back as an ISO date, so it was the first `.trim()` to be reached.
+    importConfig({
+      kind: "gantt",
+      data: {
+        categories: ["Task"],
+        series: [{ values: ["2026-01-01"] }, { name: "End", values: ["2026-02-01"] }],
+      },
+    } as unknown as Partial<ChartConfig>);
+    const out = exported();
+    expect(out.data.dates, "a calendar Gantt came back as a numeric timeline").toBe(true);
+  });
+});
+
+/**
+ * What the decoration checkboxes SAY, against what the chart draws.
+ *
+ * `buildChart` lays out with `{ ...DEFAULT_DECOR, ...cfg.decorations }`, and
+ * three of those defaults are on. The pane read `!!d[key]` off the config alone,
+ * so a chart that simply omits the key — 97 of the 123 configs in the committed
+ * showcase omit `segmentLabels`, and so does anything an agent writes without
+ * thinking about decorations — drew segment labels, series labels and category
+ * labels under three boxes that all read UNCHECKED.
+ *
+ * Worse than cosmetic: turning one OFF took two clicks, because the first one
+ * set a flag the chart already had and changed nothing visible.
+ */
+describe("decoration toggles describe the chart in front of the user", () => {
+  beforeEach(async () => {
+    await bootPane();
+  });
+
+  const boxFor = (label: string) =>
+    [...document.querySelectorAll<HTMLLabelElement>("#options label")]
+      .filter((l) => l.textContent?.trim() === label)
+      .map((l) => l.querySelector<HTMLInputElement>("input[type=checkbox]"))[0];
+
+  it("ticks the on-by-default toggles for a config that says nothing about them", () => {
+    importConfig({
+      kind: "stacked",
+      data: {
+        categories: ["A", "B"],
+        series: [
+          { name: "S1", values: [10, 20] },
+          { name: "S2", values: [5, 7] },
+        ],
+      },
+    });
+    for (const label of ["Segment labels", "Series labels", "Category labels"]) {
+      expect(boxFor(label)?.checked, `"${label}" reads off on a chart that draws it`).toBe(true);
+    }
+    // And the ones the engine defaults OFF stay off, so this is not just
+    // "everything is ticked now".
+    for (const label of ["Column totals", "Value axis", "Gridlines"]) {
+      expect(boxFor(label)?.checked, `"${label}" reads on when nothing draws it`).toBe(false);
+    }
+  });
+
+  it("still reports an explicit false as off", () => {
+    importConfig({
+      kind: "stacked",
+      data: { categories: ["A", "B"], series: [{ name: "S1", values: [10, 20] }] },
+      decorations: { segmentLabels: false },
+    });
+    expect(boxFor("Segment labels")?.checked).toBe(false);
+  });
+
+  it("turns an on-by-default decoration off in ONE click", () => {
+    importConfig({
+      kind: "stacked",
+      data: { categories: ["A", "B"], series: [{ name: "S1", values: [10, 20] }] },
+    });
+    // `click()`, not `checked = false` — the user cannot set a state, only flip
+    // the one on screen. Setting it directly is what made the first version of
+    // this test pass against the defect: it asserted the handler works, which
+    // was never in doubt, instead of asserting that ONE flip from what the box
+    // actually shows turns the decoration off.
+    boxFor("Segment labels")!.click();
+    expect(exportConfig().decorations?.segmentLabels, "one click did not turn it off").toBe(false);
+  });
+
+  it("adds no decoration keys to a config the user never touched", () => {
+    // The read-side default must not leak into what is written: an untouched
+    // chart's exported config — and therefore its POWERCHART_CONFIG tag — has to
+    // stay as silent about decorations as it arrived.
+    importConfig({
+      kind: "stacked",
+      data: { categories: ["A", "B"], series: [{ name: "S1", values: [10, 20] }] },
+    });
+    expect(Object.keys(exportConfig().decorations ?? {})).toEqual([]);
+  });
+});
+
+/**
  * `??` catches null and undefined. A config's `width` can be anything.
  *
  * A config arrives from the JSON box, a saved template, a shape tag written in
@@ -1350,5 +1552,48 @@ describe("what Same Scale says it did", () => {
     await bootPane();
     const { sameScaleNote } = await import("../src/taskpane/app");
     expect(sameScaleNote({ base: "Applied to 6.", degraded: "1 fell back." }).status).toBe("err");
+  });
+
+  /**
+   * THE FOURTH SITE OF THIS CLASS — found 2026-09-28.
+   *
+   * Insert, update and same-scale were each fixed to compose. The JSON
+   * batch-insert handler still posted three sequential `note()` calls into the
+   * one-slot channel, so the last write won: a run with both a rescue and a
+   * degrade reported only the degraded clause, and the rescued charts — the
+   * ones "Explode to native shapes" turns back — went unmentioned. That steers
+   * the user away from the one control that recovers them, which the guard in
+   * `pane-host-actions.test.ts` already forbids from the other direction.
+   *
+   * Asserted against the SOURCE because the handler needs a live host and a
+   * host that degrades in a particular way to reach. What can be checked
+   * without one is that it composes rather than posting a sequence, which is
+   * the thing that was wrong.
+   */
+  it("the JSON batch insert composes one note rather than posting three", async () => {
+    const { readFileSync } = await import("node:fs");
+    // A plain relative path, as the other source-sweeps here use: this file
+    // runs under jsdom, where `import.meta.url` is an http URL and
+    // `fileURLToPath` refuses it.
+    const src = readFileSync("src/taskpane/app.ts", "utf8");
+    const handler = src.slice(src.indexOf('$("json-insert-batch")'));
+    const body = handler.slice(0, handler.indexOf("\n    );"));
+    expect(body, "the batch-insert handler no longer composes its outcome note").toContain("sameScaleNote({");
+    // Comments stripped before counting. The explanation above this handler
+    // says the words "note()" and "three notes", and a detector that reads its
+    // own postmortem as a violation is one somebody deletes — the same reason
+    // `is-main.test.ts` strips them.
+    const code = body
+      .split(/\/\*[\s\S]*?\*\//)
+      .join("")
+      .split("\n")
+      .map((l) => l.replace(/\/\/.*$/, ""))
+      .join("\n");
+    const posts = [...code.matchAll(/\bnote\(/g)].length;
+    expect(
+      posts,
+      `the batch-insert handler posts ${posts} notes into a channel that holds one, so all but the ` +
+        `last are erased. Compose them with sameScaleNote instead.`,
+    ).toBe(1);
   });
 });

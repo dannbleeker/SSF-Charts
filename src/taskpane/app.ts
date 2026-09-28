@@ -1,6 +1,6 @@
 import { buildChart, clampDim, DEFAULT_SIZE, valueExtent } from "../core/chart";
 import { worthOwnSlide, offerSentence, insertOutcomeSentence } from "../core/insert-cost";
-import { PALETTES } from "../core/style";
+import { DEFAULT_DECOR, PALETTES } from "../core/style";
 import type { ChartConfig, ChartKind, Decorations, Series } from "../core/types";
 import { resolveStyleFile, isEmptyStyle, type DeckStyle, type StylePreference } from "../core/deck-style";
 import { CHART_KINDS, sampleConfig } from "../core/samples";
@@ -1259,7 +1259,21 @@ function renderOptions() {
     const label = document.createElement("label");
     const cb = document.createElement("input");
     cb.type = "checkbox";
-    cb.checked = !!d[t.key];
+    // THE ENGINE'S DEFAULT WHEN THE CONFIG IS SILENT, not `false`.
+    //
+    // `buildChart` draws with `{ ...DEFAULT_DECOR, ...cfg.decorations }`, and
+    // three of those defaults are ON: segment labels, series labels and category
+    // labels. A config that simply omits `decorations` — 97 of the 123 charts in
+    // the committed showcase omit `segmentLabels` alone, and so does every
+    // config an agent writes without thinking about decoration — therefore drew
+    // all three while these boxes read UNCHECKED. The box was not describing the
+    // chart in front of the user, and turning one of them OFF took two clicks:
+    // one to set the flag it already had, one to clear it.
+    //
+    // Read-side only. The change handler below still writes an explicit boolean,
+    // so an untouched chart exports byte-identically and the key appears only
+    // once the user has actually said something about it.
+    cb.checked = !!(d[t.key] ?? DEFAULT_DECOR[t.key]);
     cb.addEventListener("change", () => {
       (d as Record<string, unknown>)[t.key] = cb.checked;
       renderPreview();
@@ -1636,9 +1650,17 @@ function renderOptions() {
   updateGroupCounts();
 }
 
-/** Series names from the sheet, excluding special rows. */
+/**
+ * Series names from the sheet, excluding special rows.
+ *
+ * `Series ${n}` for a row with no name, and the placeholder lives HERE rather
+ * than in `sheetToData` because here it is only ever a caption — the colour
+ * swatches this labels. `sheetToData`'s answer is written into the config, the
+ * shape tag and saved templates, so an invented name there printed itself onto
+ * charts whose author never gave the series one.
+ */
 function currentSeriesNames(): string[] {
-  return sheetToData(state.sheet).series.map((s) => s.name);
+  return sheetToData(state.sheet).series.map((s, i) => s.name || `Series ${i + 1}`);
 }
 
 function numInput(value: number, min = 1): HTMLInputElement {
@@ -3073,12 +3095,40 @@ function askTemplateName(suggested: string): Promise<string | null> {
   });
 }
 
+/**
+ * Write the template table back, and SAY SO when the browser refuses.
+ *
+ * The read side of this table has been guarded since it was written —
+ * `readStored` and `loadTemplates` both swallow a throwing `localStorage`, and
+ * the picture preference two screens away carries the argument in full: "a
+ * browser with storage blocked must not take the pane down over a checkbox".
+ * Both WRITES were left bare. An Office task pane is a third-party iframe, and
+ * in one with site data blocked (or once the origin's quota is full)
+ * `setItem` throws: the throw escaped the click handler, `renderTemplateList()`
+ * never ran, and Save looked exactly like Save-with-nothing-to-do — the name row
+ * closed, the picker did not change, and nothing was said.
+ *
+ * Louder than the picture preference on purpose. Failing to remember a checkbox
+ * is a small loss; a template is the chart the user just built, and a save that
+ * silently did not happen is discovered the next time they open the pane.
+ */
+function storeTemplates(all: Record<string, ChartConfig>, failure: string): boolean {
+  try {
+    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(all));
+    return true;
+  } catch (err) {
+    note(failure, "err", { error: err instanceof Error ? err.message : String(err) });
+    return false;
+  }
+}
+
 $("template-save").addEventListener("click", async () => {
   const name = await askTemplateName(state.title || state.kind);
   if (!name) return;
   const all = loadTemplates();
   all[name] = currentConfig();
-  localStorage.setItem(TEMPLATES_KEY, JSON.stringify(all));
+  if (!storeTemplates(all, "Couldn't save that template — this browser is not letting the pane store data ({error})."))
+    return;
   renderTemplateList();
 });
 $("template-list").addEventListener("change", () => {
@@ -3095,7 +3145,10 @@ $("template-delete").addEventListener("click", () => {
   const name = value.slice("user:".length);
   const all = loadTemplates();
   delete all[name];
-  localStorage.setItem(TEMPLATES_KEY, JSON.stringify(all));
+  if (
+    !storeTemplates(all, "Couldn't delete that template — this browser is not letting the pane store data ({error}).")
+  )
+    return;
   renderTemplateList();
 });
 renderTemplateList();
@@ -4703,20 +4756,35 @@ function wireInsert() {
           else if (warn) rescued++;
           await insertSceneIntoSlide(scene, { tagData: JSON.stringify(cfg), pictureBase64: png });
         }
-        note("Inserted {n} chart(s) on the current slide.", "ok", { n: configs.length });
-        if (rescued) {
-          note(
-            '{r} of them were too dense for this host and went in as pictures — "Explode to native shapes" turns them back.',
-            "ok",
-            { r: rescued },
-          );
-        }
-        if (degraded) {
-          note("Inserted {n} chart(s), but {d} image chart(s) fell back to native shapes.", "err", {
-            n: configs.length,
-            d: degraded,
-          });
-        }
+        /**
+         * ONE NOTE, COMPOSED — the fourth instance of this class.
+         *
+         * These were three sequential `note()` calls into a channel that holds
+         * ONE value, so the last write won and every earlier fact was gone.
+         * With both a rescue and a degrade only the degraded clause survived,
+         * which is the worst of the three outcomes: the rescued charts are
+         * exactly the ones "Explode to native shapes" turns back, so the user
+         * was steered away from the one control that recovers them.
+         * `pane-host-actions.test.ts` already guards that steering from the
+         * other direction.
+         *
+         * `sameScaleNote` is the composer the insert, update and same-scale
+         * sites already share — outcome first, one clause per non-zero
+         * qualifier, `err` only when something actually degraded. The clause
+         * keys are prefix-free, so composing them does not say "Inserted"
+         * twice.
+         */
+        const said = sameScaleNote({
+          base: t("Inserted {n} chart(s) on the current slide.", { n: configs.length }),
+          rescued: rescued
+            ? t(
+                '{n} chart(s) were too dense for this host and went in as pictures — "Explode to native shapes" turns them back.',
+                { n: rescued },
+              )
+            : "",
+          degraded: degraded ? t("{n} image chart(s) fell back to native shapes.", { n: degraded }) : "",
+        });
+        note(said.text, said.status);
       }),
     );
     // Elements insert at a small default offset (they're compact shapes).
