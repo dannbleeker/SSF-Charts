@@ -3041,7 +3041,12 @@ describe("demo-insert one-shot deck insert", () => {
      * nothing enforced it. A throw was survivable because it catches. A hang was
      * not, and a hang is what a dying host actually does.
      */
-    const app = await import("../src/taskpane/app");
+    // THE BUDGET MOVED WITH ITS CODE, 2026-09-29. `collectDeckEvidence` and its
+    // dial are testing-panel machinery and left `app.ts` for `harness-ui.ts`
+    // along with the rest of it; this import follows them. The pane is still
+    // booted by the `bootHostPane` above — `app.ts` imports the harness module,
+    // so both are loaded either way.
+    const app = await import("../src/taskpane/harness-ui");
     // THE DEFAULT, asserted here because every test below overrides it. The
     // archive says 45s is 5.6x the worst complete tail ever recorded (7.96s over
     // 31 completions) and 2x the worst single deck scan (22.1s of 6,785), with

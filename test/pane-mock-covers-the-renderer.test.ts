@@ -59,26 +59,50 @@ export function mockedKeys(source: string, modulePath: string): string[] {
   return [...keys];
 }
 
+/**
+ * BOTH PANE MODULES, 2026-09-29.
+ *
+ * This read `app.ts` alone. When the testing panel moved to `harness-ui.ts` it
+ * took about thirty renderer imports with it — and `vi.mock` replaces the module
+ * for EVERY importer, so a name only `harness-ui.ts` uses is just as fatal if
+ * the factory omits it. The guard would have kept passing over the half it could
+ * still see: the same narrowing this suite has just been swept for.
+ *
+ * Read as one corpus rather than two checks, because what matters is the UNION —
+ * whichever file imports a name, the single mock has to define it.
+ */
+const PANE_MODULES = ["src/taskpane/app.ts", "src/taskpane/harness-ui.ts"];
+
 describe("the pane mock covers what the pane imports", () => {
-  const app = readFileSync("src/taskpane/app.ts", "utf8");
+  const panes = PANE_MODULES.map((f) => readFileSync(f, "utf8"));
   const paneTest = readFileSync("test/pane-host-actions.test.ts", "utf8");
+  const importedByThePane = (): string[] => [
+    ...new Set(panes.flatMap((src) => importedValuesFrom(src, "../render/powerpoint"))),
+  ];
 
   it("parses both sides, or it is comparing nothing with nothing", () => {
     // The failure mode of a guard like this is matching zero on both sides and
-    // passing forever. `app.ts` imports dozens from the renderer; if this ever
+    // passing forever. The pane imports dozens from the renderer; if this ever
     // reads near zero, the parser broke rather than the import list shrinking.
-    expect(importedValuesFrom(app, "../render/powerpoint").length).toBeGreaterThan(30);
+    expect(importedByThePane().length).toBeGreaterThan(30);
     expect(mockedKeys(paneTest, "../src/render/powerpoint").length).toBeGreaterThan(30);
+    // AND EACH FILE IS SEEN. A union that silently came from one file would pass
+    // the floor above while covering half of what it claims.
+    for (const [i, src] of panes.entries())
+      expect(
+        importedValuesFrom(src, "../render/powerpoint").length,
+        `${PANE_MODULES[i]} contributed no renderer imports — it moved, or the parser stopped seeing it`,
+      ).toBeGreaterThan(0);
   });
 
-  it("defines every renderer value app.ts imports", () => {
-    const imported = importedValuesFrom(app, "../render/powerpoint");
+  it("defines every renderer value the pane imports", () => {
+    const imported = importedByThePane();
     const mocked = new Set(mockedKeys(paneTest, "../src/render/powerpoint"));
     const missing = imported.filter((n) => !mocked.has(n));
     expect(
       missing,
       `test/pane-host-actions.test.ts mocks the renderer but does not define: ${missing.join(", ")}\n` +
-        "Add it to the vi.mock factory, or app.ts throws at import and every test in that file dies at once.",
+        "Add it to the vi.mock factory, or the pane throws at import and every test in that file dies at once.",
     ).toEqual([]);
   });
 

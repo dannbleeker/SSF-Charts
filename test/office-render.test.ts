@@ -79,7 +79,7 @@ import {
  */
 const ADDS_TO_DEFEAT_ONE_SLIDE = 1 + MAX_ADD_RETRY_ROUNDS;
 import { readFileSync } from "fs";
-import { describeOffenders, sweep } from "./helpers/module-source";
+import { describeOffenders, sourceDeclaring, sweep } from "./helpers/module-source";
 import { syncsSoFar, resetSyncCount, slideCount } from "../src/render/powerpoint";
 import { onTrace, setTracing, traceAbout, traceLog } from "../src/core/trace";
 import { planReconcile } from "../src/core/reconcile";
@@ -8070,7 +8070,18 @@ describe("counting what the round asks of the host", () => {
      * crash record too, where `traceLog` is a local array read and survives a
      * host that has stopped answering.
      */
-    const pane = readFileSync("src/taskpane/app.ts", "utf8");
+    /**
+     * READ FROM WHEREVER IT LIVES, 2026-09-29. This pinned `src/taskpane/app.ts`
+     * by name, and the round runner moved to `harness-ui.ts` when the testing
+     * panel was lifted out of the pane. The guard went loudly red, which is the
+     * right failure — but a guard that has to be re-pointed by hand every time
+     * code moves is one that eventually gets deleted instead.
+     *
+     * `sourceDeclaring` finds the file that holds the round handler and throws
+     * if that is none of them or more than one, so the next move is caught the
+     * same way rather than silently passing over the wrong file.
+     */
+    const pane = sourceDeclaring(/resetSyncCount\(\);/, "src");
     expect(pane, "the counter is no longer zeroed per round").toMatch(/resetSyncCount\(\);\s*\n\s*const traceFrom/);
     expect(pane, "the round file stopped carrying its sync count").toMatch(/syncs: syncsSoFar\(\)/);
     expect(pane, "a crashed round can no longer report a sync count").toMatch(
