@@ -1,23 +1,10 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { spawnSync } from "child_process";
-import { mkdtempSync, writeFileSync, rmSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
 // @ts-expect-error — plain .mjs tools, no types; both are deliberately
 // independent of src/ so they cannot inherit a bug from the code they audit.
 import { readDeckBytes } from "../scripts/verify-deck.mjs";
 // @ts-expect-error — as above.
-import { triage, runsIn, selfTestIn, knownBug, deckEvidence, poolRasteriseArms } from "../scripts/triage.mjs";
-// Its own line, and this file has now predicted its own bug three times: adding
-// a name to the grouped import above pushes it over the print width, prettier
-// reflows it across lines, and `@ts-expect-error` covers only the NEXT line — so
-// the directive stops reaching the `from` clause. Suite green, `tsc` red.
-// @ts-expect-error — as above.
-import { poolTagFaults } from "../scripts/triage.mjs";
-// Its own line, same reason as every other single import in this file.
-// @ts-expect-error — as above.
-import { poolGroupVsTag } from "../scripts/triage.mjs";
+import { triage, runsIn, selfTestIn, knownBug, deckEvidence } from "../scripts/triage.mjs";
 // A NAMESPACE import, destructured below, and the fourth time this trap has been
 // paid for. `@ts-expect-error` covers exactly one LINE — the one carrying `from`
 // — so a named list long enough for prettier to wrap moves `from` four lines
@@ -26,20 +13,42 @@ import { poolGroupVsTag } from "../scripts/triage.mjs";
 // A namespace import is one line whatever is destructured off it.
 // @ts-expect-error — as above.
 import * as pools from "../scripts/triage.mjs";
+const { scenarioRegressions, profileDivergence, traceNovelty, traceSignature } = pools;
+/**
+ * EVERY POOLED READER, from the module they moved to on 2026-09-29.
+ *
+ * They left `triage.mjs` so that Stryker could mutate them — see
+ * `scripts/round-pools.mjs`'s header, and the four decorative tests
+ * `stryker.config.json` recorded before anyone thought to check.
+ *
+ * ONE NAMESPACE IMPORT, for the reason this file has now paid for four times
+ * above. Thirty-nine names as a named list is a statement prettier will wrap,
+ * and the `@ts-expect-error` below covers exactly the next LINE.
+ */
+// @ts-expect-error — as above.
+import * as rp from "../scripts/round-pools.mjs";
 const {
-  poolFreshVsEstablished,
-  poolStarvedQuestions,
+  paneAgeAtStartSeconds,
   poolBatchSpanVsGroup,
-  scenarioRegressions,
-  FALLBACK_SIGNALS,
-  poolOriginTagLosses,
-  roundProfile,
-  profileDivergence,
-  traceNovelty,
-  traceSignature,
-  poolUpdateShortfalls,
+  poolDriverRuns,
+  poolEveryDraw,
+  poolFallbackRates,
+  poolFreshVsEstablished,
+  poolGroupVsTag,
   poolGroupVsTagCoverage,
-} = pools;
+  poolGroupingOutcome,
+  poolInPlaceUpdates,
+  poolOriginTagLosses,
+  poolPairPosition,
+  poolProfileDisagreements,
+  poolRasteriseArms,
+  poolScenarioFriction,
+  poolScenarioPopulations,
+  poolStarvedQuestions,
+  poolTagFaults,
+  poolUpdateShortfalls,
+  roundProfile,
+} = rp;
 // Its own line, for the reason spelled out below: adding it to the grouped
 // import above reflowed that statement across lines, and `@ts-expect-error`
 // covers only the NEXT line — so the directive stopped reaching the `from`
@@ -52,18 +61,7 @@ const {
 // cannot be reflowed out from under it.
 // @ts-expect-error — as above.
 import * as pooled from "../scripts/triage.mjs";
-const {
-  poolEveryDraw,
-  poolProfileDisagreements,
-  probeFlipsWithinBuild,
-  poolPairPosition,
-  roundSpanSeconds,
-  paneAgeAtStartSeconds,
-  poolFallbackRates,
-  poolDriverRuns,
-  unreadSignals,
-  poolInPlaceUpdates,
-} = pooled;
+const { probeFlipsWithinBuild, roundSpanSeconds, unreadSignals } = pooled;
 // Its own line: adding it above pushes that import over the print width, and a
 // reflowed import moves this directive off the statement it is annotating.
 // @ts-expect-error — as above.
@@ -75,12 +73,6 @@ import { describeFinding } from "../scripts/triage.mjs";
 // reported. The suite stayed green and `tsc` went red.
 // @ts-expect-error — as above.
 import { batchPopulations } from "../scripts/triage.mjs";
-// @ts-expect-error — as above. One directive per import, one import per line.
-import { poolScenarioPopulations } from "../scripts/triage.mjs";
-// @ts-expect-error — as above. One directive per import, one import per line.
-import { poolGroupingOutcome } from "../scripts/triage.mjs";
-// @ts-expect-error — as above. One directive per import, one import per line.
-import { poolScenarioFriction } from "../scripts/triage.mjs";
 // @ts-expect-error — as above. One directive per import, one import per line.
 import { deckGeometryFaults } from "../scripts/triage.mjs";
 import { buildDeckBase64 } from "../src/render/pptx-deck";
@@ -981,7 +973,7 @@ describe("triage — logs that are not inserts", () => {
     // FAILURES: 133 rounds of silence that could mean "the host resolved
     // everything" or "the sweep never ran", with no way to tell.
     // @ts-expect-error — plain .mjs tool, no types.
-    const { poolAgedHandleResolves } = await import("../scripts/triage.mjs");
+    const { poolAgedHandleResolves } = await import("../scripts/round-pools.mjs");
     const round = (entries: { message: string; data?: Record<string, number> }[]) => ({ trace: { entries } });
 
     expect(
@@ -1690,65 +1682,6 @@ describe("triage — naming the host bug behind a failure", () => {
 });
 
 /**
- * The tool's own documented invocation must not print LESS than the degraded one.
- *
- * `reportTrace` was reachable only from the no-deck branch, so
- * `triage.mjs <deck.pptx> <run-log.json>` — the form in the usage line and in
- * CLAUDE.md, the one you use when you actually have a deck — dropped the entry
- * histogram, "phases an error escaped", the problems tally and every
- * `known host bug: office-js#…` annotation, and said nothing about it. A round
- * with a trace and no self-test went further and reported "this log holds no
- * runs and no self-test" over 186 entries, exit 0.
- *
- * Driven through the CLI rather than the exported functions on purpose: what
- * was wrong was the WIRING, and every function involved was already correct.
- */
-describe("triage's two invocations", () => {
-  const run = (args: string[]) =>
-    spawnSync(process.execPath, ["scripts/triage.mjs", ...args], { encoding: "utf8", timeout: 60_000 });
-
-  it("reports the trace whether or not a deck was passed", async () => {
-    const log = {
-      build: "test-build",
-      host: "test-host",
-      runs: [],
-      trace: {
-        summary: {
-          steps: [{ scope: "draw", message: "batch committed", n: 2 }],
-          problems: [
-            {
-              text: "PowerPoint did not respond while drawing shapes 1-10 of 24 (45s) | at=drawing the chart's shapes",
-              n: 1,
-            },
-          ],
-        },
-        entries: [
-          { ms: 1, scope: "draw", message: "batch committed" },
-          { ms: 2, scope: "draw", message: "batch committed" },
-        ],
-      },
-      selftest: [],
-    };
-    const dir = mkdtempSync(join(tmpdir(), "pc-triage-"));
-    const logPath = join(dir, "round.json");
-    writeFileSync(logPath, JSON.stringify(log));
-
-    const withoutDeck = run([logPath]);
-    const withDeck = run(["examples/showcase.pptx", logPath]);
-
-    // The trace is a property of the FILE, like the structural faults, so both
-    // forms must show it — and in particular the problem line, which is the
-    // most locating thing in any round.
-    expect(withoutDeck.stdout).toMatch(/TRACE 2 entries/);
-    expect(withDeck.stdout, "the deck path dropped the whole trace section").toMatch(/TRACE 2 entries/);
-    expect(withDeck.stdout).toMatch(/did not respond while drawing/);
-    // And a round that carries a trace is never described as holding nothing.
-    expect(withDeck.stdout).not.toMatch(/holds no runs and no self-test/);
-    rmSync(dir, { recursive: true, force: true });
-  }, 120_000);
-});
-
-/**
  * A picture can be called blank only if it looks like nothing.
  *
  * The baseline used to be `Math.min` over the very shots being classified, so
@@ -2418,7 +2351,7 @@ describe("grouping, which no scenario verdict reports", () => {
     // correct group — an inference the evidence could not reach, which is why
     // the ids are recorded rather than a verdict.
     // @ts-expect-error — plain .mjs tool, no types.
-    const { poolPositionalGuess } = await import("../scripts/triage.mjs");
+    const { poolPositionalGuess } = await import("../scripts/round-pools.mjs");
     const ev = (mine: (string | null)[], chose: (string | null)[]) => ({
       message: "the positional guess picked the tail of the listing",
       data: { index: 0, mine, chose, listed: 15 },
@@ -2475,7 +2408,7 @@ describe("grouping, which no scenario verdict reports", () => {
     // per-slide count, ordered as the charts are — while this reader went on
     // printing "there is no reliable occupancy measure in a round".
     // @ts-expect-error — plain .mjs tool, no types.
-    const { poolOccupancyCost } = await import("../scripts/triage.mjs");
+    const { poolOccupancyCost } = await import("../scripts/round-pools.mjs");
     const held = (shapes: number[]) => ({
       message: "what each slide held before the rescale",
       data: { charts: shapes.length, slides: shapes.map((n, i) => ({ slide: `s${i}`, shapes: n })) },
@@ -2829,41 +2762,6 @@ describe("a scenario regression carries its own history", () => {
   });
 });
 
-describe("a detector keyed to a message that no longer exists", () => {
-  it("matches only trace messages the source still emits", () => {
-    // THE FAILURE MODE THIS PREVENTS IS SILENCE. Every one of these tools finds
-    // its evidence by comparing a trace message to a string literal. Rename the
-    // message in src/ and the detector does not break — it reports ZERO, every
-    // round, forever, and zero is exactly what a healthy round looks like.
-    //
-    // Nothing in the repo checked this. All the current literals happen to be
-    // live, which is the point: the guard is for the rename that has not
-    // happened yet, and the archive would carry months of false calm first.
-    const tool = readFileSync("scripts/triage.mjs", "utf8");
-    const app = readdirSync("src", { recursive: true })
-      .map(String)
-      .filter((f) => f.endsWith(".ts"))
-      .map((f) => readFileSync(`src/${f}`, "utf8"))
-      .join("\n");
-
-    const matched = new Set<string>(Object.keys(FALLBACK_SIGNALS));
-    // Deliberately backslash-free: a regex written through a heredoc has been
-    // corrupted here before, and a mangled one matches nothing while looking fine.
-    for (const m of tool.matchAll(/(?:e[.])?message *=== *"([^"]+)"/g)) matched.add(m[1]);
-    for (const m of tool.matchAll(/[^A-Za-z]m === "([^"]+)"/g)) matched.add(m[1]);
-
-    // THE REGEXES THEMSELVES ARE INSTRUMENTS. If one stops matching, the loop
-    // below passes vacuously and this test becomes decoration — the exact shape
-    // it exists to catch. Claim a positive count, not the absence of failures.
-    expect(matched.size, "the extractors matched almost nothing — they have stopped working").toBeGreaterThanOrEqual(8);
-
-    for (const message of matched)
-      expect(app, `no source file emits "${message}" any more — its detector now reports zero forever`).toContain(
-        message,
-      );
-  });
-});
-
 describe("what it took to start each round", () => {
   it("counts only the rounds that actually carry the field", () => {
     // AN ABSENT READING IS NOT A CLEAN ONE. `driverRun` is newer than most of
@@ -2996,7 +2894,7 @@ describe("what it took to start each round", () => {
     // is 36 throwing read-backs, about 1.2 a round. The counter that separates
     // them is `where`, and it sat in the same object the whole time.
     // @ts-expect-error — plain .mjs tool, no types.
-    const { poolPartsListOutcome } = await import("../scripts/triage.mjs");
+    const { poolPartsListOutcome } = await import("../scripts/round-pools.mjs");
     const ev = (data: Record<string, unknown>) => ({ message: "parts list outcome", data });
     const pooled = poolPartsListOutcome([
       {
@@ -3045,7 +2943,7 @@ describe("what it took to start each round", () => {
     // identical evidence, which is the house defect aimed at a change made to
     // cure it.
     // @ts-expect-error — plain .mjs tool, no types.
-    const { poolSettleAsks } = await import("../scripts/triage.mjs");
+    const { poolSettleAsks } = await import("../scripts/round-pools.mjs");
     const pass = (attempt: number | undefined, charts: number) => ({
       message: "re-reading the slide's shapes again after a settle delay",
       data: attempt === undefined ? { charts } : { attempt, charts },
@@ -3092,7 +2990,7 @@ describe("what it took to start each round", () => {
     // was two rounds short under a field named for the change. That is the
     // same defect one layer up, so the two clocks are pinned apart here.
     // @ts-expect-error — plain .mjs tool, no types.
-    const mod = await import("../scripts/triage.mjs");
+    const mod = await import("../scripts/round-pools.mjs");
     const { poolSettleAsks, SECOND_ASK_BUILD } = mod;
     const ask = (attempt?: number) => ({
       message: "re-reading the slide's shapes again after a settle delay",
@@ -3146,7 +3044,7 @@ describe("what it took to start each round", () => {
     //    were the slower ones, and first batches cost 5802ms against 5591ms
     //    for later ones. The label never carried the meaning put on it.
     // @ts-expect-error — plain .mjs tool, no types.
-    const { poolDrawCostCurve } = await import("../scripts/triage.mjs");
+    const { poolDrawCostCurve } = await import("../scripts/round-pools.mjs");
     const issued = (upTo: number, onSlide: number, prevBatchMs?: number) => ({
       message: "batch issued",
       data: prevBatchMs === undefined ? { upTo, onSlide } : { upTo, onSlide, prevBatchMs },
@@ -3190,7 +3088,7 @@ describe("what it took to start each round", () => {
     // Under REREAD_ATTEMPTS = 1 that chart is a survivor. Counting that the ask
     // FIRED would have said nothing about that; the outcome is the whole point.
     // @ts-expect-error — plain .mjs tool, no types.
-    const { poolSettleAsks } = await import("../scripts/triage.mjs");
+    const { poolSettleAsks } = await import("../scripts/round-pools.mjs");
     const ask = (attempt: number) => ({
       message: "re-reading the slide's shapes again after a settle delay",
       data: { attempt, charts: 1 },
@@ -3236,7 +3134,7 @@ describe("what it took to start each round", () => {
     // different cost, and the run carries a same-size row at a different
     // changed count. Deleting either guard now fails.
     // @ts-expect-error — plain .mjs tool, no types.
-    const { poolUpdateCost } = await import("../scripts/triage.mjs");
+    const { poolUpdateCost } = await import("../scripts/round-pools.mjs");
     const upd = (changed: number, of: number, ms: number, chart?: string) => ({
       message: "updated only the shapes that changed",
       data: chart === undefined ? { changed, of, ms } : { changed, of, ms, chart },
@@ -3311,7 +3209,7 @@ describe("what it took to start each round", () => {
     // 12-37 seconds each. A 37-second update issuing no syncs is a broken gauge,
     // and it was visible in the first round that carried it.
     // @ts-expect-error — plain .mjs tool, no types.
-    const { poolFlatFields } = await import("../scripts/triage.mjs");
+    const { poolFlatFields } = await import("../scripts/round-pools.mjs");
     const entry = (message: string, data: Record<string, number>) => ({ message, data });
     const many = (n: number, make: (i: number) => unknown) => Array.from({ length: n }, (_, i) => make(i));
 
@@ -3373,7 +3271,7 @@ describe("what it took to start each round", () => {
     // it to anything — which is the difference between a number being on screen
     // and a number being read, and it is why I called round 167 clean tonight.
     // @ts-expect-error — plain .mjs tool, no types.
-    const { poolFullestSlide, CLEAN_SLIDE_CEILING } = await import("../scripts/triage.mjs");
+    const { poolFullestSlide, CLEAN_SLIDE_CEILING } = await import("../scripts/round-pools.mjs");
     const deck = (...counts: number[]) => ({ deck: { inventory: counts.map((count) => ({ count })) } });
     expect(poolFullestSlide([deck(0, 4, 1, 2, 5, 1, 1), deck(0, 4, 1, 2, 17, 1, 1)], 8)).toEqual([5, 17]);
     expect(17).toBeGreaterThan(CLEAN_SLIDE_CEILING);
@@ -3403,7 +3301,7 @@ describe("what it took to start each round", () => {
     // A hand-collected sample cannot notice that its own conclusion is a
     // function of a variable it never varied. The archive can.
     // @ts-expect-error — plain .mjs tool, no types.
-    const { poolIdChurn } = await import("../scripts/triage.mjs");
+    const { poolIdChurn } = await import("../scripts/round-pools.mjs");
     const churn = (events: { fresh: number; before: number }[]) => ({
       trace: {
         entries: events.map((e) => ({
@@ -3578,7 +3476,7 @@ describe("a counter that did not move, at the scope it was measured", () => {
 describe("a run of one, told apart from the first of many", () => {
   it("does not pool a run of one into the first-chart arm", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolUpdateCost } = await import("../scripts/triage.mjs");
+    const { poolUpdateCost } = await import("../scripts/round-pools.mjs");
     const entry = (chart: string, ms: number) => ({
       message: "updated only the shapes that changed",
       data: { chart, ms, changed: 18, of: 24, slideId: "s1" },
@@ -3628,7 +3526,7 @@ describe("a run of one must not set the baseline it is scored against", () => {
 
   it("keeps a lone chart out of the per-shape fit", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolUpdateCost } = await import("../scripts/triage.mjs");
+    const { poolUpdateCost } = await import("../scripts/round-pools.mjs");
     const log = {
       trace: {
         entries: [
@@ -3648,7 +3546,7 @@ describe("a run of one must not set the baseline it is scored against", () => {
 
   it("keeps a lone chart out of the rest arm", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolUpdateCost } = await import("../scripts/triage.mjs");
+    const { poolUpdateCost } = await import("../scripts/round-pools.mjs");
     const log = {
       trace: {
         entries: [entry("1/8", 37000, 18), entry("2/8", 17000, 18), entry("3/8", 17200, 18), entry("1/1", 17100, 18)],
@@ -3663,7 +3561,7 @@ describe("a run of one must not set the baseline it is scored against", () => {
 describe("what the first-chart cost was standing in for", () => {
   it("reads prior draws per slide off the run's own batch lines", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { priorDrawsOnSlide } = await import("../scripts/triage.mjs");
+    const { priorDrawsOnSlide } = await import("../scripts/round-pools.mjs");
     const m = priorDrawsOnSlide([
       { message: "batch issued", data: { onSlideKey: "257", onSlide: 0 } },
       { message: "batch issued", data: { onSlideKey: "257", onSlide: 42 } },
@@ -3927,7 +3825,7 @@ describe("the noise floor, measured where the session drift is held out", () => 
 
   it("takes only the first round of a session", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolNoiseFloor } = await import("../scripts/triage.mjs");
+    const { poolNoiseFloor } = await import("../scripts/round-pools.mjs");
     // A sample from minute 116 of a session is measuring the drift, not the
     // floor: ten back-to-back rounds showed the same measurement roughly double
     // across two hours. Excluded, not weighted and not caveated.
@@ -3941,7 +3839,7 @@ describe("the noise floor, measured where the session drift is held out", () => 
 
   it("keeps builds apart", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolNoiseFloor } = await import("../scripts/triage.mjs");
+    const { poolNoiseFloor } = await import("../scripts/round-pools.mjs");
     // A floor is a statement about ONE build run repeatedly. Pooling two builds
     // measures the difference between them, which is the thing a floor exists
     // to judge.
@@ -3960,14 +3858,14 @@ describe("the noise floor, measured where the session drift is held out", () => 
 
   it("takes the median of a round, so one slow chart is not the round", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolNoiseFloor } = await import("../scripts/triage.mjs");
+    const { poolNoiseFloor } = await import("../scripts/round-pools.mjs");
     const per = poolNoiseFloor([round("230-aaa.json", "aaa", 1, [15000, 16000, 17000])]);
     expect(per.get("aaa")[0].laterMed).toBe(16000);
   });
 
   it("ignores the first chart of a run, which is not a later chart", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolNoiseFloor } = await import("../scripts/triage.mjs");
+    const { poolNoiseFloor } = await import("../scripts/round-pools.mjs");
     // The first chart of a multi-chart run costs ~2.2x a later one — it sits on
     // the deck's busiest slide. Letting it into the median would make the floor
     // a measurement of which slide the harness happened to fill.
@@ -4026,7 +3924,7 @@ describe("every way a probe declines, not just the one word", () => {
 
   it("counts a documented non-answer as a non-answer", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolStarvedQuestions } = await import("../scripts/triage.mjs");
+    const { poolStarvedQuestions } = await import("../scripts/round-pools.mjs");
     // `no-refusal` carries the probe's own words: "the host grouped today, so
     // the question was never put. Not an answer." The reader of that value
     // counted it as one, so a probe that never answered stayed out of the report
@@ -4037,7 +3935,7 @@ describe("every way a probe declines, not just the one word", () => {
 
   it("covers the other two prefixes the host declines with", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolStarvedQuestions } = await import("../scripts/triage.mjs");
+    const { poolStarvedQuestions } = await import("../scripts/round-pools.mjs");
     for (const answer of ["no-creation-id", "no-group-id", "unreadable"]) {
       const rows = poolStarvedQuestions([log("q", answer), log("q", answer)]);
       expect(
@@ -4051,7 +3949,7 @@ describe("every way a probe declines, not just the one word", () => {
     // Widening the pattern must not bury a working question. A probe with any
     // real answer is doing its job, however much silence surrounds it.
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolStarvedQuestions } = await import("../scripts/triage.mjs");
+    const { poolStarvedQuestions } = await import("../scripts/round-pools.mjs");
     const rows = poolStarvedQuestions([log("r", "no-refusal"), log("r", "no-refusal"), log("r", "tags-gone")]);
     expect(rows.map((r: { id: string }) => r.id)).not.toContain("r");
   });
@@ -4061,7 +3959,7 @@ describe("every way a probe declines, not just the one word", () => {
     // or retire, and a question the host will not answer is a finding to leave
     // alone. Collapsing them would send someone to fix the host.
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolStarvedQuestions } = await import("../scripts/triage.mjs");
+    const { poolStarvedQuestions } = await import("../scripts/round-pools.mjs");
     const ours = poolStarvedQuestions([log("s", "no-scratch-shape"), log("s", "no-scratch-shape")])[0];
     const host = poolStarvedQuestions([log("t", "no-creation-id"), log("t", "no-creation-id")])[0];
     expect(ours.never).toBeGreaterThan(ours.unanswerable);
@@ -4082,7 +3980,7 @@ describe("a round states its own error bar", () => {
 
   it("measures how much a round agreed with itself", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolWithinRoundSpread } = await import("../scripts/triage.mjs");
+    const { poolWithinRoundSpread } = await import("../scripts/round-pools.mjs");
     // Round 230 for real: five later charts inside 2% of each other.
     const tight = poolWithinRoundSpread([round("230-a.json", [19468, 19695, 19237, 19311, 19552])]);
     expect(tight[0].pct).toBe(2);
@@ -4093,7 +3991,7 @@ describe("a round states its own error bar", () => {
 
   it("will not compute a spread from fewer than four charts", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolWithinRoundSpread } = await import("../scripts/triage.mjs");
+    const { poolWithinRoundSpread } = await import("../scripts/round-pools.mjs");
     // Two charts give a range with no idea whether either is typical, and a
     // round that managed one later chart is telling a different story.
     expect(poolWithinRoundSpread([round("230-a.json", [19000, 25000])])).toEqual([]);
@@ -4105,7 +4003,7 @@ describe("a round states its own error bar", () => {
     // The first chart sits on the deck's busiest slide and costs ~2.2x. Letting
     // it in would report the slide as disagreement.
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolWithinRoundSpread } = await import("../scripts/triage.mjs");
+    const { poolWithinRoundSpread } = await import("../scripts/round-pools.mjs");
     const r = round("230-a.json", [19468, 19695, 19237, 19311]);
     r.trace.entries.push({
       message: "updated only the shapes that changed",
@@ -4117,7 +4015,7 @@ describe("a round states its own error bar", () => {
   it("ignores a lone chart in its own run", async () => {
     // `1/1` is the alone arm — a run of one has no later charts at all.
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolWithinRoundSpread } = await import("../scripts/triage.mjs");
+    const { poolWithinRoundSpread } = await import("../scripts/round-pools.mjs");
     const r = round("230-a.json", [19468, 19695, 19237, 19311]);
     r.trace.entries.push({
       message: "updated only the shapes that changed",
@@ -4130,7 +4028,7 @@ describe("a round states its own error bar", () => {
 describe("the floor is reported as a spread that does not grow with n", () => {
   it("carries quartiles, not only min and max", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolNoiseFloor } = await import("../scripts/triage.mjs");
+    const { poolNoiseFloor } = await import("../scripts/round-pools.mjs");
     // RANGE only ever grows with sample size: it went 66% at five sessions to
     // 73% at eight because one faster round arrived, with nothing about the host
     // changing. The IQR is what a reader can actually use as a bar.
@@ -4290,7 +4188,7 @@ describe("where an update's time went, sync by sync", () => {
 
   it("separates the first chart of a run from the rest", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolSyncBreakdown } = await import("../scripts/triage.mjs");
+    const { poolSyncBreakdown } = await import("../scripts/round-pools.mjs");
     const r = poolSyncBreakdown([
       log([
         { chart: "1/8", syncMs: [11000, 11000, 12000, 800] },
@@ -4304,7 +4202,7 @@ describe("where an update's time went, sync by sync", () => {
 
   it("keeps a run of ONE out of both arms", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolSyncBreakdown } = await import("../scripts/triage.mjs");
+    const { poolSyncBreakdown } = await import("../scripts/round-pools.mjs");
     // The lone arm is the control that separates position from slide. Pooling it
     // into either side destroys the thing it exists to measure.
     const r = poolSyncBreakdown([
@@ -4321,7 +4219,7 @@ describe("where an update's time went, sync by sync", () => {
 
   it("takes only the size it was asked for", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolSyncBreakdown } = await import("../scripts/triage.mjs");
+    const { poolSyncBreakdown } = await import("../scripts/round-pools.mjs");
     // A sync's cost is a function of how many shapes it writes, so mixing sizes
     // produces a per-sync figure describing neither.
     const mixed = {
@@ -4345,7 +4243,7 @@ describe("where an update's time went, sync by sync", () => {
 
   it("ignores rows carrying no per-sync timings", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { poolSyncBreakdown } = await import("../scripts/triage.mjs");
+    const { poolSyncBreakdown } = await import("../scripts/round-pools.mjs");
     const noSyncs = {
       trace: {
         entries: [
@@ -5142,7 +5040,7 @@ describe("does a busy slide stall a draw", () => {
 describe("where the host died", () => {
   it("groups crashes by their last step, ignoring timing and payload", async () => {
     // @ts-expect-error — plain .mjs tool, no types.
-    const { poolCrashLastSteps } = await import("../scripts/triage.mjs");
+    const { poolCrashLastSteps } = await import("../scripts/round-pools.mjs");
     // The real lines carry a timestamp and a data blob, both different every
     // run. Grouping on the raw string would give every crash its own bucket and
     // report nothing — which is indistinguishable from "no pattern here".
@@ -5164,7 +5062,7 @@ describe("where the host died", () => {
 
   it("ignores a crash file that recorded no steps at all", async () => {
     // @ts-expect-error — plain .mjs tool, no types.
-    const { poolCrashLastSteps } = await import("../scripts/triage.mjs");
+    const { poolCrashLastSteps } = await import("../scripts/round-pools.mjs");
     // A run that died before writing a step says nothing about WHERE. Bucketing
     // it under "(no steps recorded)" would invent a location.
     expect(poolCrashLastSteps([{ name: "A", steps: [] }, { name: "B" }])).toEqual([]);
@@ -5172,7 +5070,7 @@ describe("where the host died", () => {
 
   it("keys on channel and message, so the same step from two channels stays apart", async () => {
     // @ts-expect-error — plain .mjs tool, no types.
-    const { crashStepKey } = await import("../scripts/triage.mjs");
+    const { crashStepKey } = await import("../scripts/round-pools.mjs");
     expect(crashStepKey("  12.3s  probe  asking  id=foo")).toBe("probe  asking");
     expect(crashStepKey("  12.3s  draw  asking  id=foo")).toBe("draw  asking");
     expect(crashStepKey("")).toBe("(no steps recorded)");

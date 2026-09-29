@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
+// A NAMESPACE IMPORT, destructured, and this is the fifth time in this repo that
+// the alternative has been paid for. `@ts-expect-error` covers exactly the next
+// LINE, so adding `MUTATED` and `MUTATED_ROOTS` to a named list pushed the
+// statement over the print width, prettier wrapped it, the `from` clause moved
+// four lines down off the directive, and `tsc` went red while the suite stayed
+// green. A namespace import is one line whatever is destructured off it.
 // @ts-expect-error — plain .mjs tools, no types.
-import { mergeRanges, onlyMutated, rangesFromDiff, toMutateArg } from "../scripts/mutation-scope.mjs";
+import * as scope from "../scripts/mutation-scope.mjs";
+const { MUTATED, MUTATED_ROOTS, mergeRanges, onlyMutated, rangesFromDiff, toMutateArg } = scope;
 // @ts-expect-error — as above.
 import { KNOWN_SURVIVORS, reportBody, scoreByFile, survivorsOf } from "../scripts/mutation-triage.mjs";
 
@@ -44,15 +51,52 @@ describe("choosing what to mutate from a diff", () => {
   it("keeps only what stryker.config.json actually mutates", () => {
     const rs = [
       { file: "src/core/chart.ts", start: 1, end: 2 },
+      { file: "scripts/round-pools.mjs", start: 1, end: 2 },
       { file: "src/core/types.ts", start: 1, end: 2 },
       { file: "src/core/samples.ts", start: 1, end: 2 },
       { file: "src/render/powerpoint.ts", start: 1, end: 2 },
+      { file: "scripts/triage.mjs", start: 1, end: 2 },
       { file: "test/chart.test.ts", start: 1, end: 2 },
     ];
     // types.ts and samples.ts carry `!` negations in `mutate`; render/ and test/
     // are outside it. Mutating any of them would instrument a file Stryker was
     // never told to touch, and the ranges would be silently ignored.
-    expect(onlyMutated(rs).map((r: { file: string }) => r.file)).toEqual(["src/core/chart.ts"]);
+    //
+    // `scripts/round-pools.mjs` was added on 2026-09-29 and is the reason the
+    // pooled readers were split out of `triage.mjs` at all — see that file's
+    // header. `triage.mjs` itself stays out: it reads the archive off disk, so
+    // its own tests cannot run in Stryker's sandbox.
+    expect(onlyMutated(rs).map((r: { file: string }) => r.file)).toEqual([
+      "src/core/chart.ts",
+      "scripts/round-pools.mjs",
+    ]);
+  });
+
+  /**
+   * THE REGEX AND THE GIT PATHSPEC HAVE TO AGREE, AND THEY DID NOT.
+   *
+   * `main()` ran `git diff … -- "src/core"` with the path hardcoded, while the
+   * filter was `MUTATED`. So widening `MUTATED` — or `stryker.config.json`'s
+   * `mutate`, which the CLI `--mutate` overrides anyway — reached a diff that
+   * could not contain the new file. The scope would come back empty, the job
+   * would print "no changes", and the module would never be mutated once.
+   *
+   * A green run that measures nothing is the exact failure the whole extraction
+   * was done to end, so it gets a test rather than a comment.
+   */
+  it("diffs every root the filter is willing to mutate", () => {
+    for (const root of MUTATED_ROOTS as string[]) {
+      // A file directly under the root — for a root that IS a file, itself.
+      const sample = /\.(ts|mjs|js)$/.test(root) ? root : `${root}/sample.ts`;
+      expect(MUTATED.test(sample), `${root} is in the git pathspec but ${sample} is not mutated`).toBe(true);
+    }
+    // And the other direction, for the two that matter today: nothing the filter
+    // accepts may sit outside every root, or its changes never reach the diff.
+    for (const f of ["src/core/chart.ts", "scripts/round-pools.mjs"])
+      expect(
+        (MUTATED_ROOTS as string[]).some((r) => f === r || f.startsWith(`${r}/`)),
+        `${f} is mutated but no git pathspec would ever show its diff`,
+      ).toBe(true);
   });
 
   it("merges hunks that are close, so one edited function is one range", () => {

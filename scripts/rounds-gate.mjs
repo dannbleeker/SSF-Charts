@@ -24,30 +24,41 @@ import { isMain } from "./is-main.mjs";
 import {
   scenarioRegressions,
   profileDivergence,
-  roundProfile,
   traceNovelty,
-  poolScenarioPopulations,
-  poolGroupingOutcome,
-  poolProfileDisagreements,
-  poolPairPosition,
-  poolFallbackRates,
-  poolFullestSlide,
-  CLEAN_SLIDE_CEILING,
-  poolDriverRuns,
   unreadSignals,
-  poolInPlaceUpdates,
   roundSpanSeconds,
-  paneAgeAtStartSeconds,
   probeFlipsWithinBuild,
   deckGeometryFaults,
   fatalScenarios,
   fatalRateBreaches,
   fatalDeathsAllowed,
   deathsAcknowledged,
-  poolCrashLastSteps,
-  crashStepKey,
   scenarioRuns,
 } from "./triage.mjs";
+/**
+ * THE POOLED READERS, split out of `triage.mjs` on 2026-09-29 so that Stryker
+ * can mutate them — see `round-pools.mjs`'s header for why that mattered.
+ *
+ * `CLEAN_SLIDE_CEILING` travels with `poolFullestSlide` and not because the pool
+ * uses it — it does not. It is the threshold for READING what the pool returns,
+ * and the two are imported together at every call site there has ever been. A
+ * measurement and the line that says what counts as too much belong in one file.
+ */
+import {
+  CLEAN_SLIDE_CEILING,
+  crashStepKey,
+  paneAgeAtStartSeconds,
+  poolCrashLastSteps,
+  poolDriverRuns,
+  poolFallbackRates,
+  poolFullestSlide,
+  poolGroupingOutcome,
+  poolInPlaceUpdates,
+  poolPairPosition,
+  poolProfileDisagreements,
+  poolScenarioPopulations,
+  roundProfile,
+} from "./round-pools.mjs";
 import { pendingAlreadyAnswered, UNSTABLE_ANSWERS, FATAL_SCENARIO_RATE } from "./host-baseline.mjs";
 
 /**
@@ -818,9 +829,27 @@ if (isMain(import.meta.url, process.argv[1])) {
   // this list is noise and should stay unread; the point is that the next one
   // does not have to be found by scrolling.
   try {
-    const src =
-      readFileSync(new URL("./triage.mjs", import.meta.url), "utf8") +
-      readFileSync(new URL("./rounds-gate.mjs", import.meta.url), "utf8");
+    // EVERY FILE THAT READS A TRACE MESSAGE, and this list forgot one for the
+    // length of a single commit. The pooled readers moved to `round-pools.mjs`
+    // on 2026-09-29, taking their message literals with them — so two entries in
+    // this section changed places at once: one the pools still match began
+    // reporting as read by nothing, and one they do not stopped being reported,
+    // purely because the text had moved to a file the concatenation did not
+    // name. A detector that finds its evidence by grepping the tool's own source
+    // has to be told when the tool gains a file.
+    //
+    // Caught by diffing this gate's whole output against the pre-split build
+    // over all 462 archived rounds; nothing else would have said so, because
+    // being wrong here looks exactly like a finding.
+    //
+    // NO TRACE MESSAGE IS QUOTED IN THIS COMMENT, and that is not squeamishness.
+    // `unreadSignals` matches the tool source VERBATIM, so naming the message
+    // here would make this file "read" it and the entry would vanish from the
+    // report — a detector silenced by its own postmortem. The first draft of
+    // this comment did exactly that, and the same diff caught it.
+    const src = ["./triage.mjs", "./round-pools.mjs", "./rounds-gate.mjs"]
+      .map((f) => readFileSync(new URL(f, import.meta.url), "utf8"))
+      .join("\n");
     const unread = unreadSignals(rounds[rounds.length - 1], src);
     if (unread.length) {
       console.log(`

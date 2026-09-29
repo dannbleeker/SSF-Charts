@@ -41,8 +41,29 @@
 import { execFileSync } from "node:child_process";
 import { isMain } from "./is-main.mjs";
 
-/** Only these are mutated — kept in step with `stryker.config.json`'s `mutate`. */
-export const MUTATED = /^src\/core\/.*\.ts$/;
+/**
+ * Only these are mutated — kept in step with `stryker.config.json`'s `mutate`.
+ *
+ * THIS FILE'S SCOPE OVERRIDES THE CONFIG'S, WHICH IS WHY IT IS THE PLACE TO
+ * CHANGE. `quality-sweep.yml` runs `npx stryker run --mutate "$SCOPE"`, and a
+ * CLI `--mutate` REPLACES the config's array rather than intersecting with it.
+ * So adding a file to `stryker.config.json` and not here does nothing at all:
+ * every change to it is dropped from the scope, the job prints "no changes", and
+ * the file is never mutated once. A green run that measures nothing.
+ *
+ * `scripts/round-pools.mjs` was added on 2026-09-29, when the pooled readers
+ * were split out of `triage.mjs` for exactly this purpose — see that file's
+ * header, and the four decorative tests `stryker.config.json` recorded before
+ * anyone thought to check.
+ *
+ * TWO DECLARATIONS, BECAUSE `main()` NEEDS A GIT PATHSPEC AND NOT A REGEX, and
+ * that second place was hardcoded to `src/core`. Widening the regex alone would
+ * have left the diff blind to the new file and produced the same green nothing
+ * this comment is about, one layer further down.
+ * `test/mutation-scope.test.ts` pins the two to each other.
+ */
+export const MUTATED_ROOTS = ["src/core", "scripts/round-pools.mjs"];
+export const MUTATED = /^(?:src\/core\/.*\.ts|scripts\/round-pools\.mjs)$/;
 export const NOT_MUTATED = [/^src\/core\/types\.ts$/, /^src\/core\/samples\.ts$/];
 
 /**
@@ -129,7 +150,11 @@ function main(argv) {
     // No commit is older than the window: the whole history is inside it.
     since = git("rev-list", "--max-parents=0", "HEAD").trim().split("\n")[0];
   }
-  const diff = git("diff", "--unified=0", `${since}..HEAD`, "--", "src/core");
+  // The pathspec comes from `MUTATED_ROOTS`, not a literal: it read `"src/core"`
+  // with nothing saying so, which is one hardcoded argument away from a run that
+  // mutates nothing and reports success. `onlyMutated` still filters, so a
+  // widened root cannot smuggle a file past the regex.
+  const diff = git("diff", "--unified=0", `${since}..HEAD`, "--", ...MUTATED_ROOTS);
   const ranges = mergeRanges(onlyMutated(rangesFromDiff(diff)));
   if (ranges.length) process.stdout.write(toMutateArg(ranges));
 }

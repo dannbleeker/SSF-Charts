@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "fs";
 import { spawnSync } from "child_process";
 // @ts-expect-error — plain .mjs tool, no types.
-import { poolEveryDraw } from "../scripts/triage.mjs";
+import { poolEveryDraw } from "../scripts/round-pools.mjs";
 // Its own line: the grouped-import + `@ts-expect-error` trap is documented at
 // the top of `triage.test.ts` and has now bitten twice.
 // @ts-expect-error — as above.
-import { poolRasteriseArms } from "../scripts/triage.mjs";
+import { poolRasteriseArms } from "../scripts/round-pools.mjs";
 // Its own line, same trap as every other single import in this file.
 // @ts-expect-error — as above.
 import { loadRounds } from "../scripts/rounds-gate.mjs";

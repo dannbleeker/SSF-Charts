@@ -100,6 +100,21 @@ export default defineConfig({
       "test/secondary-axis-ticks.test.ts",
       "test/axis-ticks-are-distinct.test.ts",
       "test/strip-thinning.test.ts",
+      // THE SAME INCOMPATIBILITY, FOUND THE HARD WAY ON 2026-09-29, and by the
+      // guard itself. `test/round-pools.test.ts` asserts that
+      // `scripts/round-pools.mjs` never touches the filesystem, the clock or
+      // `process` — the property that keeps it mutatable at all. Stryker
+      // instruments that file the moment it is in `mutate`, and the
+      // instrumentation it injects reads `process.env` to find the active
+      // mutant. So the first scoped run died in its dry run with
+      //
+      //   round-pools.mjs reaches outside itself via process
+      //
+      // which is true of the rewritten bytes and false of the source. The guard
+      // was right about what it was looking at and wrong about which file that
+      // was. It runs in `npm test`, where the source is the source, and that is
+      // where it does its job.
+      "test/round-pools.test.ts",
       // Needs `dist-lib/`, which the sandbox has no build step to produce.
       "test/skill-scripts.test.ts",
       "test/showcase.test.ts",
@@ -111,7 +126,21 @@ export default defineConfig({
       "test/manual.test.ts",
       "test/test-count.test.ts",
       "test/host-contract.test.ts",
-      "test/triage.test.ts",
+      // `test/triage.test.ts` IS NO LONGER HERE, as of 2026-09-29, and that is
+      // the point of the split that day rather than a side effect of it.
+      //
+      // `scripts/round-pools.mjs` is now inside `mutate`, and every test for the
+      // 33 pooled readers lives in `triage.test.ts`. Excluded, those tests could
+      // not kill a single mutant — a mutated module whose tests do not run is a
+      // green run measuring nothing, which is precisely the failure
+      // `stryker.config.json`'s `_comment_uncovered` was written about.
+      //
+      // The exclusion said "reads repo files by a cwd-relative path", and read
+      // block by block that was broader than the obstruction: Stryker copies the
+      // whole repo and runs with cwd at the sandbox root, so an ordinary read of
+      // `docs/WHAT-WE-KNOW.md` works there. Two blocks genuinely could not run
+      // and they are `test/triage-repo.test.ts`, below, whose header says why.
+      "test/triage-repo.test.ts",
       "test/verify-deck.test.ts",
       "test/ooxml-validate.test.ts",
       "test/crashlog.test.ts",
