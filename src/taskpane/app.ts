@@ -3939,6 +3939,43 @@ async function insertDemoDeckAsFile(items: { scene: Scene; title: string; config
         run,
       };
     }
+    /**
+     * A COUNT THAT CAME BACK UNREAD IS NOT A COUNT, and this line treated it as
+     * one. Found 2026-09-29.
+     *
+     * The `catch` above handles the re-read THROWING. It does not handle the
+     * re-read succeeding with nothing in it, which is the other way this host
+     * declines to answer — `slideCount()` returns `c.value` straight off the
+     * proxy and its own comment is explicit that there is "no safe default here,
+     * deliberately… not knowing has to stay distinguishable from knowing". So
+     * `after` can be `undefined` on a resolved promise.
+     *
+     * Then `added` is `NaN`, and every comparison below it is false:
+     *
+     *   NaN <= 0                → false, so "nothing landed" never returns
+     *   NaN < items.length      → false, so the ⚠ "the host took N of M" is suppressed
+     *   `Inserted ${added} of…` → the user reads "Inserted NaN of 12 slides"
+     *
+     * and `added: NaN` serialises into the round file as `added: null`. So the
+     * one case where we know least produced the most confident-looking output,
+     * with the warning that would have prompted a check turned off.
+     *
+     * This is the same shape `deckGrowth` exists for in `selftest.ts`, written up
+     * there as "`null < wanted` is false in JavaScript" — the fix sailed through
+     * one call site four times before. Kept inline rather than reaching for that
+     * helper: it lives in the harness half of this pane, and a production path
+     * must not depend on code that is on its way out of the bundle.
+     */
+    if (!Number.isFinite(after)) {
+      return {
+        text: "PowerPoint would not take the deck, and its answer about how much of it landed was unreadable. Check the deck before inserting again — running it now could add the slides twice.",
+        status: "err",
+        added: 0,
+        totalMs: Date.now() - t0,
+        verified: { kind: "error", why: `the deck count came back unread (${String(after)})` },
+        run,
+      };
+    }
     added = after - before;
     if (added <= 0) return null;
   }

@@ -2473,6 +2473,42 @@ describe("demo-insert one-shot deck insert", () => {
     expect(host.demoRuns).toBeGreaterThanOrEqual(1);
   });
 
+  /**
+   * AND THE OTHER WAY THE COUNT DECLINES TO ANSWER. Found 2026-09-29.
+   *
+   * The test above covers the re-read THROWING. This covers it resolving with
+   * nothing in it, which is the case `slideCount()`'s own comment describes: it
+   * returns `c.value` straight off the proxy and keeps "no safe default here,
+   * deliberately… not knowing has to stay distinguishable from knowing". The
+   * signature says `Promise<number>`; the host can still hand back `undefined`,
+   * and the cast below is that mismatch written down rather than hidden.
+   *
+   * What it used to do: `added = after - before` made `added` NaN, and then every
+   * comparison guarding the output was false. `NaN <= 0` did not return "nothing
+   * landed"; `NaN < items.length` suppressed the ⚠ that says the host took fewer
+   * slides than asked; and the pane told the user "Inserted NaN of N slides".
+   * The one case where the pane knew least produced its most confident sentence,
+   * with the warning that would have prompted a check switched off.
+   */
+  it("says the count was unreadable rather than reporting NaN slides", async () => {
+    host.canInsertFile = true;
+    host.insertFileError = new Error("host refused the deck");
+    // A RESOLVED promise carrying nothing — not a throw. That distinction is the
+    // whole defect: the catch above it already handled the throw.
+    host.slideCount = undefined as unknown as number;
+    $("demo-insert").click();
+    await settle();
+
+    expect(host.calls.insertFile).toHaveLength(1);
+    const note = $("host-note").textContent ?? "";
+    expect(note, "the pane reported an arithmetic artefact as a slide count").not.toMatch(/NaN/);
+    expect(note, "the pane did not say the count was unreadable").toMatch(/unreadable/i);
+    // AND IT STILL MUST NOT REDRAW. An unreadable count is not evidence that
+    // nothing landed, so falling back to the shape path here is how a deck gets
+    // inserted twice — the failure the next test guards from the other side.
+    expect(host.demoRuns, "redrew the deck on an unreadable count").toBe(0);
+  });
+
   it("does NOT fall back after a partial insert — that would draw the deck twice", async () => {
     // The failure this exists to prevent: some slides landed, the pane decides
     // the fast path "failed", and the shape renderer then appends the whole
