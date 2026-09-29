@@ -95,7 +95,42 @@ function wire() {
   $("generate").addEventListener("click", () => void generate());
   $("copy").addEventListener("click", () => {
     const out = ($("output") as HTMLTextAreaElement).value;
-    if (out) void navigator.clipboard?.writeText(out).catch(() => {});
+    if (!out) return;
+    /**
+     * SAY WHETHER IT COPIED, and this used to say nothing either way.
+     *
+     * It read `void navigator.clipboard?.writeText(out).catch(() => {})`. Two
+     * silences in one line. The clipboard API rejects routinely — a document
+     * that is not focused, a permission the browser withholds, an add-in frame
+     * without clipboard-write — and the user, who pressed Copy and has a
+     * textarea full of JSON they now believe is on their clipboard, is told
+     * nothing and pastes whatever was there before.
+     *
+     * The `?.` hid a second one: where `navigator.clipboard` does not exist at
+     * all, optional chaining short-circuits the whole expression, so the catch
+     * never ran and a browser with no clipboard support also failed quietly.
+     *
+     * This file already had the right pattern six lines up — `generate()` puts
+     * both of its outcomes in `#note`. The copy button now does the same, and
+     * the failure names the way out, because selecting the textarea by hand is
+     * something the user can actually do.
+     */
+    const note = $("note");
+    const clipboard = navigator.clipboard;
+    if (!clipboard) {
+      note.textContent = "This browser will not let an add-in write the clipboard — select the JSON above and copy it.";
+      return;
+    }
+    void clipboard.writeText(out).then(
+      () => {
+        note.textContent = "Copied. Paste into SSF Charts → Automation → Import.";
+      },
+      (err: unknown) => {
+        note.textContent =
+          "Could not copy — select the JSON above and copy it by hand. " +
+          `(${err instanceof Error ? err.message : String(err)})`;
+      },
+    );
   });
 }
 
