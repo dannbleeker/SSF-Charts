@@ -1089,158 +1089,21 @@ function wireStepsPanel(): { revealSteps: () => void } {
 }
 
 /** Wire the Testing panel. Called from `wireInsert` when the host is PowerPoint. */
-export function wireHarness(d: HarnessDeps): void {
-  wired = d;
-  const { guard, keepDisabled } = d;
-  // Testing aid: one demo slide per chart kind + feature/element highlights.
-  // Turning the fast path OFF on the web is a decision worth flagging. At
-  // volume the shape-by-shape path there does not merely stall: the full
-  // 37-item deck took the whole web client down five seconds in on
-  // 2026-07-31 — "Sorry, we ran into a problem. Please try again." The
-  // twelve-item subset survived, so this is a warning and not a block.
-  const pathSelect = $("demo-path") as HTMLSelectElement | null;
-  pathSelect?.addEventListener("change", () => {
-    if (pathSelect.value !== "shapes" || !canInsertSlidesFromBase64()) return;
-    if (isWebHost()) {
-      note(
-        "Heads up: the full deck drawn shape by shape has crashed PowerPoint on the web. The fast path handles it in seconds.",
-        "err",
-      );
-    }
-  });
-  // Enabled by a run, not by the host: with nothing to save it would only
-  // ever produce an empty file.
-  // ON by default for now. Nothing in this project has been diagnosed from
-  // anything but an after-the-fact artifact, and the runs that matter happen
-  // on a host nobody can attach a debugger to. When the add-in stops being
-  // validated against real hosts, uncheck it in taskpane.html and drop the
-  // `checked` — the module, its call sites and this toggle all keep working,
-  // so a future investigation is one click away rather than a re-implementation.
-  // The live transcript — see `wireStepsPanel`.
-  const { revealSteps } = wireStepsPanel();
+/** The scenario the Testing panel's picker is on, read at click time. */
+function pickedScenario(): string | undefined {
+  return ($("demo-scenario") as HTMLSelectElement | null)?.value || undefined;
+}
 
-  const traceToggle = $("demo-trace") as HTMLInputElement | null;
-  if (traceToggle?.checked) {
-    setTracing(true);
-    traceEnvironment(typeof __BUILD_STAMP__ === "string" ? __BUILD_STAMP__ : "dev");
-  }
-  traceToggle?.addEventListener("change", () => {
-    setTracing(traceToggle.checked);
-    if (traceToggle.checked) {
-      traceEnvironment(typeof __BUILD_STAMP__ === "string" ? __BUILD_STAMP__ : "dev");
-      note("Verbose trace on — it rides along in the run log.", "ok");
-    } else note("Verbose trace off.", "ok");
-  });
-  $("demo-log").addEventListener("click", () => {
-    if (!lastRunLog) {
-      note("No run to save yet — insert the demo deck first.", "err");
-      return;
-    }
-    if (!downloadJson("ssf-charts-run-log.json", lastRunLog)) {
-      note("The browser would not save the file. Copy the Live steps instead — they carry the same run.", "err");
-      return;
-    }
-    // A button the user pressed is the strongest evidence this pane can have
-    // that they now hold the run. It is also the recovery from an auto-save
-    // that was blocked, so it has to clear the stored record — otherwise the
-    // pane would keep offering back a run they have just saved.
-    markCrashLogSaved();
-    note("Run log saved.", "ok");
-  });
-  /**
-   * Offer the last run that never reported finishing.
-   *
-   * Checked once, on the open that follows the crash — which is the only
-   * moment anyone is looking for it, and the moment before the natural next
-   * action (run it again) would otherwise bury it. Hidden entirely when
-   * there is nothing to recover, so a healthy pane carries no wreckage.
-   */
-  /**
-   * Ask this host the fixed question list and save what it says.
-   *
-   * The one diagnostic here that is not about a run at all. Everything else
-   * in this panel reports what the ADD-IN did; this reports what the HOST is,
-   * so the fake that every test in the repo stands on can finally be checked
-   * against the thing it stands for. One click, no deck changes — it works on
-   * a scratch slide and takes it back.
-   */
-  /**
-   * ONE QUESTION, ANSWERED IN SECONDS.
-   *
-   * The round is the wrong instrument for settling a single "does this host do
-   * X?" that a decision is waiting on — fourteen minutes, and the question has
-   * to earn a slot in a fixed sheet. `grouped-child-by-id-from-slide` waited
-   * 125 rounds for a slot and never got one.
-   *
-   * The alternative was worse: putting a speculative host call in the drawing
-   * batch to find out, which is where loading an id on a creation handle
-   * poisons it and costs the tag that makes a chart re-editable.
-   */
-  {
-    const pick = $("experiment-pick") as HTMLSelectElement;
-    for (const e of EXPERIMENTS) {
-      const option = document.createElement("option");
-      option.value = e.id;
-      // The QUESTION in the list, not the id. The id is for the archive; a
-      // person choosing one wants to read what it asks.
-      option.textContent = e.asks;
-      pick.append(option);
-    }
-    $("experiment-run").addEventListener(
-      "click",
-      guard(async () => {
-        revealSteps();
-        const chosen = pick.value || EXPERIMENTS[0]?.id;
-        note(`Asking: ${EXPERIMENTS.find((e) => e.id === chosen)?.asks ?? chosen}`, "busy");
-        const r = await runExperiment(chosen);
-        // The DETAIL beside the word, always. The vocabulary will be wrong for
-        // something eventually and the detail is what survives that.
-        note(`${r.id} — ${r.answer}${r.detail ? `: ${r.detail}` : ""} (${r.ms}ms)`, r.answer === "yes" ? "ok" : "err");
-      }),
-    );
-  }
-
-  $("demo-probe").addEventListener(
-    "click",
-    guard(async () => {
-      revealSteps();
-      note("Asking this PowerPoint what it actually does…", "busy");
-      const sheet = await runHostProbes(describeHost(), typeof __BUILD_STAMP__ === "string" ? __BUILD_STAMP__ : "dev");
-      const saved = downloadJson("ssf-charts-host-answers.json", sheet);
-      // The diff, here, now — rather than after a round trip.
-      //
-      // Every probe run so far has been "download it, send it, wait for
-      // someone to run `host-diff`, hear back". Most of those establish
-      // nothing new: the answers are the same as last time. The comparison
-      // table is a plain object, so the pane can do it and say whether this
-      // run is worth sending at all.
-      note(
-        saved
-          ? describeHostSheet(sheet)
-          : `The browser would not save the file. ${describeHostSheet(sheet)} Copy the Live steps — they carry the answers.`,
-        !saved || sheetNeedsAttention(sheet) ? "err" : "ok",
-      );
-    }),
-  );
-  /**
-   * One click, one file: the probe and the self-test, back to back.
-   *
-   * What it saves is round trips rather than seconds. A round used to be
-   * three clicks producing three downloads, uploaded separately and joined at
-   * the other end — and most probe runs establish nothing, so a good share of
-   * that traffic was to learn that the answers had not changed.
-   *
-   * The DEMO DECK is deliberately not in here, and not for want of effort.
-   * Its two halves have to run on different decks: the file half fills the
-   * deck, and the shape half then draws onto that same larger deck, which is
-   * the one configuration that has ended in PowerPoint's crash dialog every
-   * time it has been tried. A button cannot open a fresh deck, so chaining
-   * the demo in would bake in exactly the arrangement the runbook splits up.
-   *
-   * The probe goes FIRST because it is the cheap one. If the host is already
-   * unwell, seventeen short questions say so in seconds, and they are still
-   * in the bundle when the long half dies.
-   */
+/**
+ * The round button — one click that probes the host, runs the battery, scans
+ * the deck and files the result.
+ *
+ * Its own function because it was 314 lines of the 970 in `wireHarness`, and
+ * because it is the only control here with a multi-phase failure story: the
+ * probe, the battery, the deck scan and the save each fail differently and each
+ * has to leave the round readable.
+ */
+function wireRoundButton(guard: HarnessDeps["guard"], revealSteps: () => void): void {
   const roundBtn = $("demo-round") as HTMLButtonElement;
   roundBtn.disabled = false;
   roundBtn.addEventListener(
@@ -1328,7 +1191,7 @@ export function wireHarness(d: HarnessDeps): void {
       }
       setSelfTestRasterizer(boundedRaster);
       setSelfTestPrompt((message) => note(message, "busy"));
-      const results = await runSelfTest(undefined, scenarioPick?.value || undefined, (r) =>
+      const results = await runSelfTest(undefined, pickedScenario(), (r) =>
         // Each verdict banked as it lands. A battery that never returns never
         // writes its report, and ordering `SCENARIOS` can only choose which
         // verdicts a crash costs — this is what makes it cost none of the
@@ -1555,117 +1418,16 @@ export function wireHarness(d: HarnessDeps): void {
       );
     }),
   );
-  /**
-   * Put the deck back.
-   *
-   * A round leaves slides behind on purpose — the point is a file someone can
-   * open and look at — and clearing them afterwards has been a manual chore
-   * once per round, in a deck that also grows and skews the next round's
-   * timings. This deletes exactly the ids the last round recorded adding, one
-   * at a time, and reports what the host refused rather than claiming a clean
-   * sweep it did not perform. `deleteSlideById` has a whole comment about why
-   * a host saying "gone" is not proof; the count here is what it actually
-   * confirmed.
-   */
-  $("demo-tidy").addEventListener(
-    "click",
-    guard(async () => {
-      revealSteps();
-      const ids = tidyable;
-      note(`Removing the ${ids.length} slide(s) the last round added…`, "busy");
-      let gone = 0;
-      for (const id of ids) if (await deleteSlideById(id)) gone++;
-      // Emptied whatever happened: a second press would re-ask about slides
-      // the host has already refused once, and the honest state after a
-      // partial sweep is "there is no longer a list I trust".
-      tidyable = [];
-      keepDisabled($("demo-tidy") as HTMLButtonElement);
-      note(
-        gone === ids.length
-          ? `Cleaned up — ${gone} slide(s) removed.`
-          : `Removed ${gone} of ${ids.length}. The host would not take the rest; delete those by hand.`,
-        gone === ids.length ? "ok" : "err",
-      );
-    }),
-  );
-  const crashBtn = $("demo-crashlog") as HTMLButtonElement;
-  const crashed = recoverCrashLog();
-  if (crashed) {
-    crashBtn.hidden = false;
-    // Two different runs land here now, and telling the owner which one it is
-    // is the difference between "the host died" and "the host was fine and
-    // your file never arrived". Both are worth recovering; only one of them
-    // means anything went wrong with the run itself.
-    note(
-      `A previous run ("${crashed.label}", build ${crashed.build}) ` +
-        (crashed.finishedAt ? `finished, but its file was never saved` : `never reported finishing`) +
-        ` — ${crashed.steps.length} step(s) were kept. Download the crashed run.`,
-      "err",
-    );
-    crashBtn.addEventListener("click", () => {
-      if (!downloadJson("ssf-charts-crashed-run.json", crashed)) {
-        note("The browser would not save the file. Copy the Live steps instead.", "err");
-        return;
-      }
-      clearCrashLog();
-      crashBtn.hidden = true;
-      note("Crashed run saved.", "ok");
-    });
-  }
-  // The five paths the demo deck never touches. Its own button rather than a
-  // mode of the demo run: it edits and deletes as well as inserting, and a
-  // user reaching for "insert a demo deck" should not get that by accident.
-  // Fill the picker from the battery's own list, so it cannot offer a
-  // scenario that no longer exists or miss one that was added.
-  const scenarioPick = $("demo-scenario") as HTMLSelectElement | null;
-  if (scenarioPick) {
-    for (const name of SCENARIO_NAMES) {
-      const opt = document.createElement("option");
-      opt.value = name;
-      opt.textContent = name;
-      scenarioPick.append(opt);
-    }
-  }
-  const selfTestBtn = $("demo-selftest") as HTMLButtonElement;
-  selfTestBtn.disabled = false;
-  selfTestBtn.addEventListener(
-    "click",
-    guard(async () => {
-      revealSteps();
-      const buildStamp = typeof __BUILD_STAMP__ === "string" ? __BUILD_STAMP__ : "dev";
-      lastRunLog = undefined;
-      ($("demo-log") as HTMLButtonElement).disabled = true;
-      beginCrashLog({ build: buildStamp, host: describeHost(), label: "host self-test" });
-      const traceFrom = traceMark();
-      // The same rasteriser the demo run degrades with — the picture
-      // scenario needs a real PNG, not a config that merely says "image".
-      setSelfTestRasterizer(boundedRaster);
-      // A scenario that blocks on a person has to be able to ask. Routed to
-      // the same note the rest of the pane speaks through, so the request is
-      // where the user is already looking rather than buried in a step list.
-      setSelfTestPrompt((message) => note(message, "busy"));
-      const results = await runSelfTest(undefined, scenarioPick?.value || undefined);
-      // No runs, but a log all the same — the scenarios ARE the record, and
-      // the trace beside them is what says how each verdict was reached.
-      lastRunLog = {
-        build: buildStamp,
-        host: describeHost(),
-        runs: [],
-        selftest: results,
-        ...(tracing() ? { trace: traceLog(traceFrom) } : {}),
-      };
-      ($("demo-log") as HTMLButtonElement).disabled = false;
-      // Only on the way out, and only here. A run that throws past this line
-      // stays marked unfinished on purpose: it produced no downloadable run
-      // log either, so the storage copy is the only record it has.
-      //
-      // Finished, NOT saved. This path writes no file — the user presses
-      // *Download run log* — so until they do, the storage copy is still the
-      // only copy, and `markCrashLogSaved` is what retires it.
-      endCrashLog();
-      note(describeSelfTest(results), selfTestNeedsAttention(results) ? "err" : "ok");
-    }),
-  );
+}
+
+/**
+ * The demo-deck button — the long half, 393 lines of the same 970.
+ *
+ * Two insert paths (a generated file and shape-by-shape), each with its own
+ * verification and its own way of coming back short, plus the "both, one after
+ * the other" comparison that only means anything when the deck started empty.
+ */
+function wireDemoInsert(guard: HarnessDeps["guard"], revealSteps: () => void): void {
   const demoBtn = $("demo-insert") as HTMLButtonElement;
   demoBtn.disabled = false;
   demoBtn.addEventListener(
@@ -2059,4 +1821,271 @@ export function wireHarness(d: HarnessDeps): void {
       );
     }),
   );
+}
+
+export function wireHarness(d: HarnessDeps): void {
+  wired = d;
+  const { guard, keepDisabled } = d;
+  // Testing aid: one demo slide per chart kind + feature/element highlights.
+  // Turning the fast path OFF on the web is a decision worth flagging. At
+  // volume the shape-by-shape path there does not merely stall: the full
+  // 37-item deck took the whole web client down five seconds in on
+  // 2026-07-31 — "Sorry, we ran into a problem. Please try again." The
+  // twelve-item subset survived, so this is a warning and not a block.
+  const pathSelect = $("demo-path") as HTMLSelectElement | null;
+  pathSelect?.addEventListener("change", () => {
+    if (pathSelect.value !== "shapes" || !canInsertSlidesFromBase64()) return;
+    if (isWebHost()) {
+      note(
+        "Heads up: the full deck drawn shape by shape has crashed PowerPoint on the web. The fast path handles it in seconds.",
+        "err",
+      );
+    }
+  });
+  // Enabled by a run, not by the host: with nothing to save it would only
+  // ever produce an empty file.
+  // ON by default for now. Nothing in this project has been diagnosed from
+  // anything but an after-the-fact artifact, and the runs that matter happen
+  // on a host nobody can attach a debugger to. When the add-in stops being
+  // validated against real hosts, uncheck it in taskpane.html and drop the
+  // `checked` — the module, its call sites and this toggle all keep working,
+  // so a future investigation is one click away rather than a re-implementation.
+  // The live transcript — see `wireStepsPanel`.
+  const { revealSteps } = wireStepsPanel();
+
+  const traceToggle = $("demo-trace") as HTMLInputElement | null;
+  if (traceToggle?.checked) {
+    setTracing(true);
+    traceEnvironment(typeof __BUILD_STAMP__ === "string" ? __BUILD_STAMP__ : "dev");
+  }
+  traceToggle?.addEventListener("change", () => {
+    setTracing(traceToggle.checked);
+    if (traceToggle.checked) {
+      traceEnvironment(typeof __BUILD_STAMP__ === "string" ? __BUILD_STAMP__ : "dev");
+      note("Verbose trace on — it rides along in the run log.", "ok");
+    } else note("Verbose trace off.", "ok");
+  });
+  $("demo-log").addEventListener("click", () => {
+    if (!lastRunLog) {
+      note("No run to save yet — insert the demo deck first.", "err");
+      return;
+    }
+    if (!downloadJson("ssf-charts-run-log.json", lastRunLog)) {
+      note("The browser would not save the file. Copy the Live steps instead — they carry the same run.", "err");
+      return;
+    }
+    // A button the user pressed is the strongest evidence this pane can have
+    // that they now hold the run. It is also the recovery from an auto-save
+    // that was blocked, so it has to clear the stored record — otherwise the
+    // pane would keep offering back a run they have just saved.
+    markCrashLogSaved();
+    note("Run log saved.", "ok");
+  });
+  /**
+   * Offer the last run that never reported finishing.
+   *
+   * Checked once, on the open that follows the crash — which is the only
+   * moment anyone is looking for it, and the moment before the natural next
+   * action (run it again) would otherwise bury it. Hidden entirely when
+   * there is nothing to recover, so a healthy pane carries no wreckage.
+   */
+  /**
+   * Ask this host the fixed question list and save what it says.
+   *
+   * The one diagnostic here that is not about a run at all. Everything else
+   * in this panel reports what the ADD-IN did; this reports what the HOST is,
+   * so the fake that every test in the repo stands on can finally be checked
+   * against the thing it stands for. One click, no deck changes — it works on
+   * a scratch slide and takes it back.
+   */
+  /**
+   * ONE QUESTION, ANSWERED IN SECONDS.
+   *
+   * The round is the wrong instrument for settling a single "does this host do
+   * X?" that a decision is waiting on — fourteen minutes, and the question has
+   * to earn a slot in a fixed sheet. `grouped-child-by-id-from-slide` waited
+   * 125 rounds for a slot and never got one.
+   *
+   * The alternative was worse: putting a speculative host call in the drawing
+   * batch to find out, which is where loading an id on a creation handle
+   * poisons it and costs the tag that makes a chart re-editable.
+   */
+  {
+    const pick = $("experiment-pick") as HTMLSelectElement;
+    for (const e of EXPERIMENTS) {
+      const option = document.createElement("option");
+      option.value = e.id;
+      // The QUESTION in the list, not the id. The id is for the archive; a
+      // person choosing one wants to read what it asks.
+      option.textContent = e.asks;
+      pick.append(option);
+    }
+    $("experiment-run").addEventListener(
+      "click",
+      guard(async () => {
+        revealSteps();
+        const chosen = pick.value || EXPERIMENTS[0]?.id;
+        note(`Asking: ${EXPERIMENTS.find((e) => e.id === chosen)?.asks ?? chosen}`, "busy");
+        const r = await runExperiment(chosen);
+        // The DETAIL beside the word, always. The vocabulary will be wrong for
+        // something eventually and the detail is what survives that.
+        note(`${r.id} — ${r.answer}${r.detail ? `: ${r.detail}` : ""} (${r.ms}ms)`, r.answer === "yes" ? "ok" : "err");
+      }),
+    );
+  }
+
+  $("demo-probe").addEventListener(
+    "click",
+    guard(async () => {
+      revealSteps();
+      note("Asking this PowerPoint what it actually does…", "busy");
+      const sheet = await runHostProbes(describeHost(), typeof __BUILD_STAMP__ === "string" ? __BUILD_STAMP__ : "dev");
+      const saved = downloadJson("ssf-charts-host-answers.json", sheet);
+      // The diff, here, now — rather than after a round trip.
+      //
+      // Every probe run so far has been "download it, send it, wait for
+      // someone to run `host-diff`, hear back". Most of those establish
+      // nothing new: the answers are the same as last time. The comparison
+      // table is a plain object, so the pane can do it and say whether this
+      // run is worth sending at all.
+      note(
+        saved
+          ? describeHostSheet(sheet)
+          : `The browser would not save the file. ${describeHostSheet(sheet)} Copy the Live steps — they carry the answers.`,
+        !saved || sheetNeedsAttention(sheet) ? "err" : "ok",
+      );
+    }),
+  );
+  /**
+   * One click, one file: the probe and the self-test, back to back.
+   *
+   * What it saves is round trips rather than seconds. A round used to be
+   * three clicks producing three downloads, uploaded separately and joined at
+   * the other end — and most probe runs establish nothing, so a good share of
+   * that traffic was to learn that the answers had not changed.
+   *
+   * The DEMO DECK is deliberately not in here, and not for want of effort.
+   * Its two halves have to run on different decks: the file half fills the
+   * deck, and the shape half then draws onto that same larger deck, which is
+   * the one configuration that has ended in PowerPoint's crash dialog every
+   * time it has been tried. A button cannot open a fresh deck, so chaining
+   * the demo in would bake in exactly the arrangement the runbook splits up.
+   *
+   * The probe goes FIRST because it is the cheap one. If the host is already
+   * unwell, seventeen short questions say so in seconds, and they are still
+   * in the bundle when the long half dies.
+   */
+  wireRoundButton(guard, revealSteps);
+  /**
+   * Put the deck back.
+   *
+   * A round leaves slides behind on purpose — the point is a file someone can
+   * open and look at — and clearing them afterwards has been a manual chore
+   * once per round, in a deck that also grows and skews the next round's
+   * timings. This deletes exactly the ids the last round recorded adding, one
+   * at a time, and reports what the host refused rather than claiming a clean
+   * sweep it did not perform. `deleteSlideById` has a whole comment about why
+   * a host saying "gone" is not proof; the count here is what it actually
+   * confirmed.
+   */
+  $("demo-tidy").addEventListener(
+    "click",
+    guard(async () => {
+      revealSteps();
+      const ids = tidyable;
+      note(`Removing the ${ids.length} slide(s) the last round added…`, "busy");
+      let gone = 0;
+      for (const id of ids) if (await deleteSlideById(id)) gone++;
+      // Emptied whatever happened: a second press would re-ask about slides
+      // the host has already refused once, and the honest state after a
+      // partial sweep is "there is no longer a list I trust".
+      tidyable = [];
+      keepDisabled($("demo-tidy") as HTMLButtonElement);
+      note(
+        gone === ids.length
+          ? `Cleaned up — ${gone} slide(s) removed.`
+          : `Removed ${gone} of ${ids.length}. The host would not take the rest; delete those by hand.`,
+        gone === ids.length ? "ok" : "err",
+      );
+    }),
+  );
+  const crashBtn = $("demo-crashlog") as HTMLButtonElement;
+  const crashed = recoverCrashLog();
+  if (crashed) {
+    crashBtn.hidden = false;
+    // Two different runs land here now, and telling the owner which one it is
+    // is the difference between "the host died" and "the host was fine and
+    // your file never arrived". Both are worth recovering; only one of them
+    // means anything went wrong with the run itself.
+    note(
+      `A previous run ("${crashed.label}", build ${crashed.build}) ` +
+        (crashed.finishedAt ? `finished, but its file was never saved` : `never reported finishing`) +
+        ` — ${crashed.steps.length} step(s) were kept. Download the crashed run.`,
+      "err",
+    );
+    crashBtn.addEventListener("click", () => {
+      if (!downloadJson("ssf-charts-crashed-run.json", crashed)) {
+        note("The browser would not save the file. Copy the Live steps instead.", "err");
+        return;
+      }
+      clearCrashLog();
+      crashBtn.hidden = true;
+      note("Crashed run saved.", "ok");
+    });
+  }
+  // The five paths the demo deck never touches. Its own button rather than a
+  // mode of the demo run: it edits and deletes as well as inserting, and a
+  // user reaching for "insert a demo deck" should not get that by accident.
+  // Fill the picker from the battery's own list, so it cannot offer a
+  // scenario that no longer exists or miss one that was added.
+  const scenarioPick = $("demo-scenario") as HTMLSelectElement | null;
+  if (scenarioPick) {
+    for (const name of SCENARIO_NAMES) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      scenarioPick.append(opt);
+    }
+  }
+  const selfTestBtn = $("demo-selftest") as HTMLButtonElement;
+  selfTestBtn.disabled = false;
+  selfTestBtn.addEventListener(
+    "click",
+    guard(async () => {
+      revealSteps();
+      const buildStamp = typeof __BUILD_STAMP__ === "string" ? __BUILD_STAMP__ : "dev";
+      lastRunLog = undefined;
+      ($("demo-log") as HTMLButtonElement).disabled = true;
+      beginCrashLog({ build: buildStamp, host: describeHost(), label: "host self-test" });
+      const traceFrom = traceMark();
+      // The same rasteriser the demo run degrades with — the picture
+      // scenario needs a real PNG, not a config that merely says "image".
+      setSelfTestRasterizer(boundedRaster);
+      // A scenario that blocks on a person has to be able to ask. Routed to
+      // the same note the rest of the pane speaks through, so the request is
+      // where the user is already looking rather than buried in a step list.
+      setSelfTestPrompt((message) => note(message, "busy"));
+      const results = await runSelfTest(undefined, scenarioPick?.value || undefined);
+      // No runs, but a log all the same — the scenarios ARE the record, and
+      // the trace beside them is what says how each verdict was reached.
+      lastRunLog = {
+        build: buildStamp,
+        host: describeHost(),
+        runs: [],
+        selftest: results,
+        ...(tracing() ? { trace: traceLog(traceFrom) } : {}),
+      };
+      ($("demo-log") as HTMLButtonElement).disabled = false;
+      // Only on the way out, and only here. A run that throws past this line
+      // stays marked unfinished on purpose: it produced no downloadable run
+      // log either, so the storage copy is the only record it has.
+      //
+      // Finished, NOT saved. This path writes no file — the user presses
+      // *Download run log* — so until they do, the storage copy is still the
+      // only copy, and `markCrashLogSaved` is what retires it.
+      endCrashLog();
+      note(describeSelfTest(results), selfTestNeedsAttention(results) ? "err" : "ok");
+    }),
+  );
+  wireDemoInsert(guard, revealSteps);
 }
