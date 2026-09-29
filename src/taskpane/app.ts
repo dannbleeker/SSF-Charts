@@ -54,7 +54,10 @@ import { estimateOfficeShapes } from "../core/scene";
 import { setTracing, trace } from "../core/trace";
 import { buildDeckBase64 } from "../render/pptx-deck";
 import { buildTableScene } from "../core/elements";
-import { wireHarness } from "./harness-ui";
+// The Testing panel is NOT imported here — it is loaded on demand, and that is
+// what keeps ~13,400 lines of harness out of every user's bundle. See the
+// `import("./harness-ui")` in `wireInsert`.
+import { lazy } from "../render/lazy";
 import { localizePane, localizeTree, t } from "./i18n";
 import { note, onStopRequested, setProgress, settledNotes, showStop, startElapsed, stopElapsed } from "./status";
 import { contiguousStacks, dataToSheet, mountDatasheet, sheetToData, type SheetModel } from "./datasheet";
@@ -3332,7 +3335,18 @@ function isWebHost(): boolean {
   }
 }
 
-function wireInsert() {
+/**
+ * Wire the pane's controls. ASYNC since 2026-09-29, and only at the very end.
+ *
+ * Everything the product needs is wired synchronously, exactly as before — the
+ * single `await` is the last statement in the Office branch, loading the Testing
+ * panel's chunk. So a user's pane is fully usable at the same moment it always
+ * was; what changed is that a pane which asked for the harness finishes a little
+ * later than the module's evaluation does.
+ *
+ * That gap is why `harnessReady` exists. Nothing in the product waits on it.
+ */
+async function wireInsert() {
   const insertBtn = $("insert") as HTMLButtonElement;
   const insertNewBtn = $("insert-new") as HTMLButtonElement;
   const loadBtn = $("load-selection") as HTMLButtonElement;
@@ -3715,24 +3729,75 @@ function wireInsert() {
     // information is what a bug report needs.
     onLateSync((msg) => note("Host answered late — {message}", "err", { message: msg }));
     /**
-     * The Testing panel, which is the other half of this function.
+     * The Testing panel, loaded ONLY when the pane was opened with `?harness=1`.
      *
-     * Everything above wires the product's own controls; everything the panel
-     * needs now lives in `harness-ui.ts`, along with the ~1,890 lines of helpers
-     * only it used. `wireInsert` was 1,369 lines and is now about 400.
+     * ── WHAT THIS TAKES OUT OF WHAT A USER DOWNLOADS ────────────────────────
+     * Six modules, ~13,400 lines, none of which any user has ever been able to
+     * reach: `harness-ui.ts` and the five files imported by it and nothing else
+     * in `src/` — `selftest.ts`, `host-probe.ts`, `experiments.ts`,
+     * `core/demo.ts` and `crashlog.ts`. Every published build has shipped the
+     * project's own test harness to every customer.
+     *
+     * The static `import { wireHarness } from "./harness-ui"` was the only thing
+     * holding them in, which is what yesterday's extraction was for.
+     *
+     * ── A BUILD FLAG WOULD HAVE BEEN WRONG ──────────────────────────────────
+     * `TESTING_UI_NEEDS_OPT_IN`'s comment gives the reason and it applies here
+     * with more force: a build flag means the bundle users get is not the bundle
+     * the round loop tests, and this project's whole validation rests on those
+     * being the same artifact — `round.mjs` refuses to run when HEAD and the
+     * deployed stamp differ, for exactly that reason. A dynamic import is the
+     * SAME artifact at the same sha, split into two files. One build, one
+     * deployment; the driver's manifest asks for the second chunk and a user's
+     * never does.
+     *
+     * ── THROUGH `lazy()`, WHICH EXISTS BECAUSE THIS FAILED ONCE ─────────────
+     * A deploy replaces the whole hashed `assets/` directory, and a pane open
+     * across one is holding an index that names chunks the server no longer has.
+     * The 4:3 leg of the 2026-08-28 cycle died on exactly that, showing the user
+     * a raw browser message about a URL. `lazy` turns it into a sentence about
+     * reopening the pane. A bare `import()` here would reintroduce the failure
+     * unnamed — which is worse than before, because until today nothing on this
+     * path could produce it.
+     *
+     * ── AND IT IS CAUGHT, NOT THROWN ────────────────────────────────────────
+     * A pane whose panel would not load is still a working pane: the product's
+     * own controls are already wired above. So the note says what happened and
+     * `wireInsert` resolves anyway. For the round driver this is the right
+     * failure too — `round.mjs` will not find its buttons, and the pane says why
+     * rather than looking like a build with no harness in it.
      *
      * PASSED, NOT IMPORTED: that module cannot import this one without closing
-     * an ESM cycle, which `test/import-cycles.test.ts` would fail on and which
-     * would otherwise surface as an undefined binding inside PowerPoint with
-     * everything green here. `guard` and `keepDisabled` are this closure's; the
-     * other four are module scope.
+     * an ESM cycle — and `test/import-cycles.test.ts` deliberately does not
+     * count dynamic imports, so from this line on it could no longer see one.
+     * `guard` and `keepDisabled` are this closure's; the other two are module
+     * scope. The status strip it also needs is `./status`, which both files
+     * import.
      */
-    wireHarness({ guard, keepDisabled, boundedRaster, isWebHost });
+    if (harnessWanted) {
+      try {
+        const panel = await lazy(() => import("./harness-ui"), "the testing panel");
+        panel.wireHarness({ guard, keepDisabled, boundedRaster, isWebHost });
+        // ONLY NOW. See `revealTestingSection` — the section stays out of the
+        // accessibility tree until its buttons have listeners, so the round
+        // driver cannot find one it could click into nothing.
+        revealTestingSection();
+      } catch (err: unknown) {
+        // Left hidden on purpose: a panel of dead buttons is worse than no
+        // panel, and this is the note that says which happened.
+        note(errorText(err), "err");
+      }
+    }
   } else {
     insertBtn.disabled = true;
     loadBtn.disabled = true;
     ($("agenda-insert") as HTMLButtonElement).disabled = true;
     note("Not running inside PowerPoint — use Download SVG, or sideload the manifest to insert native shapes.");
+    // No host, so no panel to wire — and that was true before the panel became
+    // a dynamic import too. Showing the section preserves exactly what this
+    // branch has always rendered; hiding it here would be a new behaviour
+    // smuggled in by a change about bundle size.
+    revealTestingSection();
   }
 }
 
@@ -3777,12 +3842,14 @@ const deepLink = new URLSearchParams(location.search);
  * flip costs it nothing. The owner's call, made; what a user receives changed
  * with it.
  *
- * **THIS HIDES THE PANEL. IT DOES NOT UNSHIP IT.** The harness is still in the
- * bundle — `hidden` is a DOM attribute, not a build exclusion. Taking those
- * ~13,400 lines out of what users download is a separate change, and it is the
- * dynamic import of `./harness-ui`.
+ * **AND SINCE THE PANEL BECAME A DYNAMIC IMPORT, IT DOES UNSHIP IT.** The five
+ * modules only `harness-ui.ts` imports — ~13,400 lines — are a separate chunk
+ * that a pane without this parameter never fetches. `hidden` is still what stops
+ * a user SEEING the section; the import is what stops them downloading it.
  */
 const TESTING_UI_NEEDS_OPT_IN = true;
+/** Whether this pane is allowed the Testing panel at all. */
+const harnessWanted = !TESTING_UI_NEEDS_OPT_IN || deepLink.get("harness") === "1";
 if (TESTING_UI_NEEDS_OPT_IN && deepLink.get("harness") !== "1") {
   const testing = document.getElementById("testing-section");
   if (testing) testing.hidden = true;
@@ -3801,6 +3868,42 @@ if (TESTING_UI_NEEDS_OPT_IN && deepLink.get("harness") !== "1") {
   const traceToggle = document.getElementById("demo-trace") as HTMLInputElement | null;
   if (traceToggle) traceToggle.checked = false;
   setTracing(false);
+}
+
+/**
+ * THE PANEL DOES NOT APPEAR UNTIL ITS BUTTONS WORK.
+ *
+ * `#testing-section` ships visible in `taskpane.html`, and until 2026-09-29 that
+ * was safe: `wireHarness` ran synchronously inside `wireInsert`, so by the time
+ * anything could read the DOM the listeners were on. A dynamic import opens a
+ * window between the two in which every `demo-*` button is present and inert.
+ *
+ * THE ONE THAT READS IT IS THE ROUND DRIVER. `round.mjs` finds
+ * `Probe, then self-test` BY NAME in the accessibility tree and clicks it; a
+ * click in that window does nothing and the round dies as `no-run-button` or,
+ * worse, as a run that never started. It has seconds of Playwright round-trips
+ * to get there and the chunk is same-origin, so the race is not one you would
+ * ever see — and a lost round costs half an hour to notice.
+ *
+ * So the section is hidden until the panel is wired, which makes "findable"
+ * and "works" the same fact. This reuses exactly the mechanism `round.mjs`'s
+ * own comment describes — "`hidden` takes the section out of the accessibility
+ * tree, which is the tree `round.mjs` searches with `find`" — rather than adding
+ * a second signal for the driver to learn.
+ *
+ * NOT IN THE GATE BLOCK ABOVE, deliberately: that block is the opt-OUT, matched
+ * by `test/manifest.test.ts` as a unit, and this is the opposite case.
+ */
+if (harnessWanted) {
+  const testing = document.getElementById("testing-section");
+  if (testing) testing.hidden = true;
+}
+
+/** The panel is wired (or, on a non-host pane, never will be). Show it. */
+function revealTestingSection(): void {
+  if (!harnessWanted) return;
+  const testing = document.getElementById("testing-section");
+  if (testing) testing.hidden = false;
 }
 
 const requestedKind = deepLink.get("kind");
@@ -3911,9 +4014,46 @@ const syncSizeFromInputs = () => {
 chartWInput?.addEventListener("input", syncSizeFromInputs);
 chartHInput?.addEventListener("input", syncSizeFromInputs);
 
+/**
+ * Resolves once the Testing panel has been wired — or once it is settled that it
+ * will not be.
+ *
+ * ── WHY AN EXPORTED PROMISE AND NOT A TEST TWEAK ────────────────────────────
+ * The panel's chunk is loaded with `import()`, which resolves in a later
+ * microtask than `app.ts`'s own evaluation. So between the module finishing and
+ * this promise settling there is a window in which `#demo-insert` exists in the
+ * DOM and has no listener — and a click in that window does nothing, silently.
+ *
+ * `test/pane-state.test.ts` clicks one microtask after boot:
+ *
+ *     demo.click();
+ *     await Promise.resolve();
+ *     expect(demo.disabled).toBe(true);
+ *
+ * which a dynamic import cannot span. There are 66 `demo-*` / `experiment-*`
+ * lookups across the two pane test files, and patching them one at a time is
+ * this repo's most-repeated defect — the fix that reached all but one call site.
+ * One signal every caller waits on is the fix that cannot be half-applied.
+ *
+ * ── IT RESOLVES ON FAILURE TOO, DELIBERATELY ────────────────────────────────
+ * "The harness wiring has been ATTEMPTED" is the useful contract. A rejection
+ * would have to be handled by every awaiting caller, and a stale-build failure
+ * is already reported where a person can see it — the note. A test that wants to
+ * know the panel is really there should assert on the panel.
+ *
+ * ── AND IT IS ALSO THE DRIVER'S SIGNAL ──────────────────────────────────────
+ * `round.mjs` waits for the Testing section in the accessibility tree, which is
+ * the same fact from the outside. This is the inside view of it, for anything in
+ * the page that needs to know.
+ *
+ * Starts resolved so that a pane which never reaches `wireInsert` — no Office,
+ * and the non-host branch — is not something to wait on forever.
+ */
+export let harnessReady: Promise<void> = Promise.resolve();
+
 if (typeof Office !== "undefined" && Office.onReady) {
   Office.onReady(() => {
-    wireInsert();
+    harnessReady = wireInsert();
     // ASK AGAIN NOW THAT THERE IS AN ANSWER. See `syncHostOnlyButtons`: the
     // module-scope call above ran before `Office.context` existed and disabled
     // both deck-style buttons for the whole session.
@@ -3945,6 +4085,6 @@ if (typeof Office !== "undefined" && Office.onReady) {
     }
   });
 } else {
-  wireInsert();
+  harnessReady = wireInsert();
   localizePane(new URLSearchParams(location.search).get("lang") ?? undefined);
 }

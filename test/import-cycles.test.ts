@@ -290,3 +290,59 @@ describe("the module graph of src/", () => {
     );
   });
 });
+
+/**
+ * THE HARNESS MUST STAY OUT OF WHAT A USER DOWNLOADS.
+ *
+ * `app.ts` loads `harness-ui.ts` with `import()` since 2026-09-29, which moved
+ * ~13,400 lines — the Testing panel, `selftest.ts`, `host-probe.ts`,
+ * `experiments.ts`, `core/demo.ts` and `crashlog.ts` — out of the pane's chunk
+ * and into one a user's pane never fetches. Measured: 319,021 bytes to 164,912.
+ *
+ * ONE STATIC IMPORT ANYWHERE PUTS ALL OF IT BACK. Not partly: a static edge from
+ * the product path to any of those six pulls the whole subgraph into the pane
+ * chunk, and the only thing that would say so is the built bundle size, which
+ * nothing in `npm test` looks at. Tree-shaking does not help — these are modules
+ * with side-effectful top-level wiring, and Rollup keeps them.
+ *
+ * It belongs in THIS file because it is a fact about the import graph, and
+ * because this file already reasons about the difference between a static edge
+ * and a dynamic one — it deliberately ignores the latter, which is exactly why
+ * the boundary it creates needs asserting from the other side.
+ */
+describe("the test harness is not in the product's static graph", () => {
+  /** The six modules the harness chunk is made of. */
+  const HARNESS = [
+    "src/taskpane/harness-ui.ts",
+    "src/taskpane/selftest.ts",
+    "src/render/host-probe.ts",
+    "src/render/experiments.ts",
+    "src/core/demo.ts",
+    "src/taskpane/crashlog.ts",
+  ];
+
+  it("is reachable from the pane only through a dynamic import", () => {
+    // Everything in `src/` EXCEPT the harness itself — the six may of course
+    // import each other, and `harness-ui.ts` imports the other five.
+    const product = sourceFiles("src").filter((f) => !HARNESS.includes(f.split("\\").join("/")));
+    const offenders: string[] = [];
+    for (const file of product)
+      for (const dep of runtimeImports(file)) if (HARNESS.includes(dep)) offenders.push(`${file} -> ${dep}`);
+    expect(
+      offenders,
+      "a static import puts the whole test harness back into every user's bundle — ~13,400 lines, and " +
+        "nothing in `npm test` measures the bundle, so this is the only thing that would say so. " +
+        `Offending edges: ${offenders.join(", ")}`,
+    ).toEqual([]);
+  });
+
+  it("would notice one, which is the half a sweep of nothing cannot prove", () => {
+    // NON-VACUITY. The assertion above passes trivially if `runtimeImports` ever
+    // stops returning anything, or if `HARNESS` is misspelled — both of which
+    // leave it green forever. So the same machinery is pointed at an edge that
+    // DOES exist: `harness-ui.ts` genuinely imports all five of the others.
+    const fromPanel = runtimeImports("src/taskpane/harness-ui.ts");
+    for (const m of HARNESS.filter((h) => h !== "src/taskpane/harness-ui.ts"))
+      expect(fromPanel, `${m} is no longer part of the harness chunk — re-check the list above`).toContain(m);
+  });
+});

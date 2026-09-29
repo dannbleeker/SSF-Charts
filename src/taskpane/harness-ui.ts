@@ -37,18 +37,25 @@
  * through `wired` and throw if anything runs before `wireHarness`, so the
  * failure is loud rather than an undefined call.
  *
- * AND WHAT THIS UNLOCKS, which is the reason it was worth doing first. The pane
- * ships its own test harness to every user — `app.ts` imported `./selftest` and
- * `../render/host-probe` statically, so ~12,700 lines of battery, probe and
- * `scripts/host-baseline.mjs` prose are in the 317 KB bundle every user loads.
- * That is deliberate and documented ("a build flag would mean the bundle users
- * get is not the bundle the round loop tests"). After this move those two
- * imports live HERE, and the only thing pulling the harness into the bundle is
- * one static import of this file. Gating it behind `?harness=1` — which
- * `manifest-harness.xml` already appends and `manifest-prod.xml` already does
- * not — becomes a one-line change that preserves the invariant that comment
- * defends, because a dynamic import is the same artifact at the same sha.
- * That is the owner's call and is not made here.
+ * AND WHAT THIS UNLOCKED, WHICH WAS THE REASON IT WAS WORTH DOING FIRST — and
+ * which was taken the same day. The pane used to ship its own test harness to
+ * every user: `app.ts` imported `./selftest` and `../render/host-probe`
+ * statically, so ~12,700 lines of battery, probe and `scripts/host-baseline.mjs`
+ * prose sat in the 319 KB bundle every user loaded. Deliberate and documented
+ * ("a build flag would mean the bundle users get is not the bundle the round
+ * loop tests"). Once those imports lived HERE, the only thing pulling the
+ * harness into the bundle was one static import of this file.
+ *
+ * That import is now `await lazy(() => import("./harness-ui"), …)`, behind the
+ * same `?harness=1` that `manifest-harness.xml` appends and `manifest-prod.xml`
+ * does not. The pane chunk went 319,021 -> 164,912 bytes and this file's own
+ * chunk — 155,027 bytes — is fetched only by a pane that asked for it. The
+ * invariant that comment defends is intact: a dynamic import is the SAME
+ * artifact at the same sha, split in two.
+ *
+ * SO NOTHING HERE MAY BECOME REACHABLE FROM THE PRODUCT PATH AGAIN. A single
+ * static `import … from "./harness-ui"` anywhere in `app.ts` pulls all of it
+ * back, silently, and only the built bundle size would say so.
  */
 import {
   type ReconcileOutcome,

@@ -50,9 +50,28 @@ where it lived.** Three of those seven were `note`, `setProgress` and
 parameters because they sat in `app.ts`, which is a fact about file layout and
 not about the Testing panel. A third module both files import states the
 direction instead of inverting it. `import-cycles.test.ts` deliberately ignores
-dynamic `import()`, so once the panel is loaded dynamically a static import of
-`./app` from inside it would be a real runtime cycle the guard cannot see:
+dynamic `import()`, so now that the panel IS loaded dynamically a static import
+of `./app` from inside it would be a real runtime cycle the guard cannot see:
 neither `status.ts` nor `harness-ui.ts` may import `./app`.
+
+**The harness is not in the bundle a user downloads, and one static import puts
+all of it back.** Since 2026-09-29 `app.ts` reaches the panel through
+`await lazy(() => import("./harness-ui"), …)`, behind the same `?harness=1` the
+opt-in gate reads. That took the pane chunk from 319,021 to 164,912 bytes and
+put ~13,400 lines — `harness-ui.ts`, `selftest.ts`, `host-probe.ts`,
+`experiments.ts`, `core/demo.ts`, `crashlog.ts` — into a chunk a user's pane
+never fetches. A single static edge from the product path to any of those six
+pulls the whole subgraph back, and nothing in `npm test` measures a bundle, so
+`test/import-cycles.test.ts` asserts the boundary from the other side.
+
+Two consequences worth knowing before touching the pane. **`wireInsert` is
+`async`** — only its last statement, so the product's controls are wired exactly
+as synchronously as before. And **`app.ts` exports `harnessReady`**, which every
+pane test awaits after booting: the panel's listeners attach a microtask later
+than the module finishes, and a test that clicks `#demo-insert` before that
+silently does nothing. `#testing-section` stays `hidden` until the panel is
+wired, so the round driver — which finds buttons by name in the accessibility
+tree — cannot find one it could click into nothing.
 
 **Function size is ratcheted.** `test/function-size.test.ts` records every
 function in `src/` at or over 150 CODE lines (comments and blanks excluded,

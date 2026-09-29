@@ -102,7 +102,26 @@ async function bootPane(search = "") {
   // against each fresh DOM. Without this the cached module keeps listening to
   // the previous test's detached nodes and every click silently does nothing.
   vi.resetModules();
-  await import("../src/taskpane/app");
+  /**
+   * AWAIT THE HARNESS, ALWAYS, AND NOT ONLY WHERE A `demo-*` BUTTON IS CLICKED.
+   *
+   * `app.ts` loads the Testing panel with `import()` since 2026-09-29, so the
+   * panel's listeners attach a microtask AFTER this module finishes evaluating.
+   * Two things go wrong without this await and only one of them is obvious.
+   *
+   * The obvious one: a click on `#demo-insert` one microtask after boot lands on
+   * a button with no listener and does nothing, silently, so the failure reads
+   * as a wrong assertion rather than as missing wiring.
+   *
+   * The other is worse. `vi.resetModules()` gives each boot a fresh module
+   * graph, but an import still in flight from the PREVIOUS boot resolves into
+   * the OLD module instance — which then calls `wireHarness` and looks up
+   * `#demo-insert` in the document, and the document is shared. A stale panel
+   * wires itself onto the current test's DOM. Awaiting here means nothing is
+   * ever left in flight across a boot.
+   */
+  const app = await import("../src/taskpane/app");
+  await app.harnessReady;
 }
 
 /** Load `cfg` through the pane's JSON import box, as a user would. */
@@ -754,7 +773,9 @@ async function bootHost() {
     textFrame: { textRange: { font: {}, paragraphFormat: {} } },
     tags: { add() {} },
   });
-  await bootPane();
+  // `?harness=1`: every test using this clicks `#demo-insert`, and since the
+  // opt-in gate was flipped that button only exists on a pane the driver opened.
+  await bootPane("?harness=1");
   return { release, runs: () => runs };
 }
 
@@ -787,7 +808,7 @@ describe("busy-guard on host actions", () => {
         throw new Error("host refused");
       },
     });
-    await bootPane();
+    await bootPane("?harness=1");
     const demo = $<HTMLButtonElement>("demo-insert");
     demo.click();
     await vi.waitFor(() => expect(document.getElementById("host-note")!.textContent).toMatch(/^Failed:/), SETTLE);
@@ -906,7 +927,7 @@ describe("status is pane-wide, and only claims what it knows", () => {
         throw new Error("host refused");
       },
     });
-    await bootPane();
+    await bootPane("?harness=1");
     $<HTMLButtonElement>("demo-insert").click();
     await vi.waitFor(() => expect(noteEl().textContent).toMatch(/^Failed:/), SETTLE);
     // The message stays; the "still working" signal must not.

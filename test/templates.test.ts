@@ -26,7 +26,11 @@ async function bootPane() {
   parsed.querySelectorAll("script").forEach((s) => s.remove());
   document.body.innerHTML = parsed.body.innerHTML;
   vi.resetModules();
-  await import("../src/taskpane/app");
+  // `harnessReady`, so no dynamic import of the Testing panel is left in flight
+  // across the next boot — a stale one resolves into the PREVIOUS module
+  // instance and wires itself onto the shared document. See its note in `app.ts`.
+  const app = await import("../src/taskpane/app");
+  await app.harnessReady;
 }
 
 /** Re-open the pane WITHOUT clearing storage — what a reload really is. */
@@ -35,7 +39,8 @@ async function reopenPane() {
   parsed.querySelectorAll("script").forEach((s) => s.remove());
   document.body.innerHTML = parsed.body.innerHTML;
   vi.resetModules();
-  await import("../src/taskpane/app");
+  const app = await import("../src/taskpane/app");
+  await app.harnessReady;
 }
 
 /**

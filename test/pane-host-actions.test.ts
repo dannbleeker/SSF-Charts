@@ -642,6 +642,11 @@ async function bootHostPane(opts?: {
   keepPicturePref?: boolean;
   /** Override the pane's query string. Only the opt-in gate's own test uses it — see below. */
   search?: string;
+  /**
+   * Return before the Testing panel's chunk has loaded, so a test can observe
+   * the window between the two. One test uses this; everything else must not.
+   */
+  dontWaitForHarness?: boolean;
 }) {
   host.selectionBounds = null;
   host.slideShapes = [];
@@ -801,8 +806,20 @@ async function bootHostPane(opts?: {
   });
 
   vi.resetModules();
-  await import("../src/taskpane/app");
+  // The Testing panel is a dynamic import since 2026-09-29, so its listeners
+  // attach a microtask after this module finishes evaluating. Half this file
+  // drives `demo-*`; without the await those clicks land on buttons that have
+  // no handler yet, and silently do nothing. `settle()` happens to cover it, but
+  // relying on that makes every one of these tests depend on how many ticks
+  // `settle` spends — see `harnessReady`'s own note in `app.ts`.
+  const app = await import("../src/taskpane/app");
+  // `harnessSettling` is handed back so the ONE test whose subject is the gap
+  // between boot and wiring can look inside it. Everything else awaits here.
+  const harnessSettling = app.harnessReady;
+  if (opts?.dontWaitForHarness) return harnessSettling;
+  await harnessSettling;
   await settle();
+  return harnessSettling;
 }
 
 /** A value-axis chart config with a known extent, as a JSON tag would carry it. */
@@ -4226,5 +4243,74 @@ describe("the opt-in gate and verbose tracing", () => {
     expect($("testing-section").hidden, "the round driver's pane cannot reach the Testing section").toBe(false);
     const { tracing } = await import("../src/core/trace");
     expect(tracing(), "the driver's pane records nothing, so a failed round explains nothing").toBe(true);
+  });
+});
+
+/**
+ * THE TESTING PANEL IS A SEPARATE CHUNK NOW, AND CHUNKS CAN BE MISSING.
+ *
+ * `app.ts` loads `harness-ui.ts` with `import()` since 2026-09-29 — that is what
+ * keeps ~13,400 lines of harness out of every user's bundle. It buys two new
+ * failure modes, and `#testing-section` is hidden until the chunk has wired it
+ * so that neither of them produces a panel of dead buttons.
+ *
+ * WHY THAT MATTERS MORE THAN IT LOOKS. `round.mjs` finds
+ * `Probe, then self-test` by NAME in the accessibility tree and clicks it. A
+ * click on an unwired button does nothing at all, and the round dies half an
+ * hour later as a run that never started — the most expensive failure this
+ * project has, and a silent one. Hiding the section until it works makes "the
+ * driver can find it" and "it works" the same fact, reusing the mechanism
+ * `round.mjs` already relies on rather than adding a signal for it to learn.
+ *
+ * WHAT IS NOT ASSERTED HERE, AND WHY NOT. The window between the pane existing
+ * and the chunk arriving is not observable under vitest: the import resolves
+ * out of an in-memory module graph, inside the same microtask chain as the
+ * pane's own import, so `bootHostPane` cannot return while it is still pending.
+ * A test that "observed" the gap would be asserting a race it had already lost.
+ * What holds the ordering is that `revealTestingSection()` is called INSIDE the
+ * try, after `wireHarness` — and what is checked here is the outcome on both
+ * paths, which is the half a real browser can differ on.
+ */
+describe("a Testing panel whose chunk does not arrive", () => {
+  it("leaves the section hidden and says so, rather than showing dead buttons", async () => {
+    // A chunk the server no longer has, which is the real shape of this: a
+    // deploy replaced `assets/` while the pane was open. See `src/render/lazy.ts`.
+    vi.doMock("../src/taskpane/harness-ui", () => {
+      throw new Error("Failed to fetch dynamically imported module: /assets/harness-ui-abc123.js");
+    });
+    try {
+      await bootHostPane();
+      expect(
+        $("testing-section").hidden,
+        "a panel that failed to load is showing its buttons anyway — every one of them inert",
+      ).toBe(true);
+      // AND THE USER IS TOLD. Only that a failure REACHES the note is asserted,
+      // not its wording: `vi.doMock` cannot produce a browser's own "failed to
+      // fetch dynamically imported module" — vitest replaces the message with a
+      // wrapper of its own — so the stale-build sentence is not reachable from
+      // here. Translating that message is `lazy`'s job and
+      // `test/stale-build.test.ts` checks it against all three browsers'
+      // spellings. What this test owns is that the pane does not SWALLOW the
+      // failure, which is the half it could be wrong about.
+      expect($("host-note").textContent ?? "", "the pane swallowed a failed panel load").not.toBe("");
+      expect($("host-note").className, "a failed panel load is not neutral news").toMatch(/status-err/);
+    } finally {
+      vi.doUnmock("../src/taskpane/harness-ui");
+      vi.resetModules();
+    }
+  });
+
+  it("shows it, and really wires it, when the chunk is there", async () => {
+    // The other side of the same coin: without this the assertion above would
+    // pass on a pane that never shows the panel at all.
+    await bootHostPane();
+    expect($("testing-section").hidden, "the round driver's pane cannot reach the Testing section").toBe(false);
+    const round = $("demo-round") as HTMLButtonElement;
+    round.click();
+    await settle();
+    expect(
+      round.disabled || ($("host-note").textContent ?? "") !== "",
+      "the section is visible but its buttons have no listeners",
+    ).toBe(true);
   });
 });
