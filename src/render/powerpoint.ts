@@ -7213,9 +7213,30 @@ async function countGroupChildren(snapshots: SlideSnapshot[]): Promise<void> {
       // on it. Retry one at a time so one unreadable group does not cost the
       // other nineteen their measurement — and a measurement missing here is
       // what makes the repair pass "fix" a chart that was never broken.
+      //
+      // NAMED WHEN IT FAILS, and it used to be `.catch(() => {})`. The sentence
+      // above is the reason: an unmeasured slide is the input the repair pass can
+      // act wrongly on, so which slides went unmeasured is exactly the fact the
+      // archive needs. Swallowing stays right — one unreadable group must not
+      // stop the sweep — but swallowing silently left `planReconcile` reasoning
+      // from an absence nobody could explain afterwards.
+      //
+      // ONE LINE FOR THE PAGE, not one per slide. A whole page faulting usually
+      // means all twenty retries fault too, and twenty trace lines for one
+      // mechanism is how a run log stops being read.
+      const unmeasured: string[] = [];
       for (const s of page) {
         if (isStopRequested()) break;
-        await countGroupChildrenPage([s]).catch(() => {});
+        await countGroupChildrenPage([s]).catch((err: unknown) => {
+          // BY DECK INDEX, because that is what a snapshot carries and what
+          // `planReconcile` keys on — there is no slide id in a `SlideSnapshot`.
+          // The slot tag rides along when there is one, since index alone moves
+          // if the deck is reordered before anybody reads this.
+          unmeasured.push(`#${s.index}${s.slot === null ? "" : ` (slot ${s.slot})`}: ${errorText(err)}`);
+        });
+      }
+      if (unmeasured.length) {
+        trace("repair", "group children left unmeasured", { of: page.length, slides: unmeasured });
       }
     }
   }
@@ -9317,7 +9338,20 @@ export async function withSlideDeselected<T>(slideIds: string[], fn: (deselected
           await context.sync();
         },
         SELECTION_TIMEOUT_MS,
-      ).catch(() => {});
+      ).catch(() => {
+        // DELIBERATELY NOTHING, and the paragraph above is the reason: failing to
+        // restore the view costs the user a scroll position, while not returning
+        // from this `finally` costs them the pane's busy counter.
+        //
+        // WHAT IS AND IS NOT ON THE RECORD, checked rather than assumed. A
+        // TIMEOUT is traced by `withTimeout` ("gave up waiting", with this call's
+        // label). A REFUSAL is not: `ppRun` patches `context.sync` for counting
+        // and then calls the callback directly — it does not wrap it in `step`,
+        // which is the thing that traces an error — so a host that rejects this
+        // batch is discarded here and nowhere else. That is accepted on purpose
+        // for a cosmetic restore, and it is written down because the honest
+        // version of "best effort" names which effort goes unreported.
+      });
     }
     // Take the scratch slide back out — AFTER the restore above, never before.
     // Deleting the slide the view is currently on leaves the host to choose
@@ -9678,11 +9712,28 @@ export async function replaceSlideWithDeck(slideId: string, base64: string): Pro
   // id once and refused it ever after, while still listing it among the deck's
   // slides. `deleteSlideById` answers from that list and falls back to deleting
   // by position, which is the whole reason it was written.
+  // TRACED, because the cost of this failing is a slide the USER has to deal
+  // with. It read `.catch(() => {})`: the replacement deck lands, the original
+  // stays, and the user is looking at two slides where they asked for one —
+  // which is the exact outcome the paragraph above says this function exists to
+  // avoid, reported nowhere.
+  //
+  // Swallowed rather than rethrown is still right. The replacement is already in
+  // the deck and the chart is already on it, so failing the whole insert over a
+  // leftover would trade a tidy deck for no chart at all. What was missing was
+  // the record, not a rethrow — an untraced leftover is one nobody can attribute
+  // later, which is how "the deck grew by two" becomes a mystery in the archive
+  // instead of a known cost of a known path.
   await withTimeoutOrVerify(
     deleteSlideById(slideId),
     DECK_INSERT_TIMEOUT_MS(1),
     "removing the slide a generated deck replaced",
-  ).catch(() => {});
+  ).catch((err: unknown) => {
+    trace("repair", "could not remove the slide a generated deck replaced", {
+      slideId,
+      error: errorText(err),
+    });
+  });
   // NOT SETTLED, and the asymmetry is the reason rather than an oversight.
   // `settledSlideCount` re-reads when the count is BELOW a floor, which is the
   // shape of a late ADD. A late DELETE leaves the count too HIGH, so the helper
@@ -9746,7 +9797,16 @@ export function traceEnvironment(build: string): void {
   // them apart cannot explain a mis-placed chart.
   void slideSize()
     .then((s) => trace("host", "slide size", { ...s }))
-    .catch(() => {});
+    // SAY SO WHEN IT DOES NOT ANSWER, and this was `.catch(() => {})`. The
+    // paragraph above is the argument against that: the source of the number is
+    // load-bearing because a run log that cannot tell a read size from an assumed
+    // one cannot explain a mis-placed chart. An absent line is the worst of the
+    // three states — it does not even say which of the other two it would have
+    // been — and absent is exactly what a swallowed rejection leaves.
+    //
+    // No recursion risk: `trace` does not reach the host, so a failing
+    // `slideSize` cannot make this line fail in turn.
+    .catch((err: unknown) => trace("host", "slide size unavailable", { error: errorText(err) }));
 }
 
 /**
