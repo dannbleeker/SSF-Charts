@@ -3093,6 +3093,53 @@ branch was the one that fires on a genuinely unusual night. Nothing about
 reading the test would have shown that. Rewritten with twenty priors so the two
 separate.
 
+### `insert onto a slide that already has content` — 3 failures in 473 rounds, all identically worded, on 3 unrelated builds. NOT the layout refactor, 2026-09-29
+
+Round 497 failed it: **"1 of 2 new charts are re-editable"**. It arrived in the
+closing cycle of the layout decomposition, at 4:3, one round after the same
+scenario passed at 16:9 on the same build — which is exactly the shape that
+should be suspected of being our own commit. It is not, and the reasons are
+worth keeping because the next person will ask the same question.
+
+**EVERY OCCURRENCE, ever:**
+
+    102  f3e3941   1 of 2 new charts are re-editable
+    467  aee2783   1 of 2 new charts are re-editable
+    497  9a8fb38   1 of 2 new charts are re-editable
+
+Three builds with nothing in common — `f3e3941` and `aee2783` predate the
+refactor by hundreds of rounds — and byte-for-byte the same verdict text.
+
+**WHY IT CANNOT BE THE LAYOUT WORK, and this is the load-bearing argument.** That
+commit was verified by hashing the SVG of every sample of **all 25 chart kinds**
+at several frame sizes — 600 renders — before and after each of the three files
+it touched. Identical every time, and the covered set was checked against
+`CHART_KINDS` rather than assumed: no kind is missing from it. So `buildChart`
+returns an identical scene for anything the product can draw, and grouping,
+tagging and re-editability all consume that scene. There is no path from a
+node-emission refactor to a tag that cannot be read back.
+
+**AND THE ROUND'S OWN TRACE AGREES.** `config tags written, by target route`
+fired for every chart with `from: {group: 1}`, and the deck scan came back
+`charts: 20, unread: 0, tagsUnread: 0, complete: true`. Tags were written and
+readable at scan time. `rounds-gate.mjs` reported `no scenario regressed`
+against 468 archived rounds at 4:3. Round 496, same build, passed the scenario
+outright.
+
+**WHAT IS OPEN, stated carefully.** Two of the three occurrences are within the
+last 31 rounds and the third was 365 rounds earlier. Under a flat rate of 3/473
+the chance of two landing in any given 31-round window is about 1.7% — which
+sounds like a finding and is not one, because the window was chosen AFTER seeing
+where the events fell. That is the error `poolSettleAsks`'s docstring records
+this journal making once already: "called 12 quiet rounds a ~1% event by picking
+the split point after seeing the zeros." Three events is not a rate.
+
+So: not attributable, and not dismissed either. **If it appears again inside the
+next ~30 rounds, that is the third in a short window and worth a real
+investigation** — the place to start is which of the two charts lost its tag and
+whether it is always the same one, which the round file records and nothing yet
+reads.
+
 ### `layoutCombo` does not decompose the way the other three layouts did — MEASURED 2026-09-29, and the reason is structural
 
 Four layout functions were the largest in `src/` and three of them came apart
