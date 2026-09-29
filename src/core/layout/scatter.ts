@@ -502,6 +502,204 @@ function marginalNodes(
   return out;
 }
 
+/**
+ * Gridlines, tick labels and the two spines, for both axes.
+ *
+ * The largest of the five blocks lifted out of `layoutScatter`, and the last.
+ * It is self-contained in a way none of the others had to be checked for: it
+ * derives `gapScale`, `yTickScale`, `xTickScale` and `zeroSpineX`, and NOTHING
+ * after it reads any of them — verified by grep across the whole file, because
+ * "it looks local" is how a forward dependency survives a move.
+ *
+ * ── THE PARAMETERS ARE `xAxis` / `yAxis`, NOT `x` / `y` ─────────────────────
+ * The y loop declares `const y = yAxis.to(t)`. A parameter called `y` would be
+ * shadowed by it — `const y = y.to(t)` is a TDZ error at runtime and reads as a
+ * typo. The names match the call site, which is also where a reader looks next.
+ *
+ * ── THE PROSE IS UNTOUCHED, DELIBERATELY ────────────────────────────────────
+ * Only code lines were rewritten onto the bundles. The comment at the spine
+ * QUOTES CODE THAT NO LONGER EXISTS — "`toX(0) >= plot.x ? … : plot.x` pinned the
+ * spine to the left edge" — and rewriting a historical quote to name today's API
+ * would destroy the record of what the bug was. Every comment line in this
+ * function is byte-identical to the block it came from, checked rather than
+ * intended.
+ */
+function axisNodes(
+  xAxis: ScatterAxis,
+  yAxis: ScatterAxis,
+  plot: { x: number; y: number; w: number; h: number },
+  style: ChartStyle,
+  fs: number,
+  cfg: ChartConfig,
+): SceneNode[] {
+  const out: SceneNode[] = [];
+  /**
+   * The size each axis's tick labels are drawn at.
+   *
+   * One label per tick, each centred on its tick, so the room each has is the
+   * SPACING between adjacent ticks — and neither axis was fitted to it. On a
+   * plot small relative to the font the labels were drawn over each other:
+   * 60 of the 237 overlapping text pairs a sweep found were this axis alone,
+   * which made it the single worst offender in the engine.
+   *
+   * Bound by that spacing, the same rule the shared value axis and the radar's
+   * ring ticks now use. Last resort: where the ticks already clear each other
+   * this is 1 and nothing moves.
+   *
+   * Zero when the spacing cannot pay for a LEGIBLE label, and the labels are
+   * then dropped rather than drawn. A fit with no floor answers whatever the
+   * arithmetic says: six y ticks 1.6pt apart on a 200x150 chart at a 26pt font
+   * produced six ONE-POINT labels — ink no reader can resolve, stacked in the
+   * axis gutter, from a fit that reported success. Same answer the radar,
+   * sunburst, tilemap and pie reservations give when their band cannot be met:
+   * a label that cannot be read is not there. The gridlines stay, since those
+   * still carry the scale.
+   */
+  /**
+   * How much of the chart font a tick strip may take, from the gap between its
+   * own ticks. Lives in `frame.ts` now — the secondary value axis needs exactly
+   * this and had no fit at all, which was the largest remaining shape in the
+   * overlap sweep. See `tickGapScale`.
+   */
+  const gapScale = (vals: number[], to: (v: number) => number, span: number, want: (t: number) => number) =>
+    tickGapScale(fs * 0.9, vals, to, span, want);
+  const yTickScale = gapScale(yAxis.ticks, yAxis.to, plot.h, () => fs * 1.4);
+  /**
+   * The x strip's size, AFTER the origin nudge has been paid for.
+   *
+   * `gapScale` guarantees the tick spacing can carry the widest label. The nudge
+   * below then spends part of that guarantee: the label on the axis's origin is
+   * centred on its tick, so half of it hangs into the y axis's gutter, and it is
+   * moved right by exactly the overhang. Moving it right moves it TOWARD its
+   * neighbour, and the gap the fit had just opened closes by the same amount —
+   * 84 pairs of `x-axis` on `x-axis` in the variant sweep, on a strip that had a
+   * fit and looked correct.
+   *
+   * The secondary value axis had the same defect and took the other remedy: one
+   * shift for the whole strip, which keeps every gap. That is not available here
+   * because only the FIRST label is nudged, and shifting all of them right by
+   * its overhang would push the last one off the canvas. So this strip pays in
+   * SIZE instead: shrink until the nudged layout clears, and drop the numbers if
+   * it cannot — the answer this file already gives when the ticks will not fit.
+   *
+   * Half a point at a time rather than solving it: the nudge depends on the
+   * label width, which depends on the size, which is what is being solved for.
+   * A dozen iterations at most, on a strip of five or six numbers.
+   */
+  const xTickScale = (() => {
+    const want = (t: number) => textWidth(formatNumber(t, xAxis.fmt), fs * 0.9) + 2;
+    let scale = gapScale(xAxis.ticks, xAxis.to, plot.w, want);
+    if (scale <= 0 || xAxis.ticks.length < 2) return scale;
+    // Where each label's ink actually lands at this size, nudge included.
+    const spans = (s: number) =>
+      xAxis.ticks.map((t) => {
+        const half = textWidth(formatNumber(t, xAxis.fmt), fs * 0.9 * s) / 2;
+        const centre = Math.max(xAxis.to(t), plot.x + half);
+        return { lo: centre - half, hi: centre + half };
+      });
+    const clears = (s: number) => {
+      const b = spans(s);
+      for (let i = 1; i < b.length; i++) if (b[i].lo - b[i - 1].hi < 1) return false;
+      return true;
+    };
+    while (scale > 0 && !clears(scale)) {
+      scale -= 0.05;
+      if (fs * 0.9 * scale < MIN_LABEL_FS) return 0;
+    }
+    return scale;
+  })();
+  for (const t of yAxis.ticks) {
+    const y = yAxis.to(t);
+    out.push({
+      kind: "line",
+      x1: plot.x,
+      y1: y,
+      x2: plot.x + plot.w,
+      y2: y,
+      stroke: style.gridline,
+      strokeWidth: 0.75,
+      name: "gridline-y",
+    });
+    // Not into the TITLE's band: `fitPlot` grows a squeezed plot up from its
+    // bottom edge, so on a 300x60 chart at 24pt the axis and its ticks are
+    // inside the title. Per tick, like the value axis in `frame.ts` — the ones
+    // lower down are still where they belong.
+    if (yTickScale > 0 && !printsOnTitle(cfg, style, y - fs * 0.7 * yTickScale)) {
+      out.push({
+        kind: "text",
+        x: 0,
+        y: y - fs * 0.7 * yTickScale,
+        w: plot.x - 4,
+        h: fs * 1.4 * yTickScale,
+        text: formatNumber(t, yAxis.fmt),
+        fontSize: fs * 0.9 * yTickScale,
+        color: style.mutedText,
+        align: "right",
+        valign: "middle",
+        name: "y-axis",
+      });
+    }
+  }
+  if (xTickScale > 0) {
+    for (const t of xAxis.ticks) {
+      const x = xAxis.to(t);
+      // A tick label is CENTRED on its tick, so the one at the axis's origin
+      // puts half its width to the LEFT of the plot — which is the strip the y
+      // axis writes its own numbers in, and at 18pt on a 480x300 chart the two
+      // corner labels met. Nudged right by exactly the overlap, the same move
+      // the gantt's last tick label makes at the other end of its axis: a label
+      // that already clears the gutter does not move at all.
+      const half = textWidth(formatNumber(t, xAxis.fmt), fs * 0.9 * xTickScale) / 2;
+      const at = Math.max(x, plot.x + half);
+      // The x strip sits under the plot, and a plot squeezed into the title's
+      // band takes the strip with it — the whole row, since these share one y.
+      if (printsOnTitle(cfg, style, plot.y + plot.h + 2)) break;
+      out.push({
+        kind: "text",
+        x: at - 24,
+        y: plot.y + plot.h + 2,
+        w: 48,
+        h: fs * 1.4 * xTickScale,
+        text: formatNumber(t, xAxis.fmt),
+        fontSize: fs * 0.9 * xTickScale,
+        color: style.mutedText,
+        align: "center",
+        valign: "top",
+        name: "x-axis",
+      });
+    }
+  }
+  const zeroSpineX = Math.max(plot.x, Math.min(plot.x + plot.w, xAxis.to(0)));
+  out.push(
+    {
+      kind: "line",
+      x1: plot.x,
+      y1: plot.y + plot.h,
+      x2: plot.x + plot.w,
+      y2: plot.y + plot.h,
+      stroke: style.axis,
+      strokeWidth: 1,
+      name: "baseline",
+    },
+    {
+      kind: "line",
+      // Clamped on BOTH sides. `toX(0) >= plot.x ? … : plot.x` pinned the spine
+      // to the left edge when zero fell left of the domain and left it free
+      // when zero fell right of it — so an all-negative x axis (a variance or
+      // drawdown scatter) put a full-height spine 109pt past the right edge of
+      // the canvas. A guard that guards one direction is not a guard.
+      x1: zeroSpineX,
+      y1: plot.y,
+      x2: zeroSpineX,
+      y2: plot.y + plot.h,
+      stroke: style.axis,
+      strokeWidth: 1,
+      name: "y-axis-line",
+    },
+  );
+  return out;
+}
+
 export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decorations): LayoutResult {
   const { data } = cfg;
   const fs = style.fontSize;
@@ -661,172 +859,7 @@ export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decora
   // Behind the gridlines and the points — push order is paint order.
   if (decor.quadrants) nodes.push(...quadrantNodes(decor.quadrants, xAxis, yAxis, plot, style, fs));
   if (decor.bands) nodes.push(...bandNodes(decor.bands, xAxis, yAxis, plot, style, fs));
-
-  // Gridlines + axis labels on both axes.
-  /**
-   * The size each axis's tick labels are drawn at.
-   *
-   * One label per tick, each centred on its tick, so the room each has is the
-   * SPACING between adjacent ticks — and neither axis was fitted to it. On a
-   * plot small relative to the font the labels were drawn over each other:
-   * 60 of the 237 overlapping text pairs a sweep found were this axis alone,
-   * which made it the single worst offender in the engine.
-   *
-   * Bound by that spacing, the same rule the shared value axis and the radar's
-   * ring ticks now use. Last resort: where the ticks already clear each other
-   * this is 1 and nothing moves.
-   *
-   * Zero when the spacing cannot pay for a LEGIBLE label, and the labels are
-   * then dropped rather than drawn. A fit with no floor answers whatever the
-   * arithmetic says: six y ticks 1.6pt apart on a 200x150 chart at a 26pt font
-   * produced six ONE-POINT labels — ink no reader can resolve, stacked in the
-   * axis gutter, from a fit that reported success. Same answer the radar,
-   * sunburst, tilemap and pie reservations give when their band cannot be met:
-   * a label that cannot be read is not there. The gridlines stay, since those
-   * still carry the scale.
-   */
-  /**
-   * How much of the chart font a tick strip may take, from the gap between its
-   * own ticks. Lives in `frame.ts` now — the secondary value axis needs exactly
-   * this and had no fit at all, which was the largest remaining shape in the
-   * overlap sweep. See `tickGapScale`.
-   */
-  const gapScale = (vals: number[], to: (v: number) => number, span: number, want: (t: number) => number) =>
-    tickGapScale(fs * 0.9, vals, to, span, want);
-  const yTickScale = gapScale(yTicks, toY, plot.h, () => fs * 1.4);
-  /**
-   * The x strip's size, AFTER the origin nudge has been paid for.
-   *
-   * `gapScale` guarantees the tick spacing can carry the widest label. The nudge
-   * below then spends part of that guarantee: the label on the axis's origin is
-   * centred on its tick, so half of it hangs into the y axis's gutter, and it is
-   * moved right by exactly the overhang. Moving it right moves it TOWARD its
-   * neighbour, and the gap the fit had just opened closes by the same amount —
-   * 84 pairs of `x-axis` on `x-axis` in the variant sweep, on a strip that had a
-   * fit and looked correct.
-   *
-   * The secondary value axis had the same defect and took the other remedy: one
-   * shift for the whole strip, which keeps every gap. That is not available here
-   * because only the FIRST label is nudged, and shifting all of them right by
-   * its overhang would push the last one off the canvas. So this strip pays in
-   * SIZE instead: shrink until the nudged layout clears, and drop the numbers if
-   * it cannot — the answer this file already gives when the ticks will not fit.
-   *
-   * Half a point at a time rather than solving it: the nudge depends on the
-   * label width, which depends on the size, which is what is being solved for.
-   * A dozen iterations at most, on a strip of five or six numbers.
-   */
-  const xTickScale = (() => {
-    const want = (t: number) => textWidth(formatNumber(t, xFmt), fs * 0.9) + 2;
-    let scale = gapScale(xTicks, toX, plot.w, want);
-    if (scale <= 0 || xTicks.length < 2) return scale;
-    // Where each label's ink actually lands at this size, nudge included.
-    const spans = (s: number) =>
-      xTicks.map((t) => {
-        const half = textWidth(formatNumber(t, xFmt), fs * 0.9 * s) / 2;
-        const centre = Math.max(toX(t), plot.x + half);
-        return { lo: centre - half, hi: centre + half };
-      });
-    const clears = (s: number) => {
-      const b = spans(s);
-      for (let i = 1; i < b.length; i++) if (b[i].lo - b[i - 1].hi < 1) return false;
-      return true;
-    };
-    while (scale > 0 && !clears(scale)) {
-      scale -= 0.05;
-      if (fs * 0.9 * scale < MIN_LABEL_FS) return 0;
-    }
-    return scale;
-  })();
-  for (const t of yTicks) {
-    const y = toY(t);
-    nodes.push({
-      kind: "line",
-      x1: plot.x,
-      y1: y,
-      x2: plot.x + plot.w,
-      y2: y,
-      stroke: style.gridline,
-      strokeWidth: 0.75,
-      name: "gridline-y",
-    });
-    // Not into the TITLE's band: `fitPlot` grows a squeezed plot up from its
-    // bottom edge, so on a 300x60 chart at 24pt the axis and its ticks are
-    // inside the title. Per tick, like the value axis in `frame.ts` — the ones
-    // lower down are still where they belong.
-    if (yTickScale > 0 && !printsOnTitle(cfg, style, y - fs * 0.7 * yTickScale)) {
-      nodes.push({
-        kind: "text",
-        x: 0,
-        y: y - fs * 0.7 * yTickScale,
-        w: plot.x - 4,
-        h: fs * 1.4 * yTickScale,
-        text: formatNumber(t, yFmt),
-        fontSize: fs * 0.9 * yTickScale,
-        color: style.mutedText,
-        align: "right",
-        valign: "middle",
-        name: "y-axis",
-      });
-    }
-  }
-  if (xTickScale > 0) {
-    for (const t of xTicks) {
-      const x = toX(t);
-      // A tick label is CENTRED on its tick, so the one at the axis's origin
-      // puts half its width to the LEFT of the plot — which is the strip the y
-      // axis writes its own numbers in, and at 18pt on a 480x300 chart the two
-      // corner labels met. Nudged right by exactly the overlap, the same move
-      // the gantt's last tick label makes at the other end of its axis: a label
-      // that already clears the gutter does not move at all.
-      const half = textWidth(formatNumber(t, xFmt), fs * 0.9 * xTickScale) / 2;
-      const at = Math.max(x, plot.x + half);
-      // The x strip sits under the plot, and a plot squeezed into the title's
-      // band takes the strip with it — the whole row, since these share one y.
-      if (printsOnTitle(cfg, style, plot.y + plot.h + 2)) break;
-      nodes.push({
-        kind: "text",
-        x: at - 24,
-        y: plot.y + plot.h + 2,
-        w: 48,
-        h: fs * 1.4 * xTickScale,
-        text: formatNumber(t, xFmt),
-        fontSize: fs * 0.9 * xTickScale,
-        color: style.mutedText,
-        align: "center",
-        valign: "top",
-        name: "x-axis",
-      });
-    }
-  }
-  const zeroSpineX = Math.max(plot.x, Math.min(plot.x + plot.w, toX(0)));
-  nodes.push(
-    {
-      kind: "line",
-      x1: plot.x,
-      y1: plot.y + plot.h,
-      x2: plot.x + plot.w,
-      y2: plot.y + plot.h,
-      stroke: style.axis,
-      strokeWidth: 1,
-      name: "baseline",
-    },
-    {
-      kind: "line",
-      // Clamped on BOTH sides. `toX(0) >= plot.x ? … : plot.x` pinned the spine
-      // to the left edge when zero fell left of the domain and left it free
-      // when zero fell right of it — so an all-negative x axis (a variance or
-      // drawdown scatter) put a full-height spine 109pt past the right edge of
-      // the canvas. A guard that guards one direction is not a guard.
-      x1: zeroSpineX,
-      y1: plot.y,
-      x2: zeroSpineX,
-      y2: plot.y + plot.h,
-      stroke: style.axis,
-      strokeWidth: 1,
-      name: "y-axis-line",
-    },
-  );
+  nodes.push(...axisNodes(xAxis, yAxis, plot, style, fs, cfg));
 
   // Partition lines (dashed) at fixed x / y values.
   for (const v of xLines) {

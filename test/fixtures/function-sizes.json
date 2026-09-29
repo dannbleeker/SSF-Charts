@@ -1,7 +1,7 @@
 {
-  "src/core/layout/scatter.ts::layoutScatter": 618,
-  "src/core/layout/gantt.ts::layoutGantt": 606,
-  "src/core/layout/column.ts::layoutColumns": 479,
+  "src/core/layout/gantt.ts::layoutGantt": 551,
+  "src/core/layout/scatter.ts::layoutScatter": 523,
+  "src/core/layout/column.ts::layoutColumns": 437,
   "src/core/layout/column.ts::layoutCombo": 387,
   "src/render/host-probe.ts::runHostProbes": 387,
   "src/taskpane/app.ts::renderOptions": 355,

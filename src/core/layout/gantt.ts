@@ -16,6 +16,129 @@ import type { LayoutResult } from "./column";
 import { bandFontSize, fitPlot, footnoteH, titleHeight, titleNode, MIN_LABEL_FS } from "./frame";
 import { lerpColor, zoneFill } from "../color";
 
+/** A plot rectangle in points — the shape `fitPlot` returns. */
+interface PlotBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Bracket annotations above the timeline header.
+ *
+ * `spanLabel` is passed in rather than rebuilt: it closes over the timeline's own
+ * format resolution, and the row loop uses the same one. Two copies of a label
+ * formatter is how two parts of one chart start disagreeing about how a date is
+ * written.
+ */
+function bracketNodes(
+  brackets: readonly { label: string; from: number; to: number }[],
+  toX: (v: number) => number,
+  titleH: number,
+  fs: number,
+  style: ChartStyle,
+  spanLabel: (s: number, e: number) => string,
+): SceneNode[] {
+  const out: SceneNode[] = [];
+  brackets.forEach((b, i) => {
+    const x1 = toX(b.from);
+    const x2 = toX(b.to);
+    const y = titleH + fs * 1.5;
+    out.push(
+      { kind: "line", x1, y1: y, x2, y2: y, stroke: style.text, strokeWidth: 1, name: `bracket-${i}` },
+      { kind: "line", x1, y1: y, x2: x1, y2: y + 3.5, stroke: style.text, strokeWidth: 1, name: `bracket-tick-a-${i}` },
+      { kind: "line", x1: x2, y1: y, x2, y2: y + 3.5, stroke: style.text, strokeWidth: 1, name: `bracket-tick-b-${i}` },
+      {
+        kind: "text",
+        x: x1,
+        y: y - fs * 1.35,
+        w: x2 - x1,
+        h: fs * 1.3,
+        text: b.label || spanLabel(b.from, b.to),
+        fontSize: fs * 0.9,
+        bold: true,
+        color: style.text,
+        align: "center",
+        valign: "middle",
+        name: `bracket-label-${i}`,
+      },
+    );
+  });
+  return out;
+}
+
+/**
+ * Holiday shading (any granularity).
+ *
+ * THE `workdays` GATE IS AT THE CALL SITE, not in here. It used to read
+ * `for (const h of workdays ? [] : holidays)`, and iterating an empty array is
+ * the same nothing as not being called — the condition reads better beside the
+ * other two shading passes than buried in a loop header. Pointless under a
+ * working-day scale: a holiday has no width left to shade.
+ */
+function holidayNodes(
+  holidays: readonly number[],
+  toX: (v: number) => number,
+  plot: PlotBox,
+  style: ChartStyle,
+): SceneNode[] {
+  const out: SceneNode[] = [];
+  for (const h of holidays) {
+    const x1 = Math.max(plot.x, toX(h));
+    const x2 = Math.min(plot.x + plot.w, toX(h + 1));
+    if (x2 > x1) {
+      out.push({
+        kind: "rect",
+        x: x1,
+        y: plot.y,
+        w: x2 - x1,
+        h: plot.h,
+        fill: zoneFill(style.background, "#efe7e7"),
+        name: `holiday-${h}`,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Weekend shading in week granularity.
+ *
+ * GATED ON `!workdays` AT THE CALL SITE, explicitly rather than left to the
+ * `x2 > x1` guard below: that only collapses for a Mon–Fri week. Under a custom
+ * workweek (say Sun–Thu) Saturday has width again, so the guard passes and the
+ * block shades a Sunday — a working day there — while leaving the real
+ * non-working Friday unshaded.
+ */
+function weekendNodes(
+  span: { lo: number; hi: number },
+  toX: (v: number) => number,
+  plot: PlotBox,
+  style: ChartStyle,
+): SceneNode[] {
+  const out: SceneNode[] = [];
+  for (let d = span.lo - 7; d <= span.hi + 7; d++) {
+    if (d % 7 === 2) {
+      // Day ≡ 2 (mod 7) is Saturday (day 0 = Thursday); shade Sat+Sun.
+      const x1 = Math.max(plot.x, toX(d));
+      const x2 = Math.min(plot.x + plot.w, toX(d + 2));
+      if (x2 > x1) {
+        out.push({
+          kind: "rect",
+          x: x1,
+          y: plot.y,
+          w: x2 - x1,
+          h: plot.h,
+          fill: zoneFill(style.background, "#f4f3f0"),
+          name: `weekend-${d}`,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * Simplified Gantt / timeline: categories are activities; rows named
  * Start and End give each activity's span on a numeric timeline (week,
@@ -341,75 +464,12 @@ export function layoutGantt(cfg: ChartConfig, style: ChartStyle, decor: Decorati
   const nodes: SceneNode[] = [];
   const titleN = titleNode(cfg, style);
   if (titleN) nodes.push(titleN);
-  // Bracket annotations above the timeline header.
-  brackets.forEach((b, i) => {
-    const x1 = toX(b.from);
-    const x2 = toX(b.to);
-    const y = titleH + fs * 1.5;
-    nodes.push(
-      { kind: "line", x1, y1: y, x2, y2: y, stroke: style.text, strokeWidth: 1, name: `bracket-${i}` },
-      { kind: "line", x1, y1: y, x2: x1, y2: y + 3.5, stroke: style.text, strokeWidth: 1, name: `bracket-tick-a-${i}` },
-      { kind: "line", x1: x2, y1: y, x2, y2: y + 3.5, stroke: style.text, strokeWidth: 1, name: `bracket-tick-b-${i}` },
-      {
-        kind: "text",
-        x: x1,
-        y: y - fs * 1.35,
-        w: x2 - x1,
-        h: fs * 1.3,
-        text: b.label || spanLabel(b.from, b.to),
-        fontSize: fs * 0.9,
-        bold: true,
-        color: style.text,
-        align: "center",
-        valign: "middle",
-        name: `bracket-label-${i}`,
-      },
-    );
-  });
-
-  // Holiday shading (any granularity). Pointless under a working-day scale:
-  // a holiday has no width left to shade.
-  for (const h of workdays ? [] : holidays) {
-    const x1 = Math.max(plot.x, toX(h));
-    const x2 = Math.min(plot.x + plot.w, toX(h + 1));
-    if (x2 > x1) {
-      nodes.push({
-        kind: "rect",
-        x: x1,
-        y: plot.y,
-        w: x2 - x1,
-        h: plot.h,
-        fill: zoneFill(style.background, "#efe7e7"),
-        name: `holiday-${h}`,
-      });
-    }
-  }
-
-  // Weekend shading in week granularity. Gated on !workdays explicitly rather
-  // than left to the x2 > x1 guard below: that only collapses for a Mon–Fri
-  // week. Under a custom workweek (say Sun–Thu) Saturday has width again, so
-  // the guard passes and the block shades a Sunday — a working day there —
-  // while leaving the real non-working Friday unshaded.
-  if (weeks && !workdays) {
-    for (let d = lo - 7; d <= hi + 7; d++) {
-      if (d % 7 === 2) {
-        // Day ≡ 2 (mod 7) is Saturday (day 0 = Thursday); shade Sat+Sun.
-        const x1 = Math.max(plot.x, toX(d));
-        const x2 = Math.min(plot.x + plot.w, toX(d + 2));
-        if (x2 > x1) {
-          nodes.push({
-            kind: "rect",
-            x: x1,
-            y: plot.y,
-            w: x2 - x1,
-            h: plot.h,
-            fill: zoneFill(style.background, "#f4f3f0"),
-            name: `weekend-${d}`,
-          });
-        }
-      }
-    }
-  }
+  // PUSH ORDER IS PAINT ORDER. Brackets sit above the header; both shadings go
+  // behind everything the plot draws. Each gate is here rather than inside its
+  // helper so the three passes read as one decision about the calendar.
+  nodes.push(...bracketNodes(brackets, toX, titleH, fs, style, spanLabel));
+  if (!workdays) nodes.push(...holidayNodes(holidays, toX, plot, style));
+  if (weeks && !workdays) nodes.push(...weekendNodes({ lo, hi }, toX, plot, style));
 
   // Timeline header on top + vertical gridlines (think-cell's calendar strip).
   /**

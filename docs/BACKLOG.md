@@ -3093,6 +3093,66 @@ branch was the one that fires on a genuinely unusual night. Nothing about
 reading the test would have shown that. Rewritten with twenty priors so the two
 separate.
 
+### `layoutCombo` does not decompose the way the other three layouts did — MEASURED 2026-09-29, and the reason is structural
+
+Four layout functions were the largest in `src/` and three of them came apart
+cleanly into sibling `*Nodes` helpers that RETURN nodes for the caller to push:
+
+    layoutScatter   780 -> 523   quadrants, bands, trajectory, marginals, axes
+    layoutGantt     606 -> 551   brackets, holiday shading, weekend shading
+    layoutColumns   479 -> 437   connectors, grand total
+    layoutCombo     387 -> 387   nothing extracted
+
+**`layoutCombo` is not bigger or hairier. It is a different KIND of function.**
+The other three emit: each block appends to `nodes` and never looks at it again,
+so a helper that returns an array is a faithful replacement and the only
+invariant to preserve is push order. `layoutCombo` READS THE ARRAY BACK in six
+places:
+
+    1267  nodes.filter(... n.kind === "text" ...)      what text is already placed
+    1707  nodes.some(...)                              does the legend name it
+    1713  nodes.some(...)
+    1769  nodes[i] + nodes.splice(i, 1)                remove the base's series labels
+    1794  nodes[i]
+    1799  nodes.splice(i, 1)                           remove secondary ticks that collide
+
+It is a RECONCILIATION pass over a base layout's output, not a sequence of
+independent emitters. It calls `layoutColumns` (or waterfall/mekko) for the
+columns, then decides what the line needs by inspecting what the base already
+drew — and twice it deletes nodes the base produced. A `returns nodes` helper
+cannot express a splice, and a helper that takes `nodes` and mutates it
+reintroduces exactly the shared-mutable coupling the pattern exists to remove
+while gaining nothing: the call site would still have to know the order and the
+helper would still be one-call-site-only.
+
+**SO IT IS NOT A TIME LIMIT AND SHOULD NOT BE RE-ATTEMPTED BLIND.** The
+tractable target in it, if one is ever wanted, is the SCALE RECONCILIATION at
+the top (roughly the shared-axis / secondary-axis / waterfall-overflow
+derivation, lines ~1000-1160) — that part is pure arithmetic over the config and
+could become a function returning the resolved scales. It was not attempted here
+because its intermediates feed each other and each one's comment records a
+specific measured defect; splitting it needs a reading of that section on its own
+terms, not the pattern that worked three times above.
+
+**WHAT THE PATTERN IS, for the next layout that grows.** Extract a block only
+when: it is contiguous, it reads no local written later, it writes no local read
+later, it emits no node that later code finds by name and mutates, and it never
+reads the accumulator it appends to. Return the nodes; keep the gate at the call
+site when the condition is a fact about the DATA rather than about drawing. Pass
+narrow per-concern bundles (`ScatterAxis`, `ColumnGeom`) rather than one context
+object — that was measured on `layoutScatter` and rejected: a nine-field bag
+served one caller fully and eight at two to five fields while they each still
+needed three to seven arguments besides.
+
+**THE GATE FOR ALL OF IT is `scratchpad/harness/svg-fingerprint.mjs` over every
+kind, not the snapshots.** `nodes` is z-ordered, so any reordering of appends
+changes the SVG bytes, and only two of 31 snapshot entries cover scatter at all.
+Each extraction above was verified by hashing 600 renders — 25 kinds at several
+frame sizes — before and after, and every one came back identical. The
+`examples/showcase.pptx` staleness check is NOT a second opinion here: the zip is
+repacked nondeterministically, so two regenerations of unchanged source give
+different md5s.
+
 ### Three things `layoutScatter` does inconsistently — FOUND WHILE REFACTORING, NOT FIXED THERE, 2026-09-29
 
 Found by reading the function line by line to extract from it. None was fixed in

@@ -1,4 +1,4 @@
-import type { ChartConfig, ChartStyle, Decorations, LayoutAnchors, Series } from "../types";
+import type { ChartConfig, ChartStyle, Decorations, LayoutAnchors, NumberFormat, Series } from "../types";
 import { contrastInk, textWidth, type SceneNode, type TextNode } from "../scene";
 import { clipToWidth } from "../elements";
 import {
@@ -137,6 +137,120 @@ export function clusteredTopValue(values: number[]): number {
   if (!finite.length) return 0;
   const hi = Math.max(...finite);
   return hi > 0 ? hi : Math.min(...finite);
+}
+
+/**
+ * Where a bar sits and how thick it is — the geometry every late block in
+ * `layoutColumns` needs and nothing else about the chart.
+ *
+ * A NARROW BUNDLE, not a context object. The alternative measured on
+ * `layoutScatter` — one bag holding cfg, style, decor, the frame, both scales and
+ * the font size — served a single caller fully and eight others at two to five of
+ * nine fields while they each still needed three to seven arguments besides. This
+ * holds five fields and every consumer uses all five.
+ *
+ * `H` rides along because the orientation decides what "thickness" means: in a
+ * horizontal chart the category runs down y and the value along x, and every
+ * consumer has to branch on it. Passing it separately would put the same boolean
+ * beside the same four fields at every call site.
+ */
+interface ColumnGeom {
+  /** Horizontal (bar) orientation: categories down y, values along x. */
+  H: boolean;
+  frame: Frame;
+  /** Centre of each category slot, along the category axis. */
+  centers: number[];
+  /** Column thickness across the category axis. */
+  colThick: number;
+  /** Value to a distance along the value axis, clamped to the plot. */
+  qOf: (v: number) => number;
+}
+
+/**
+ * Connector lines between adjacent stacked columns: one per segment boundary, so
+ * the development of each segment is easy to follow.
+ *
+ * The `decor.connectors && stacked && nStacks === 1` gate stays at the call site:
+ * two of those three are facts about the DATA's shape rather than about drawing a
+ * connector, and reading them beside the other late blocks' gates is what makes
+ * the tail of that function legible.
+ */
+function connectorNodes(
+  posBounds: readonly (number[] | undefined)[],
+  negBounds: readonly (number[] | undefined)[],
+  n: number,
+  geom: ColumnGeom,
+  style: ChartStyle,
+): SceneNode[] {
+  const out: SceneNode[] = [];
+  const { H, frame, centers, colThick, qOf } = geom;
+  const edge = (c: number, q: number, side: 1 | -1) =>
+    H
+      ? { x: frame.x + q, y: centers[c] + (side * colThick) / 2 }
+      : { x: centers[c] + (side * colThick) / 2, y: frame.y + frame.h - q };
+  for (let c = 0; c < n - 1; c++) {
+    for (const bounds of [posBounds, negBounds]) {
+      const a = bounds[c] ?? [];
+      const b = bounds[c + 1] ?? [];
+      // Sparse by series: only join a boundary that exists on both columns.
+      for (let i = 0; i < Math.max(a.length, b.length); i++) {
+        if (a[i] == null || b[i] == null) continue;
+        const p1 = edge(c, qOf(a[i]), 1);
+        const p2 = edge(c + 1, qOf(b[i]), -1);
+        out.push({
+          kind: "line",
+          x1: p1.x,
+          y1: p1.y,
+          x2: p2.x,
+          y2: p2.y,
+          stroke: style.mutedText,
+          strokeWidth: 0.75,
+          name: `connector-${c}-${i}${bounds === negBounds ? "n" : ""}`,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Grand total (think-cell 14): one label at the top-right showing the sum of
+ * every category total.
+ *
+ * A FIXED anchor in the de-collision pass, so a tall right-hand column's own
+ * (movable) total nudges around it.
+ *
+ * `grandY` is computed and GATED by the caller, not here, and that is the whole
+ * point of the decision recorded at the call site: the label is drawn only where
+ * the band above the plot is on the canvas, and dropped rather than clamped into
+ * the title. Splitting a gate across two files is how half of it gets forgotten,
+ * so all of it stays there and this function only draws.
+ */
+function grandTotalNode(
+  signedTotals: readonly number[],
+  frame: Frame,
+  grandY: number,
+  fs: number,
+  fmt: NumberFormat,
+  style: ChartStyle,
+): SceneNode {
+  const grand = signedTotals.reduce((a, b) => a + b, 0);
+  const gtext = formatNumber(grand, fmt);
+  const gw = Math.min(frame.w, textWidth(gtext, fs, true) + 8);
+  return {
+    kind: "text",
+    x: frame.x + frame.w - gw,
+    y: grandY,
+    w: gw,
+    h: fs * 1.4,
+    text: gtext,
+    fontSize: fs,
+    bold: true,
+    color: style.text,
+    align: "right",
+    valign: "bottom",
+    name: "grand-total",
+  };
 }
 
 /**
@@ -737,25 +851,8 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
   // for the CAGR caption: a fixed anchor that lands on other text is worse than
   // one that is not drawn. It is a summary of numbers the chart already shows.
   const grandY = frame.y - fs * 1.5;
-  if (decor.grandTotal && !pct && !H && n > 0 && grandY >= 0) {
-    const grand = signedTotals.reduce((a, b) => a + b, 0);
-    const gtext = formatNumber(grand, fmt);
-    const gw = Math.min(frame.w, textWidth(gtext, fs, true) + 8);
-    nodes.push({
-      kind: "text",
-      x: frame.x + frame.w - gw,
-      y: grandY,
-      w: gw,
-      h: fs * 1.4,
-      text: gtext,
-      fontSize: fs,
-      bold: true,
-      color: style.text,
-      align: "right",
-      valign: "bottom",
-      name: "grand-total",
-    });
-  }
+  if (decor.grandTotal && !pct && !H && n > 0 && grandY >= 0)
+    nodes.push(grandTotalNode(signedTotals, frame, grandY, fs, fmt, style));
 
   // IBCS variance tier: a strip below the columns showing an actual series'
   // deviation from a reference (plan / previous year) as signed bars from a zero
@@ -825,36 +922,10 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
     });
   }
 
-  // Connector lines between adjacent stacked columns: one per segment
-  // boundary, so the development of each segment is easy to follow.
-  if (decor.connectors && stacked && nStacks === 1) {
-    const edge = (c: number, q: number, side: 1 | -1) =>
-      H
-        ? { x: frame.x + q, y: centers[c] + (side * colThick) / 2 }
-        : { x: centers[c] + (side * colThick) / 2, y: frame.y + frame.h - q };
-    for (let c = 0; c < n - 1; c++) {
-      for (const bounds of [posBounds, negBounds]) {
-        const a = bounds[c] ?? [];
-        const b = bounds[c + 1] ?? [];
-        // Sparse by series: only join a boundary that exists on both columns.
-        for (let i = 0; i < Math.max(a.length, b.length); i++) {
-          if (a[i] == null || b[i] == null) continue;
-          const p1 = edge(c, qOf(a[i]), 1);
-          const p2 = edge(c + 1, qOf(b[i]), -1);
-          nodes.push({
-            kind: "line",
-            x1: p1.x,
-            y1: p1.y,
-            x2: p2.x,
-            y2: p2.y,
-            stroke: style.mutedText,
-            strokeWidth: 0.75,
-            name: `connector-${c}-${i}${bounds === negBounds ? "n" : ""}`,
-          });
-        }
-      }
-    }
-  }
+  // `nStacks === 1` and `stacked` are facts about the DATA's shape, so they are
+  // read here rather than inside the helper — see `connectorNodes`.
+  if (decor.connectors && stacked && nStacks === 1)
+    nodes.push(...connectorNodes(posBounds, negBounds, n, { H, frame, centers, colThick, qOf }, style));
 
   if (!H) nodes.push(...breakMarkerNodes(frame, scale, style, cfg.width));
 
