@@ -58,7 +58,14 @@ belongs with the thing it tests, not with the reason it was written.)
   equally a deck PowerPoint offers to repair and equally reported as a success),
   `svg-render` (SVG node emission — paths,
   polygons, options), `pane-state` / `pane-host-actions` / `pane-widgets` /
-  `dom-pane` (task pane), `crashlog` (the record that outlives a run that
+  `dom-pane` (task pane — **every boot helper must `await app.harnessReady`**
+  since 2026-09-29, because the Testing panel is a dynamic import and its
+  listeners attach a microtask after the module finishes; a test that clicks
+  `#demo-insert` before that silently does nothing, and an import still in flight
+  across the next `vi.resetModules()` wires the PREVIOUS module instance onto the
+  shared document. A test that drives `demo-*` also boots with `?harness=1`,
+  because since the opt-in gate was flipped that is the only pane those buttons
+  exist on), `crashlog` (the record that outlives a run that
   never ends), `templates` (saving and re-picking a chart setup — a whole
   feature that had no tests until one of them turned up a bug),
   `host-probe` (the fake's own frozen answer sheet — what it CLAIMS about the
@@ -103,6 +110,13 @@ belongs with the thing it tests, not with the reason it was written.)
   OOXML grammar, plus the one baselined finding it is allowed to have),
   `triage` (joining a saved deck to the run log that produced it). The first two
   catch nearly disjoint sets and both gate CI on `examples/showcase.pptx`.
+  `triage` also holds the tests for the 33 POOLED READERS, which moved to
+  `scripts/round-pools.mjs` on 2026-09-29 so Stryker could mutate them. They
+  stayed in that file rather than moving with the code: they are forty
+  interleaved `it`s inside one 1,300-line describe that tests the readers and the
+  tool around them from the same brace, and a botched test split is worse than a
+  file whose name is broader than one module. What mattered was that they RUN
+  under mutation — see `triage-repo.test.ts` below.
 
 ## The fake PowerPoint host
 
@@ -203,6 +217,34 @@ rule while reading a single file by name.
   edges into `column.ts` are declared in `ACCEPTED_CYCLE_EDGES` with the reason
   `column.ts:38` already gives, and each is checked to still BE an edge, so a
   stale entry fails rather than quietly permitting something else.
+
+  It also holds **the harness/product boundary**, added 2026-09-29 when `app.ts`
+  started loading `harness-ui.ts` with `import()`. That took the pane chunk from
+  319,021 to 164,912 bytes, and ONE static edge from the product path to any of
+  the six harness modules pulls all ~13,400 lines back — silently, because
+  nothing in `npm test` measures a bundle. This file is the right home because it
+  already reasons about the difference between a static edge and a dynamic one:
+  it deliberately ignores the latter, which is exactly why the boundary that
+  creates has to be asserted from the other side.
+
+- **`round-pools.test.ts`** — asserts what makes `scripts/round-pools.mjs`
+  MUTATABLE: no imports at all, no filesystem, no clock, no `process`. One
+  `readFileSync` in there and its tests stop being runnable in Stryker's sandbox,
+  which puts the 33 pooled readers back outside `mutate` — and everything would
+  still be green. `stryker.config.json` records what that cost the last time:
+  four tests written for those readers passed against the code they were written
+  to catch. **This file is itself excluded from the mutation suite**, and found
+  that out by failing: Stryker's instrumentation reads `process.env`, so a guard
+  that greps the source was right about the bytes and wrong about which file
+  they were. Same incompatibility as `secondary-axis-ticks.test.ts`.
+
+- **`triage-repo.test.ts`** — the two `triage.test.ts` blocks that genuinely
+  cannot run under mutation: a sweep reading every file under `src/`, which
+  Stryker rewrites, and a pair of 120-second child-process spawns that can never
+  kill a mutant because a child does not inherit the active-mutant global. They
+  are here so that `triage.test.ts` — which holds every pooled reader's tests —
+  can stay IN the mutation suite. Keep that division: a test moved here because
+  it is slow rather than because it cannot run is signal thrown away.
 
 - **`function-size.test.ts`** — a ratchet over every function in `src/` at or
   over 150 **code** lines, measured from the TypeScript AST. Code lines and not
