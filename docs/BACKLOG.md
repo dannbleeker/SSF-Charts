@@ -3016,43 +3016,47 @@ What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
 
-### Grouping refused once in each of two rounds on one build — INSIDE THE NOISE FLOOR, recorded so the next cycle checks it, 2026-09-27
+### Grouping refusals are NOT rare — the "usually 0" baseline is a median, and a quarter of rounds refuse. CLOSED 2026-09-29
 
-**This is not a finding. It is a thing to look at once more**, written down only
-because the alternative is forgetting it and never checking.
+The 2026-09-27 entry here asked one question — does the next cycle's 16:9 pair
+both refuse — and instructed its own deletion if they came back clean. **They
+did.** Cycle on `bae44ad`:
 
-Cycle on `dcf21b4`, rounds 483-485:
+    486  16:9  Presentation64   19 of 19 grouped,  0 refused
+    487  16:9  Presentation64   17 of 17 grouped,  0 refused
+    488  4:3   Presentation70   15 of 21 grouped,  6 refused
 
-    483  16:9  Presentation64   20 of 20 grouped,  0 refused
-    484  16:9  Presentation64   17 of 18 grouped,  1 refused
-    485  4:3   Presentation70   17 of 18 grouped,  1 refused
+By the driver's own pair rule that closes it. What replaces it is worth more than
+the question was, and is the reason this is a short note rather than a deletion.
 
-The driver's own baseline is **"usually 0 over 455 prior rounds"**, and its own
-rule for this counter is that a refusal stays inside the noise floor **unless a
-PAIR on one build agrees**. The pair here is 483/484 — legs 1 and 2, same deck,
-same ratio — and it does NOT agree. So by the rule this is noise, and it is
-filed as noise.
+**MEASURED ACROSS ALL 464 ROUNDS WITH A TRACE, which nobody had done:**
 
-**What makes it worth one more look is corroboration from a different
-instrument on the same day and build.** `scripts/store-shots.mjs`, capturing
-listing images, hit repeated ungrouped inserts — 45, 81 and 35 loose shapes on
-separate attempts, each after the pane reported success. That is a second tool
-disagreeing with the baseline in the same direction, which one round's counter
-could not tell you.
+    refusals per round    0 -> 345 rounds    5 ->  4
+                          1 ->  32           6 ->  1
+                          2 ->  38           7 ->  2
+                          3 ->  17           8,9,11,13,17 -> 1 each
+                          4 ->  20
 
-**It is also the weakest kind of corroboration**, and the reason this entry
-refuses to call it a finding: those capture runs had bugs of their own — a
-`clear-failed` return that was discarded, so a chart drew on top of the previous
-one's leftovers. At least one "ungrouped" reading there was an artefact of the
-instrument, which is exactly the trap `elements-probe.mjs` already cost a day
-for. The two instruments are not independent enough to add up.
+**119 of 464 rounds (25.6%) refuse at least one group.** So the driver's
+`usually 0` is a MEDIAN, and reading it as a baseline makes any refusal look
+like a finding — which is exactly what the 2026-09-27 entry did, and what 488's
+six nearly did again. Six is the 8th-worst round on record; 460 and 461 hit 11
+and 17.
 
-**WHAT WOULD SETTLE IT:** a cycle whose 16:9 PAIR both refuse. That is the
-driver's own threshold and it has not been met. If the next cycle's 483/484
-equivalents are both clean, delete this entry rather than leaving it to accrete
-significance by sitting here.
+Both reason strings are long established: `no member handle this host will
+accept` **305 times**, `the positional guess named no shape of ours` **32
+times**. Neither is new. A cycle that happens not to sample the second one, as
+483-485 did, makes it look new when it next appears.
 
-### `two slides claiming one slot` has failed 15 times with ZERO host friction — OPEN QUESTION, 2026-09-20
+**WHAT WOULD ACTUALLY BE A FINDING:** a round above about 9, or a sustained
+shift in the per-round distribution — not a non-zero count. **The tool should
+say this rather than this file**, since a distribution written here drifts the
+moment the archive grows: `poolGroupingOutcome` in `scripts/triage.mjs` already
+computes the per-round numbers and `rounds-gate.mjs` prints only the median.
+Reporting the percentile of the current round against the archive would kill
+this false-positive class permanently. Filed, not done.
+
+### `two slides claiming one slot` has failed 16 times with ZERO host friction — OPEN QUESTION, 2026-09-20, last seen 2026-09-29
 
 Found by aggregating the archive after round 475 failed it, rather than by the
 round itself. Every failure of this scenario ever archived:
@@ -3067,12 +3071,26 @@ round itself. Every failure of this scenario ever archived:
     422  16:9  4 kept, 2 of 2 ...        435  16:9  3 kept, 3 of 2 ...
     446  16:9  threw: SSF Charts has been updated since this pane was opened
     447  16:9  3 kept, 3 of 2 ...        475  4:3   3 kept, 3 of 2 ...
+    487  16:9  4 kept, 4 of 2 still re-editable; 0 queued as duplicates
 
-**ALL FIFTEEN CARRY ZERO FRICTION.** Not one has an error, an id refusal, a
+**SIXTEEN NOW — 487 on `bae44ad`, 2026-09-29**, found by the baseline cycle run
+before a refactor rather than by looking for it. Zero friction again: no error,
+no id refusal, no GeneralException, no short or empty re-read. It matches **round
+297's sentence exactly**, which makes 297/487 the second pair in this table to
+share a signature, and both are the rarer `0 queued as duplicates` variant —
+the reconcile pass saw no duplicates to queue, rather than queueing them and
+keeping too many.
+
+Worth noting what it is NOT: the same build passed this scenario in round 486
+minutes earlier, and the 4:3 leg passed it too. One pass and one fail on
+identical bytes is this archive's own definition of a flaky scenario, so 487
+adds a data point, not a diagnosis.
+
+**ALL SIXTEEN CARRY ZERO FRICTION.** Not one has an error, an id refusal, a
 GeneralException, a short read or an empty re-read. That is the opposite of
 round 467's empty re-read, which wore the host's signature plainly — and by
 `scenarioBlame`'s own rule, which lands anything unproven on US rather than the
-host, these are ours fifteen times over.
+host, these are ours sixteen times over.
 
 THE GATE CANNOT SEE THIS, and that is the second finding. It reported the text as
 "NEW — no earlier round at this profile failed with these words", which is true
