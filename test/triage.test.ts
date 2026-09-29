@@ -2304,7 +2304,7 @@ describe("grouping, which no scenario verdict reports", () => {
     // priors are [2, 0, 2]; sorted [0, 2, 2] and the median index lands on the
     // middle, so the baseline is 2. The conservative direction: a higher
     // baseline flags LESS, and this line is a reason to read, not a verdict.
-    expect(out).toMatchObject({ now: { grouped: 15, refused: 4 }, refusedMedian: 2, rounds: 3 });
+    expect(out).toMatchObject({ now: { grouped: 15, refused: 4 }, refusedBaseline: { median: 2 }, rounds: 3 });
     expect(out?.now.deck, "the deck is printed as corroboration, not derived from").toEqual([0, 4, 2, 17, 24, 24, 24]);
   });
 
@@ -2538,15 +2538,19 @@ describe("grouping, which no scenario verdict reports", () => {
 
   it("refuses to name a usual until three rounds have been seen", () => {
     // THE HOUSE DEFECT, caught in a second emitter. With too little history this
-    // used to report `refusedMedian: 0` — indistinguishable, to a reader, from a
+    // used to report a median of `0` — indistinguishable, to a reader, from a
     // history in which nothing was ever refused. The gate printed that as
     // "usually 0 refused".
+    //
+    // The threshold matters MORE now that a whole distribution goes out rather
+    // than one number: a 90th percentile over two observations reads as precise,
+    // which is worse than a midpoint over two.
     const thin = poolGroupingOutcome([round("a", 20, 3, [1]), round("a", 20, 3, [1]), round("a", 15, 4, [1])]);
     expect(thin?.rounds, "two priors").toBe(2);
-    expect(thin?.refusedMedian, "two priors cannot name a usual").toBeNull();
+    expect(thin?.refusedBaseline, "two priors cannot name a usual").toBeNull();
 
     // And it is a THRESHOLD, not a refusal to ever answer: one more round and
-    // the same data yields a number. Without this half, deleting the median
+    // the same data yields a number. Without this half, deleting the baseline
     // entirely would pass the assertion above.
     const enough = poolGroupingOutcome([
       round("a", 20, 3, [1]),
@@ -2555,7 +2559,99 @@ describe("grouping, which no scenario verdict reports", () => {
       round("a", 15, 4, [1]),
     ]);
     expect(enough?.rounds, "three priors").toBe(3);
-    expect(enough?.refusedMedian, "three priors is a baseline").toBe(3);
+    expect(enough?.refusedBaseline?.median, "three priors is a baseline").toBe(3);
+  });
+
+  /**
+   * WHAT THE MEDIAN ALONE COULD NOT SAY, which is the whole reason it was
+   * replaced on 2026-09-29.
+   *
+   * `docs/BACKLOG.md` records the archive this came from: over 464 rounds with a
+   * trace, refusals per round were 0 in 345 of them and non-zero in 119 — so the
+   * median is ZERO and a quarter of all rounds refuse something. A reader given
+   * only "usually 0" reads any refusal as a finding, and did: a 2026-09-27
+   * backlog entry over two refusals, and round 488's six nearly filed as a
+   * regression two days later. Six is the eighth-worst round on record.
+   *
+   * The fixture below is that distribution in miniature — mostly clean rounds
+   * with a long right tail — because a fixture of evenly spread numbers cannot
+   * tell a percentile from a median at all.
+   */
+  it("carries the upper tail, which is the half a median cannot report", () => {
+    // Nine priors: seven refused nothing, one refused 4, one refused 17. Then
+    // the round being judged.
+    const logs = [
+      ...Array.from({ length: 7 }, () => round("a", 20, 0, [1])),
+      round("a", 16, 4, [1]),
+      round("a", 3, 17, [1]),
+      round("a", 14, 6, [1]),
+    ];
+    const out = poolGroupingOutcome(logs);
+    expect(out?.rounds, "nine priors").toBe(9);
+    const b = out?.refusedBaseline;
+    // sorted priors: [0,0,0,0,0,0,0,4,17]. floor(9*.5)=4 -> 0, floor(9*.75)=6 ->
+    // 0, floor(9*.9)=8 -> 17. The median and the 75th are BOTH zero while the
+    // worst is 17, which is exactly the shape that makes a midpoint useless.
+    expect(b?.median, "the typical round refuses nothing, and that is true").toBe(0);
+    expect(b?.q3).toBe(0);
+    expect(b?.p90).toBe(17);
+    expect(b?.worst, "and the archive has seen far worse than tonight").toBe(17);
+    expect(b?.none, "seven of nine refused nothing").toBe(7);
+    // THE DENOMINATOR IS THE POOL'S OWN, not the count of logs handed in. `per`
+    // skips rounds with no trace and rounds that did no grouping at all, so a
+    // printer taking its `n` from anywhere else would quote a ratio whose bottom
+    // half moved — the defect this file argues against elsewhere.
+    expect(b?.n, "the spread's denominator is the priors it actually saw").toBe(9);
+    // Six against a 90th of 17 is ordinary, and saying so is the point: six
+    // refusals were nearly filed as a regression on the strength of a median.
+    expect(b?.standing, "six is inside the ordinary range of this distribution").toBe("top-quarter");
+  });
+
+  /**
+   * THE FOUR BANDS, AND THE BOUNDARY IN EACH.
+   *
+   * `standing` is what a reader acts on, so the thresholds are checked from both
+   * sides rather than sampled. Every comparison is `>` and not `>=`: equalling
+   * the 90th percentile is not being above it, and a round that ties the worst
+   * on record has not set one. A `>=` here would flag the ordinary, which is
+   * precisely the false-positive class this replaced.
+   */
+  it("bands the round against the distribution, and ties do not count as exceeding", () => {
+    /**
+     * TWENTY PRIORS, AND THE COUNT IS THE POINT.
+     *
+     * The first version of this used nine, which put the 90th percentile and the
+     * worst round on the SAME value — so no input could land between them and
+     * the `above-90th` band was unreachable. Both of its mutants survived a
+     * scoped Stryker run: `now.refused > p90` to `false`, and the band's own
+     * string to `""`. A four-way decision tested three ways, and the untested
+     * branch was the one that fires on a genuinely unusual night.
+     *
+     * That is the exact defect class `stryker.config.json` records four of, and
+     * it was caught by the instrument this day's extraction switched on rather
+     * than by anyone re-reading the test. `floor(20 * 0.9)` is 18 against a last
+     * index of 19, so the two separate and every band has room.
+     *
+     * Sorted: twelve 0s, then 1, 1, 2, 2, 3, 4, 5, 20.
+     *   median idx floor(20*.5)=10 -> 0    75th idx 15 -> 2
+     *   90th   idx floor(20*.9)=18 -> 5    worst       -> 20
+     */
+    const counts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 3, 4, 5, 20];
+    const priors = counts.map((n) => round("a", 20, n, [1]));
+    const spread = (refused: number) => poolGroupingOutcome([...priors, round("a", 20, refused, [1])])?.refusedBaseline;
+    expect(spread(0)?.n, "twenty priors").toBe(20);
+    expect(spread(0)?.median, "the fixture's own median").toBe(0);
+    expect(spread(0)?.q3, "its quartile").toBe(2);
+    expect(spread(0)?.p90, "its 90th, which is NOT its worst").toBe(5);
+    expect(spread(0)?.worst, "its worst").toBe(20);
+    expect(spread(0)?.none, "twelve rounds refused nothing").toBe(12);
+
+    expect(spread(2)?.standing, "equalling the 75th is not exceeding it").toBe("ordinary");
+    expect(spread(3)?.standing, "one past the 75th").toBe("top-quarter");
+    expect(spread(5)?.standing, "equalling the 90th is not exceeding it").toBe("top-quarter");
+    expect(spread(6)?.standing, "one past the 90th, and nowhere near the worst").toBe("above-90th");
+    expect(spread(20)?.standing, "tying the worst on record has not set one").toBe("above-90th");
+    expect(spread(21)?.standing, "and one past it has").toBe("unprecedented");
   });
 
   it("counts charts, not grouped-lines — one line can carry several", () => {

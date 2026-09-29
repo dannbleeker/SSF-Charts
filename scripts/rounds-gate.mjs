@@ -1061,15 +1061,60 @@ if (isMain(import.meta.url, process.argv[1])) {
 
   const grouping = poolGroupingOutcome(rounds);
   if (grouping) {
-    const { now, refusedMedian, rounds: priorRounds, attempts, recent } = grouping;
+    const { now, refusedBaseline, rounds: priorRounds, attempts, recent } = grouping;
     console.log(
       `  GROUPING, which no scenario verdict reports: ${now.grouped} of ${attempts} attempt(s) grouped, ` +
         // NO BASELINE IS NOT A BASELINE OF ZERO. This used to print `usually 0`
         // when there was no history at all, which reads as "clean until now".
-        (refusedMedian === null
+        (refusedBaseline === null
           ? `${now.refused} refused (no baseline — ${priorRounds} prior round(s) is too few to say what is usual)`
-          : `${now.refused} refused (usually ${refusedMedian} over ${priorRounds} prior round(s))`),
+          : `${now.refused} refused`),
     );
+    /**
+     * WHERE TONIGHT SITS, NOT WHAT A TYPICAL NIGHT LOOKS LIKE.
+     *
+     * This line used to read "N refused (usually M over K prior round(s))" and
+     * the median was the whole of it. That is an answer to "what is typical",
+     * and a reader is never asking that here — they are asking "is tonight
+     * unusual", which a midpoint cannot answer in either direction.
+     *
+     * It misled twice, and the median it misled with is ZERO. Two refusals on
+     * 2026-09-27 became a backlog entry on the strength of "usually 0"; round
+     * 488's six were nearly filed as a regression two days later. Both readings
+     * were of a line that says the typical round refuses nothing — which is
+     * true, and which is a fact about 341 of 461 rounds rather than about the
+     * other 120. A quarter of all rounds refuse at least one group, the worst on
+     * record refused seventeen, and none of that could be read off a midpoint.
+     *
+     * So the spread is printed and the verdict is left to the reader — the same
+     * shape `poolSettleAsks`'s `longestPriorGap` takes, and for the same reason
+     * its docstring gives: "this journal has already once called 12 quiet rounds
+     * a ~1% event by picking the split point after seeing the zeros." The split
+     * points here were fixed before tonight's number was known.
+     *
+     * THE DENOMINATOR IS THE POOL'S OWN (`n`), not `rounds/`. `poolGroupingOutcome`
+     * skips rounds with no trace and rounds that neither grouped nor refused nor
+     * threw, so the archive's count would be the wrong bottom half — the exact
+     * defect the line below this section warns about.
+     */
+    if (refusedBaseline) {
+      const b = refusedBaseline;
+      // WHERE tonight sits is `poolGroupingOutcome`'s answer, not this printer's.
+      // Four ternaries here would be four un-mutated branches in a file Stryker
+      // never instruments — the measurement guarded and the judgement drawn from
+      // it not, which is the pair this commit exists to keep together. This end
+      // only chooses the words.
+      const where = {
+        unprecedented: " <- MORE THAN ANY PRIOR ROUND",
+        "above-90th": " <- above the 90th",
+        "top-quarter": " <- in the top quarter",
+        ordinary: "",
+      }[b.standing];
+      console.log(
+        `    refusals over ${b.n} prior round(s): median ${b.median}, 75th ${b.q3}, 90th ${b.p90}, ` +
+          `worst ${b.worst}; ${b.none} refused nothing${where ?? ""}`,
+      );
+    }
     // THE THROW, NAMED. Grouping has three outcomes and this line counted two,
     // so a round where a group threw printed `8 of 8 grouped, 0 refused` and
     // read as perfect — the missing attempt WAS the defect. 183 throws across

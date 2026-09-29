@@ -399,16 +399,81 @@ export function poolGroupingOutcome(logs) {
   // a stale `now` here describes another round's deck as this round's.
   if (!isTheRoundBeingJudged(now.at, logs)) return null;
   const priors = per.slice(0, -1);
-  // THREE PRIORS MINIMUM — the same rule `poolScenarioPopulations` needed, and
-  // the same defect it had. A median of one observation is not a "usually", and
-  // a median of ZERO observations used to be reported here as `0`, which is this
-  // project's house defect exactly: UNREADABLE PRINTED AS A NEGATIVE. A reader
-  // seeing "usually 0 refused" cannot tell a clean history from no history.
-  // `null` is the honest value and the printer must say so out loud.
-  const refusedMedian =
-    priors.length >= MIN_PRIORS_FOR_A_BASELINE
-      ? priors.map((p) => p.refused).sort((a, b) => a - b)[Math.floor(priors.length / 2)]
-      : null;
+  /**
+   * A DISTRIBUTION, NOT A MIDPOINT, AND THE MEDIAN ALONE HAS ALREADY MISLED
+   * TWICE.
+   *
+   * This used to return one number and the gate printed it as
+   * "N refused (usually M over K prior round(s))". A median answers "what is a
+   * typical round" and a reader uses it to answer a completely different
+   * question — "is tonight unusual" — which only the upper tail can settle.
+   *
+   * It cost two calls. Six refusals read against a median of 2 looked like a
+   * threefold regression and was talked out of being filed only by reading the
+   * archive by hand; two refusals against the same median became a backlog entry
+   * on 2026-09-27 that nothing supported. A count three times the median is
+   * unremarkable in a distribution whose top quarter is higher still, and the
+   * median cannot say that, ever.
+   *
+   * So the spread goes out with it: the quartile a reader compares against, the
+   * 90th for "is this rare", the worst the archive has ever held, and how many
+   * rounds refused NOTHING. Those four turn "6 refused" from a number into a
+   * position.
+   *
+   * THE DENOMINATOR IS THIS FUNCTION'S OWN, and that matters more than it looks.
+   * `per` skips any round with no trace entries and any round that neither
+   * grouped nor refused nor threw, so `priors.length` is smaller than the
+   * archive — quoting a ratio against the archive's count would be the "ratio
+   * whose bottom half moved" this file argues about one screen down, committed
+   * by the line warning against it. `n` is carried so the printer cannot get it
+   * from anywhere else.
+   *
+   * INDEX CONVENTION COPIED FROM `reportNoiseFloor`: `s[floor(n * q)]` on an
+   * ascending sort. Not because it is the best estimator — it is not — but
+   * because two percentile conventions in one report is how a reader ends up
+   * comparing two numbers that were never comparable. `floor(n * 0.5)` is also
+   * exactly the `floor(n / 2)` this replaced, so the median itself is unchanged.
+   *
+   * THREE PRIORS MINIMUM — the same rule `poolScenarioPopulations` needed, and
+   * the same defect it had. A median of one observation is not a "usually", and
+   * a median of ZERO observations used to be reported here as `0`, which is this
+   * project's house defect exactly: UNREADABLE PRINTED AS A NEGATIVE. A reader
+   * seeing "usually 0 refused" cannot tell a clean history from no history.
+   * `null` is the honest value and the printer must say so out loud. A
+   * PERCENTILE over two priors is worse than a median over two, because it reads
+   * as precise.
+   */
+  const refusedBaseline = (() => {
+    if (priors.length < MIN_PRIORS_FOR_A_BASELINE) return null;
+    const s = priors.map((p) => p.refused).sort((a, b) => a - b);
+    const at = (q) => s[Math.floor(s.length * q)];
+    const q3 = at(0.75);
+    const p90 = at(0.9);
+    const worst = s[s.length - 1];
+    /**
+     * WHERE TONIGHT SITS, decided HERE rather than in the printer.
+     *
+     * It is a statement about the data, not about wording, so it belongs with
+     * the data — and it is the half a reader acts on. Left in `rounds-gate.mjs`
+     * it would be four un-mutated ternaries in a file Stryker never instruments,
+     * which is the condition this whole pair of commits exists to end: the
+     * measurement guarded and the judgement drawn from it not.
+     *
+     * `>` and not `>=` throughout. Equalling the 90th percentile is not being
+     * above it, and a round that merely ties the worst on record has not set
+     * one. Erring the other way would flag the ordinary, which is the
+     * false-positive class this replaced.
+     */
+    const standing =
+      now.refused > worst
+        ? "unprecedented"
+        : now.refused > p90
+          ? "above-90th"
+          : now.refused > q3
+            ? "top-quarter"
+            : "ordinary";
+    return { median: at(0.5), q3, p90, worst, none: s.filter((n) => n === 0).length, n: s.length, standing };
+  })();
   // THE DENOMINATOR, AND THE ONLY READING THAT SURVIVES A CHANGE OF POPULATION.
   //
   // `grouped` per round ran 15-20 for the whole archive and then halved to 9 at
@@ -430,7 +495,7 @@ export function poolGroupingOutcome(logs) {
   // reporting a bare count here.
   const attempts = now.grouped + now.refused + (now.threw ?? 0);
   const recent = per.slice(-RECENT_IN_A_ROW).map((p) => p.grouped + p.refused + (p.threw ?? 0));
-  return { now, refusedMedian, rounds: priors.length, attempts, recent };
+  return { now, refusedBaseline, rounds: priors.length, attempts, recent };
 }
 
 /**

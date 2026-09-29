@@ -3054,7 +3054,44 @@ say this rather than this file**, since a distribution written here drifts the
 moment the archive grows: `poolGroupingOutcome` in `scripts/triage.mjs` already
 computes the per-round numbers and `rounds-gate.mjs` prints only the median.
 Reporting the percentile of the current round against the archive would kill
-this false-positive class permanently. Filed, not done.
+this false-positive class permanently. ~~Filed, not done.~~
+
+**DONE 2026-09-29, and the distribution above is now the tool's rather than this
+file's.** `poolGroupingOutcome` (moved that day to `scripts/round-pools.mjs`)
+returns `refusedBaseline` — median, 75th, 90th, worst, and how many prior rounds
+refused nothing — and `rounds-gate.mjs` prints the spread, marking the current
+round when it is above the 75th, the 90th, or every prior round. The median is
+still there; it is no longer the only thing there. Its first run:
+
+    refusals over 461 prior round(s): median 0, 75th 1, 90th 3, worst 17;
+    341 refused nothing
+
+which is this section's own distribution, computed rather than remembered, and
+the number that will not drift as the archive grows.
+
+**THE DENOMINATOR IS THE POOL'S, NOT THIS FILE'S, and that is deliberate.** 461
+is smaller than the 464 counted here: `poolGroupingOutcome` skips a round with no
+trace and a round that neither grouped nor refused nor threw. Quoting this
+section's 464 beside the tool's percentiles would be the "ratio whose bottom half
+moved" the tool argues against two screens further down — committed by the line
+warning about it. The two agree where they can be compared: 341 clean of 461
+priors against 345 of 464 rounds.
+
+**AND IT IS GUARDED, WHICH IT WOULD NOT HAVE BEEN A DAY EARLIER.** The same day's
+extraction put these readers inside Stryker's `mutate`. A scoped run over the new
+baseline block: **34 mutants, 34 killed, 100%** — every percentile index, the
+three-prior threshold, the sort direction, the zero-count filter and all four
+band boundaries. Before that extraction every one of them would have survived
+unmeasured, which is the condition that produced the four decorative tests
+`stryker.config.json` records.
+
+**It earned its keep on the first run.** The banding test was written with nine
+priors, which put the 90th percentile and the worst round on the same value — so
+no input could land between them and the `above-90th` band was unreachable. Two
+mutants survived; a four-way decision was tested three ways, and the untested
+branch was the one that fires on a genuinely unusual night. Nothing about
+reading the test would have shown that. Rewritten with twenty priors so the two
+separate.
 
 ### `two slides claiming one slot` has failed 16 times with ZERO host friction — OPEN QUESTION, 2026-09-20, last seen 2026-09-29
 
