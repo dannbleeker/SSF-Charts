@@ -20,26 +20,22 @@
  * `app.ts` imports this module, so this module importing `app.ts` would close a
  * cycle — and an ESM cycle here hands one side an undefined binding at init, in
  * the bundle, with `tsc` and the whole suite green. `test/import-cycles.test.ts`
- * exists to catch exactly that and would fail on it. Six things cross the
- * boundary and they are passed in: `guard` and `keepDisabled` from
- * `wireInsert`'s own closure, and `note`, `setProgress`, `boundedRaster` and
- * `isWebHost` from `app.ts`'s module scope.
+ * exists to catch exactly that and would fail on it. What still crosses the
+ * boundary is passed in: `guard` and `keepDisabled` from `wireInsert`'s own
+ * closure, and `boundedRaster` and `isWebHost` from `app.ts`'s module scope.
  *
- * THE MODULE-LEVEL `wired` IS DELIBERATE AND IT IS THE ONE THING TO DISLIKE.
- * Four of the moved helpers call `note` or `setProgress`, and they are
- * module-level declarations rather than closures, so they cannot see
- * `wireHarness`'s parameter. Threading a `deps` argument through them would
- * have changed four signatures and every call site for no behavioural gain, and
- * would have made this move a rewrite rather than a relocation — the code below
- * is otherwise byte-identical to what it replaced, which is what makes it
- * reviewable. The shims read through `wired` and throw if anything runs before
- * `wireHarness`, so the failure is loud rather than an undefined call.
+ * THREE OF THEM USED TO BE PASSED IN AND ARE NOT ANY MORE. `note`,
+ * `setProgress` and `noteHostActivity` were parameters for exactly one reason:
+ * they lived in `app.ts`. That is a fact about file layout, not about this
+ * panel. They are now in `./status`, which both files import — see that file's
+ * header — and this module reads them the way it reads anything else.
  *
- * The honest follow-on is to extract `app.ts`'s status strip (`note`,
- * `setProgress`, the elapsed timer — one concern, about 190 lines) into a module
- * both files import. Then four of the six dependencies disappear and `wired`
- * shrinks to nothing. Not done here because this commit moves code and changes
- * none of it.
+ * THE MODULE-LEVEL `wired` SURVIVES, FOR THE TWO THAT ARE REALLY `app.ts`'S.
+ * The production insert path calls `boundedRaster` and `isWebHost`, so neither
+ * moved here, and the module-level helpers that use them are declarations
+ * rather than closures and cannot see `wireHarness`'s parameter. The shims read
+ * through `wired` and throw if anything runs before `wireHarness`, so the
+ * failure is loud rather than an undefined call.
  *
  * AND WHAT THIS UNLOCKS, which is the reason it was worth doing first. The pane
  * ships its own test harness to every user — `app.ts` imported `./selftest` and
@@ -124,6 +120,7 @@ import { EXPERIMENTS, runExperiment } from "../render/experiments";
 import { type ExpectedItem, type SlideSnapshot, describeReconcile, planReconcile } from "../core/reconcile";
 import { type Scene, estimateOfficeShapes } from "../core/scene";
 import { buildDeckBase64 } from "../render/pptx-deck";
+import { note, noteHostActivity, setProgress } from "./status";
 
 /** Vite replaces this at build time; see `vite.config.ts`. Module-scoped, so it is declared again here. */
 declare const __BUILD_STAMP__: string;
@@ -148,12 +145,8 @@ const $ = (id: string): HTMLElement => document.getElementById(id) as HTMLElemen
 export interface HarnessDeps {
   guard: (fn: () => Promise<void>) => (this: unknown, ev?: Event) => Promise<void>;
   keepDisabled: (btn: HTMLButtonElement) => void;
-  note: (text: string, status?: "ok" | "err" | "busy" | "none", params?: Record<string, string | number>) => void;
-  setProgress: (p: number | "busy" | null) => void;
   boundedRaster: (scene: Scene) => Promise<string | undefined>;
   isWebHost: () => boolean;
-  /** Part of the status strip, like `note` — see the header's note on the follow-on extraction. */
-  noteHostActivity: (now?: number) => void;
 }
 
 let wired: HarnessDeps | undefined;
@@ -164,11 +157,8 @@ function deps(): HarnessDeps {
   return wired;
 }
 
-const note: HarnessDeps["note"] = (text, status, params) => deps().note(text, status, params);
-const setProgress: HarnessDeps["setProgress"] = (p) => deps().setProgress(p);
 const boundedRaster: HarnessDeps["boundedRaster"] = (scene) => deps().boundedRaster(scene);
 const isWebHost: HarnessDeps["isWebHost"] = () => deps().isWebHost();
-const noteHostActivity: HarnessDeps["noteHostActivity"] = (now) => deps().noteHostActivity(now);
 
 /**
  * A one-line host descriptor for the demo title/results slides, e.g.

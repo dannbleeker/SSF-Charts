@@ -43,6 +43,18 @@ import { sourceFiles } from "./helpers/module-source";
  * this fire on a shape that is harmless, which is how a guard gets switched off.
  * Dynamic `import()` is skipped for the same reason — it resolves after module
  * init, which is the whole point of `src/render/lazy.ts`.
+ *
+ * ── AND THE BLIND SPOT THAT SKIP CREATES ────────────────────────────────────
+ * A dynamic edge is not counted, so it cannot COMPLETE a cycle here either. The
+ * moment `app.ts` loads `harness-ui.ts` with `import()`, a static
+ * `import { note } from "./app"` written inside `harness-ui.ts` would be a real
+ * runtime cycle — the panel is loaded from inside `app.ts`'s own evaluation —
+ * and this file would stay green through it.
+ *
+ * That is why the status strip is `src/taskpane/status.ts`, a third module both
+ * of them import, rather than something the panel reaches back into `app.ts`
+ * for. Neither `status.ts` nor `harness-ui.ts` may import `./app`; a review, not
+ * this guard, is what enforces it.
  */
 
 /** A module's runtime imports, as resolved repo-relative paths. */

@@ -26,7 +26,7 @@ renderers: SVG (`src/render/svg.ts`, preview + tests), Office.js
 | `src/core/`                     | the engine, **zero Office imports**: `chart.ts` (`buildChart`), `layout/<kind>.ts` one per chart kind, `decor.ts`, `scene.ts` (the node contract **and** the three-renderer parity rules), `geometry.ts`, `format.ts`, `color.ts`, `collide.ts`, `samples.ts`                                                                          |
 | `src/core/`, run-time reasoning | `placement.ts` (where a chart goes on a slide that already has content), `reconcile.ts` (what a run ACTUALLY produced, once the host stopped moving), `trace.ts` (the ordered record a run nobody watched leaves behind)                                                                                                               |
 | `src/render/`                   | `svg.ts` (the reference renderer), `powerpoint.ts` (Office.js, the live add-in), `ooxml.ts` (post-processes a `.pptx` to carry the slot tags and groups pptxgenjs cannot write), `pptx-deck.ts` (builds a whole deck in the browser, handed over in one call), `host-probe.ts` (the answer sheet — what THIS PowerPoint actually does) |
-| `src/taskpane/`                 | `app.ts` (the product's own pane), `harness-ui.ts` (the Testing panel and every helper only it uses — see below), `datasheet.ts`, `selftest.ts` (the in-host battery), `crashlog.ts` (the record that survives a run which never ends), `i18n.ts`, `templates.ts`                                                                      |
+| `src/taskpane/`                 | `app.ts` (the product's own pane), `harness-ui.ts` (the Testing panel and every helper only it uses — see below), `status.ts` (the status strip both of them write to), `datasheet.ts`, `selftest.ts` (the in-host battery), `crashlog.ts` (the record that survives a run which never ends), `i18n.ts`, `templates.ts`                |
 | `skill/scripts/`                | `render-pptx.mjs` + `pptx-paint.mjs`, the headless renderer. **Outside `tsconfig.include` (`["src", "test"]`), so never typechecked**                                                                                                                                                                                                  |
 | `scripts/`                      | `triage.mjs`, `verify-deck.mjs`, `validate-ooxml.mjs`, `host-baseline.mjs`, `visible-charts.mjs`, `office-js-watch.mjs`, and the `build-*` set                                                                                                                                                                                         |
 
@@ -37,11 +37,22 @@ ships its own Testing panel, and until 2026-09-29 it was mixed into `app.ts` —
 helpers only it used now live in `harness-ui.ts`. Anything a USER presses is
 `app.ts`; anything the round driver presses is `harness-ui.ts`.
 
-`harness-ui.ts` takes its seven dependencies as an argument rather than importing
-them, and that is structural: `app.ts` imports it, so importing back would close
-an ESM cycle — which `tsc` and the whole suite would pass while the bundle handed
-one side an undefined binding at init, inside PowerPoint. `test/import-cycles.test.ts`
-is what notices. The same rule applies to anything else extracted from the pane.
+`harness-ui.ts` takes its four remaining dependencies as an argument rather than
+importing them, and that is structural: `app.ts` imports it, so importing back
+would close an ESM cycle — which `tsc` and the whole suite would pass while the
+bundle handed one side an undefined binding at init, inside PowerPoint.
+`test/import-cycles.test.ts` is what notices. The same rule applies to anything
+else extracted from the pane.
+
+**`status.ts` is the shape to copy when a dependency is injected only because of
+where it lived.** Three of those seven were `note`, `setProgress` and
+`noteHostActivity` — the status strip, which both files write to. They were
+parameters because they sat in `app.ts`, which is a fact about file layout and
+not about the Testing panel. A third module both files import states the
+direction instead of inverting it. `import-cycles.test.ts` deliberately ignores
+dynamic `import()`, so once the panel is loaded dynamically a static import of
+`./app` from inside it would be a real runtime cycle the guard cannot see:
+neither `status.ts` nor `harness-ui.ts` may import `./app`.
 
 **Function size is ratcheted.** `test/function-size.test.ts` records every
 function in `src/` at or over 150 CODE lines (comments and blanks excluded,

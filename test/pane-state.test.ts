@@ -1175,7 +1175,7 @@ describe("element previews are sized for their own shape", () => {
 describe("the elapsed readout", () => {
   it("says only the elapsed seconds while a run is talking", async () => {
     await bootPane();
-    const { elapsedLabel } = await import("../src/taskpane/app");
+    const { elapsedLabel } = await import("../src/taskpane/status");
     expect(elapsedLabel(17_000, 0)).toBe("17s");
     // A draw batch on PowerPoint web has been measured at ~17s and a stalled
     // sync at 45, so neither may be called silent. A warning that fires on a
@@ -1185,7 +1185,7 @@ describe("the elapsed readout", () => {
 
   it("says how long the silence has lasted once it is not credible", async () => {
     await bootPane();
-    const { elapsedLabel } = await import("../src/taskpane/app");
+    const { elapsedLabel } = await import("../src/taskpane/status");
     expect(elapsedLabel(200_000, 190_000)).toBe("200s · silent for 190s");
   });
 });
