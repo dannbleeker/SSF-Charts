@@ -1,5 +1,5 @@
 {
-  "src/core/layout/scatter.ts::layoutScatter": 780,
+  "src/core/layout/scatter.ts::layoutScatter": 618,
   "src/core/layout/gantt.ts::layoutGantt": 606,
   "src/core/layout/column.ts::layoutColumns": 479,
   "src/core/layout/column.ts::layoutCombo": 387,
@@ -23,7 +23,7 @@
   "src/core/layout/mekko.ts::layoutMekko": 204,
   "src/core/layout/waterfall.ts::layoutWaterfall": 197,
   "src/render/powerpoint.ts::updateChartsInSlides": 197,
-  "src/taskpane/app.ts::wireInsert": 185,
+  "src/taskpane/app.ts::wireInsert": 188,
   "src/taskpane/datasheet.ts::mountDatasheet": 175,
   "src/core/layout/line.ts::layoutSlope": 174,
   "src/core/demo.ts::buildResultsScene": 170,

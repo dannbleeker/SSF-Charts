@@ -1,4 +1,4 @@
-import type { ChartConfig, ChartStyle, Decorations, MarkerSymbol } from "../types";
+import type { ChartConfig, ChartStyle, Decorations, MarkerSymbol, NumberFormat } from "../types";
 import { arrowheadFits, markerScale, markerSymbolOf } from "../geometry";
 import { textWidth, type SceneNode, type TextNode } from "../scene";
 import { tightBox } from "../collide";
@@ -194,6 +194,314 @@ function clipToPlotY(
   };
 }
 
+/**
+ * One axis of the plot: its ticks, the scale that maps a value to a coordinate,
+ * the domain those ticks span, and the format its labels are drawn in.
+ *
+ * ── WHY A BUNDLE, AND WHY THIS ONE ──────────────────────────────────────────
+ * `layoutScatter` derives ten loose locals up front — `xTicks`, `yTicks`, `x0`,
+ * `x1`, `y0`, `y1`, `toX`, `toY`, `xFmt`, `yFmt` — and every block that draws
+ * against an axis needs three to five of them. Passing them individually is what
+ * makes an extracted helper take nine arguments and read worse than the code it
+ * replaced.
+ *
+ * A SINGLE CONTEXT OBJECT WOULD BE WORSE, and that is measured rather than
+ * asserted. `{cfg, style, decor, plot, toX, toY, xTicks, yTicks, fs}` serves
+ * exactly one caller fully and eight others at two to five of its nine fields,
+ * while each of them still needs three to seven arguments besides. It renames
+ * the problem.
+ *
+ * Two per-axis bundles instead: six of the ten candidate extractions take
+ * `(x, y)` and nothing else about the scale. The precedent is already here —
+ * `frame.ts:192`'s `ValueScale` is passed as one parameter to `chromeNodes` and
+ * `horizontalChrome` for the same reason.
+ */
+interface ScatterAxis {
+  /** The nice ticks, ascending. `ticks.length - 1` is the interval count. */
+  ticks: number[];
+  /** Value to coordinate. */
+  to: (v: number) => number;
+  /** First and last tick — the domain actually plotted, not the data's extent. */
+  lo: number;
+  hi: number;
+  fmt: NumberFormat;
+}
+
+/**
+ * The quadrant preset: one X/Y crossing, four tinted zones with corner labels,
+ * and the crossing lines — BCG-matrix framing in one step.
+ */
+function quadrantNodes(
+  q: NonNullable<Decorations["quadrants"]>,
+  x: ScatterAxis,
+  y: ScatterAxis,
+  plot: { x: number; y: number; w: number; h: number },
+  style: ChartStyle,
+  fs: number,
+): SceneNode[] {
+  const out: SceneNode[] = [];
+  const { x: qx, y: qy, labels } = q;
+  const cx = Math.max(plot.x, Math.min(plot.x + plot.w, x.to(qx)));
+  const cy = Math.max(plot.y, Math.min(plot.y + plot.h, y.to(qy)));
+  const zones: { x: number; y: number; w: number; h: number }[] = [
+    { x: plot.x, y: plot.y, w: cx - plot.x, h: cy - plot.y }, // TL
+    { x: cx, y: plot.y, w: plot.x + plot.w - cx, h: cy - plot.y }, // TR
+    { x: plot.x, y: cy, w: cx - plot.x, h: plot.y + plot.h - cy }, // BL
+    { x: cx, y: cy, w: plot.x + plot.w - cx, h: plot.y + plot.h - cy }, // BR
+  ];
+  zones.forEach((z, i) => {
+    if (z.w <= 0 || z.h <= 0) return;
+    // Checkerboard tint so adjacent zones read as distinct regions.
+    out.push({
+      kind: "rect",
+      ...z,
+      fill: zoneFill(style.background, i === 0 || i === 3 ? "#f2f1ec" : "#faf9f6"),
+      name: `quadrant-${i}`,
+    });
+    const label = labels?.[i];
+    /**
+     * FITTED TO ITS OWN ZONE, and dropped when the zone cannot carry it.
+     *
+     * The box was `Math.max(20, z.w - 8)` — a floor that RAISES a width, which
+     * this file has already been caught by once: `a conservative bound must
+     * stay conservative at the small end`, the scatter legend's own bug. A
+     * zone narrower than 28 points got a 20-point box starting 4 points inside
+     * it, so a right-aligned label's ink was placed past the zone's right edge
+     * and, on a narrow chart, past the chart's: 9.3 points off a 60x300 frame
+     * at every font size, which is the tell that no font-dependent bound was
+     * involved at all.
+     *
+     * A quadrant label names its quadrant, so the room it has is the zone —
+     * the same rule the pie's inside labels and the mekko's column labels
+     * follow. Shrink to it, and below `MIN_LABEL_FS` draw nothing: the tint
+     * still shows the four zones, and a two-point word in the corner of one
+     * names nothing.
+     */
+    const room = z.w - 8;
+    let qf = fs * 0.9;
+    if (label) while (qf > MIN_LABEL_FS && textWidth(label, qf, true) > room) qf -= 0.5;
+    if (label && room > 0 && textWidth(label, qf, true) <= room) {
+      out.push({
+        kind: "text",
+        x: z.x + 4,
+        y: z.y + 2,
+        w: room,
+        h: (fs * 1.3 * qf) / (fs * 0.9),
+        text: label,
+        fontSize: qf,
+        bold: true,
+        color: style.mutedText,
+        align: i === 1 || i === 3 ? "right" : "left",
+        valign: "top",
+        name: `quadrant-label-${i}`,
+      });
+    }
+  });
+  out.push(
+    {
+      kind: "line",
+      x1: cx,
+      y1: plot.y,
+      x2: cx,
+      y2: plot.y + plot.h,
+      stroke: style.mutedText,
+      strokeWidth: 1,
+      dash: [3, 2],
+      name: "quadrant-x",
+    },
+    {
+      kind: "line",
+      x1: plot.x,
+      y1: cy,
+      x2: plot.x + plot.w,
+      y2: cy,
+      stroke: style.mutedText,
+      strokeWidth: 1,
+      dash: [3, 2],
+      name: "quadrant-y",
+    },
+  );
+  return out;
+}
+
+/** Background bands (both axes in value units), behind gridlines and points. */
+function bandNodes(
+  bands: NonNullable<Decorations["bands"]>,
+  x: ScatterAxis,
+  y: ScatterAxis,
+  plot: { x: number; y: number; w: number; h: number },
+  style: ChartStyle,
+  fs: number,
+): SceneNode[] {
+  const out: SceneNode[] = [];
+  bands.forEach((band, i) => {
+    const clampX = (v: number) => Math.max(plot.x, Math.min(plot.x + plot.w, x.to(v)));
+    const clampY = (v: number) => Math.max(plot.y, Math.min(plot.y + plot.h, y.to(v)));
+    const r =
+      band.axis === "x"
+        ? {
+            x: Math.min(clampX(band.from), clampX(band.to)),
+            y: plot.y,
+            w: Math.abs(clampX(band.to) - clampX(band.from)),
+            h: plot.h,
+          }
+        : {
+            x: plot.x,
+            y: Math.min(clampY(band.from), clampY(band.to)),
+            w: plot.w,
+            h: Math.abs(clampY(band.to) - clampY(band.from)),
+          };
+    if (r.w <= 0 || r.h <= 0) return;
+    out.push({ kind: "rect", ...r, fill: band.color ?? zoneFill(style.background, "#f2f1ec"), name: `band-${i}` });
+    if (band.label) {
+      out.push({
+        kind: "text",
+        x: r.x + 3,
+        y: r.y + 1,
+        w: Math.max(20, r.w - 6),
+        h: fs * 1.3,
+        text: band.label,
+        fontSize: fs * 0.9,
+        color: style.mutedText,
+        align: "left",
+        valign: "top",
+        name: `band-label-${i}`,
+      });
+    }
+  });
+  return out;
+}
+
+/**
+ * The trail through the points in datasheet order, with a direction arrowhead at
+ * each segment midpoint — a Gapminder-style path of one entity over time.
+ *
+ * Returned rather than pushed. `nodes` is one z-ordered array and the SVG bytes
+ * depend on its order, so a helper that appends to it can only be called in
+ * exactly one place; one that returns is a function.
+ */
+function trajectoryNodes(
+  pts: readonly { x: number; y: number }[],
+  x: ScatterAxis,
+  y: ScatterAxis,
+  style: ChartStyle,
+  cfg: ChartConfig,
+): SceneNode[] {
+  const out: SceneNode[] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const ax = x.to(pts[i].x);
+    const ay = y.to(pts[i].y);
+    const bx = x.to(pts[i + 1].x);
+    const by = y.to(pts[i + 1].y);
+    out.push({
+      kind: "line",
+      x1: ax,
+      y1: ay,
+      x2: bx,
+      y2: by,
+      stroke: style.mutedText,
+      strokeWidth: 1.5,
+      name: `trajectory-${i}`,
+    });
+    const angle = (Math.atan2(by - ay, bx - ax) * 180) / Math.PI;
+    // The direction glyph, where it fits. Its tip is the segment's MIDPOINT
+    // and its body runs back along the segment, so a path along the top of the
+    // plot — markers already overhang that edge by design — pushed the
+    // triangle off the canvas, 4pt above an 80x60 chart at a 32pt font, onto
+    // whatever sits over it on the slide.
+    //
+    // Dropped rather than moved: the arrowhead's whole job is to say which way
+    // the path runs, so an arrowhead somewhere other than on its own segment
+    // says something false. The segment's LINE is drawn either way, so the
+    // path is still there — only the direction glyph on that one hop is not.
+    if (arrowheadFits((ax + bx) / 2, (ay + by) / 2, 4, angle, cfg.width, cfg.height))
+      out.push({
+        kind: "arrowhead",
+        x: (ax + bx) / 2,
+        y: (ay + by) / 2,
+        angle,
+        size: 4,
+        fill: style.mutedText,
+        name: `trajectory-head-${i}`,
+      });
+  }
+  return out;
+}
+
+/**
+ * Marginal distribution histograms in the reserved gutters.
+ *
+ * The bin count is a multiple of the axis's own tick intervals, so every tick is
+ * a bin edge and a bar reads straight against the scale beside it. A rule keyed
+ * off the sample size alone (Sturges, Freedman-Diaconis) puts edges BETWEEN the
+ * ticks, which is exactly what a chart-adjacent histogram must not do. The
+ * multiplier is the only freedom and it stays bounded: past ~2 sub-bins per
+ * interval the bars are a few points wide and read as noise, not shape.
+ *
+ * `fill` is passed already mixed rather than derived here, which is what keeps
+ * this to six parameters instead of eight — it is the only thing the block
+ * wanted from `style` and `cfg` together.
+ */
+function marginalNodes(
+  pts: readonly { x: number; y: number }[],
+  x: ScatterAxis,
+  y: ScatterAxis,
+  plot: { x: number; y: number; w: number; h: number },
+  gutter: { top: number; right: number },
+  fill: string,
+): SceneNode[] {
+  const out: SceneNode[] = [];
+  const binMult = pts.length >= 15 ? 2 : 1;
+  if (gutter.top > 0) {
+    const counts = histogramBins(
+      pts.map((p) => p.x),
+      x.lo,
+      x.hi,
+      (x.ticks.length - 1) * binMult,
+    );
+    const peak = Math.max(1, ...counts);
+    const bw = plot.w / counts.length;
+    counts.forEach((n, i) => {
+      if (!n) return;
+      const h = (n / peak) * (gutter.top - 5);
+      out.push({
+        kind: "rect",
+        x: plot.x + i * bw,
+        y: plot.y - 3 - h,
+        w: Math.max(0.5, bw - 1),
+        h,
+        fill,
+        name: `marginal-x-${i}`,
+      });
+    });
+  }
+  if (gutter.right > 0) {
+    const counts = histogramBins(
+      pts.map((p) => p.y),
+      y.lo,
+      y.hi,
+      (y.ticks.length - 1) * binMult,
+    );
+    const peak = Math.max(1, ...counts);
+    const bh = plot.h / counts.length;
+    counts.forEach((n, i) => {
+      if (!n) return;
+      const w = (n / peak) * (gutter.right - 5);
+      // Bin 0 is the bottom of the y axis, so it is the LAST band down the plot.
+      out.push({
+        kind: "rect",
+        x: plot.x + plot.w + 3,
+        y: plot.y + plot.h - (i + 1) * bh,
+        w,
+        h: Math.max(0.5, bh - 1),
+        fill,
+        name: `marginal-y-${i}`,
+      });
+    });
+  }
+  return out;
+}
+
 export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decorations): LayoutResult {
   const { data } = cfg;
   const fs = style.fontSize;
@@ -340,132 +648,19 @@ export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decora
 
   const xFmt = resolveAxisFormat(xTicks, cfg.numberFormat);
   const yFmt = resolveAxisFormat(yTicks, cfg.numberFormat);
+  // The ten loose locals above, as the two bundles every extracted block takes.
+  // See `ScatterAxis`. The originals stay: the blocks still inline here use them
+  // by name, and rewriting those call sites would make this a rewrite rather
+  // than a relocation.
+  const xAxis: ScatterAxis = { ticks: xTicks, to: toX, lo: x0, hi: x1, fmt: xFmt };
+  const yAxis: ScatterAxis = { ticks: yTicks, to: toY, lo: y0, hi: y1, fmt: yFmt };
 
   const nodes: SceneNode[] = [];
   const titleN = titleNode(cfg, style);
   if (titleN) nodes.push(titleN);
-  // Quadrant preset: one X/Y crossing → four tinted zones with corner
-  // labels and the crossing lines — BCG-matrix framing in one step.
-  if (decor.quadrants) {
-    const { x: qx, y: qy, labels } = decor.quadrants;
-    const cx = Math.max(plot.x, Math.min(plot.x + plot.w, toX(qx)));
-    const cy = Math.max(plot.y, Math.min(plot.y + plot.h, toY(qy)));
-    const zones: { x: number; y: number; w: number; h: number }[] = [
-      { x: plot.x, y: plot.y, w: cx - plot.x, h: cy - plot.y }, // TL
-      { x: cx, y: plot.y, w: plot.x + plot.w - cx, h: cy - plot.y }, // TR
-      { x: plot.x, y: cy, w: cx - plot.x, h: plot.y + plot.h - cy }, // BL
-      { x: cx, y: cy, w: plot.x + plot.w - cx, h: plot.y + plot.h - cy }, // BR
-    ];
-    zones.forEach((z, i) => {
-      if (z.w <= 0 || z.h <= 0) return;
-      // Checkerboard tint so adjacent zones read as distinct regions.
-      nodes.push({
-        kind: "rect",
-        ...z,
-        fill: zoneFill(style.background, i === 0 || i === 3 ? "#f2f1ec" : "#faf9f6"),
-        name: `quadrant-${i}`,
-      });
-      const label = labels?.[i];
-      /**
-       * FITTED TO ITS OWN ZONE, and dropped when the zone cannot carry it.
-       *
-       * The box was `Math.max(20, z.w - 8)` — a floor that RAISES a width, which
-       * this file has already been caught by once: `a conservative bound must
-       * stay conservative at the small end`, the scatter legend's own bug. A
-       * zone narrower than 28 points got a 20-point box starting 4 points inside
-       * it, so a right-aligned label's ink was placed past the zone's right edge
-       * and, on a narrow chart, past the chart's: 9.3 points off a 60x300 frame
-       * at every font size, which is the tell that no font-dependent bound was
-       * involved at all.
-       *
-       * A quadrant label names its quadrant, so the room it has is the zone —
-       * the same rule the pie's inside labels and the mekko's column labels
-       * follow. Shrink to it, and below `MIN_LABEL_FS` draw nothing: the tint
-       * still shows the four zones, and a two-point word in the corner of one
-       * names nothing.
-       */
-      const room = z.w - 8;
-      let qf = fs * 0.9;
-      if (label) while (qf > MIN_LABEL_FS && textWidth(label, qf, true) > room) qf -= 0.5;
-      if (label && room > 0 && textWidth(label, qf, true) <= room) {
-        nodes.push({
-          kind: "text",
-          x: z.x + 4,
-          y: z.y + 2,
-          w: room,
-          h: (fs * 1.3 * qf) / (fs * 0.9),
-          text: label,
-          fontSize: qf,
-          bold: true,
-          color: style.mutedText,
-          align: i === 1 || i === 3 ? "right" : "left",
-          valign: "top",
-          name: `quadrant-label-${i}`,
-        });
-      }
-    });
-    nodes.push(
-      {
-        kind: "line",
-        x1: cx,
-        y1: plot.y,
-        x2: cx,
-        y2: plot.y + plot.h,
-        stroke: style.mutedText,
-        strokeWidth: 1,
-        dash: [3, 2],
-        name: "quadrant-x",
-      },
-      {
-        kind: "line",
-        x1: plot.x,
-        y1: cy,
-        x2: plot.x + plot.w,
-        y2: cy,
-        stroke: style.mutedText,
-        strokeWidth: 1,
-        dash: [3, 2],
-        name: "quadrant-y",
-      },
-    );
-  }
-
-  // Background bands (both axes in value units), behind gridlines and points.
-  decor.bands?.forEach((band, i) => {
-    const clampX = (v: number) => Math.max(plot.x, Math.min(plot.x + plot.w, toX(v)));
-    const clampY = (v: number) => Math.max(plot.y, Math.min(plot.y + plot.h, toY(v)));
-    const r =
-      band.axis === "x"
-        ? {
-            x: Math.min(clampX(band.from), clampX(band.to)),
-            y: plot.y,
-            w: Math.abs(clampX(band.to) - clampX(band.from)),
-            h: plot.h,
-          }
-        : {
-            x: plot.x,
-            y: Math.min(clampY(band.from), clampY(band.to)),
-            w: plot.w,
-            h: Math.abs(clampY(band.to) - clampY(band.from)),
-          };
-    if (r.w <= 0 || r.h <= 0) return;
-    nodes.push({ kind: "rect", ...r, fill: band.color ?? zoneFill(style.background, "#f2f1ec"), name: `band-${i}` });
-    if (band.label) {
-      nodes.push({
-        kind: "text",
-        x: r.x + 3,
-        y: r.y + 1,
-        w: Math.max(20, r.w - 6),
-        h: fs * 1.3,
-        text: band.label,
-        fontSize: fs * 0.9,
-        color: style.mutedText,
-        align: "left",
-        valign: "top",
-        name: `band-label-${i}`,
-      });
-    }
-  });
+  // Behind the gridlines and the points — push order is paint order.
+  if (decor.quadrants) nodes.push(...quadrantNodes(decor.quadrants, xAxis, yAxis, plot, style, fs));
+  if (decor.bands) nodes.push(...bandNodes(decor.bands, xAxis, yAxis, plot, style, fs));
 
   // Gridlines + axis labels on both axes.
   /**
@@ -1146,107 +1341,20 @@ export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decora
       });
   }
 
-  // Trajectory / trail: connect the points in datasheet (row) order with a
-  // direction arrowhead at each segment midpoint, drawn behind the markers —
-  // a Gapminder-style path of one entity through the X/Y space over time.
-  if (decor.trajectory && pts.length > 1) {
-    for (let i = 0; i < pts.length - 1; i++) {
-      const ax = toX(pts[i].x);
-      const ay = toY(pts[i].y);
-      const bx = toX(pts[i + 1].x);
-      const by = toY(pts[i + 1].y);
-      nodes.push({
-        kind: "line",
-        x1: ax,
-        y1: ay,
-        x2: bx,
-        y2: by,
-        stroke: style.mutedText,
-        strokeWidth: 1.5,
-        name: `trajectory-${i}`,
-      });
-      const angle = (Math.atan2(by - ay, bx - ax) * 180) / Math.PI;
-      // The direction glyph, where it fits. Its tip is the segment's MIDPOINT
-      // and its body runs back along the segment, so a path along the top of the
-      // plot — markers already overhang that edge by design — pushed the
-      // triangle off the canvas, 4pt above an 80x60 chart at a 32pt font, onto
-      // whatever sits over it on the slide.
-      //
-      // Dropped rather than moved: the arrowhead's whole job is to say which way
-      // the path runs, so an arrowhead somewhere other than on its own segment
-      // says something false. The segment's LINE is drawn either way, so the
-      // path is still there — only the direction glyph on that one hop is not.
-      if (arrowheadFits((ax + bx) / 2, (ay + by) / 2, 4, angle, cfg.width, cfg.height))
-        nodes.push({
-          kind: "arrowhead",
-          x: (ax + bx) / 2,
-          y: (ay + by) / 2,
-          angle,
-          size: 4,
-          fill: style.mutedText,
-          name: `trajectory-head-${i}`,
-        });
-    }
-  }
-
-  // Marginal distribution histograms in the reserved gutters. The bin count is
-  // a multiple of the axis's own tick intervals, so every tick is a bin edge
-  // and a bar reads straight against the scale beside it. A rule keyed off the
-  // sample size alone (Sturges, Freedman-Diaconis) puts edges BETWEEN the
-  // ticks, which is exactly what a chart-adjacent histogram must not do. The
-  // multiplier is the only freedom and it stays bounded: past ~2 sub-bins per
-  // interval the bars are a few points wide and read as noise, not shape.
-  if (mTop > 0 || mRight > 0) {
-    const binMult = pts.length >= 15 ? 2 : 1;
-    const fill = lerpColor(style.background, (cfg.style?.palette ?? PALETTE)[0], 0.35);
-    if (mTop > 0) {
-      const counts = histogramBins(
-        pts.map((p) => p.x),
-        x0,
-        x1,
-        (xTicks.length - 1) * binMult,
-      );
-      const peak = Math.max(1, ...counts);
-      const bw = plot.w / counts.length;
-      counts.forEach((n, i) => {
-        if (!n) return;
-        const h = (n / peak) * (mTop - 5);
-        nodes.push({
-          kind: "rect",
-          x: plot.x + i * bw,
-          y: plot.y - 3 - h,
-          w: Math.max(0.5, bw - 1),
-          h,
-          fill,
-          name: `marginal-x-${i}`,
-        });
-      });
-    }
-    if (mRight > 0) {
-      const counts = histogramBins(
-        pts.map((p) => p.y),
-        y0,
-        y1,
-        (yTicks.length - 1) * binMult,
-      );
-      const peak = Math.max(1, ...counts);
-      const bh = plot.h / counts.length;
-      counts.forEach((n, i) => {
-        if (!n) return;
-        const w = (n / peak) * (mRight - 5);
-        // Bin 0 is the bottom of the y axis, so it is the LAST band down the plot.
-        nodes.push({
-          kind: "rect",
-          x: plot.x + plot.w + 3,
-          y: plot.y + plot.h - (i + 1) * bh,
-          w,
-          h: Math.max(0.5, bh - 1),
-          fill,
-          name: `marginal-y-${i}`,
-        });
-      });
-    }
-  }
+  // Both drawn BEHIND the markers, which is why they sit here and not later:
+  // `nodes` is z-ordered and the push order is the paint order.
+  if (decor.trajectory && pts.length > 1) nodes.push(...trajectoryNodes(pts, xAxis, yAxis, style, cfg));
+  if (mTop > 0 || mRight > 0)
+    nodes.push(
+      ...marginalNodes(
+        pts,
+        xAxis,
+        yAxis,
+        plot,
+        { top: mTop, right: mRight },
+        lerpColor(style.background, (cfg.style?.palette ?? PALETTE)[0], 0.35),
+      ),
+    );
 
   // Point labels treat the size legend as an obstacle.
   //

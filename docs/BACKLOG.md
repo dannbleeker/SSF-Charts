@@ -3093,6 +3093,39 @@ branch was the one that fires on a genuinely unusual night. Nothing about
 reading the test would have shown that. Rewritten with twenty priors so the two
 separate.
 
+### Three things `layoutScatter` does inconsistently — FOUND WHILE REFACTORING, NOT FIXED THERE, 2026-09-29
+
+Found by reading the function line by line to extract from it. None was fixed in
+that commit, because a refactor commit that also changes behaviour cannot be
+reviewed as either. Each is verified against the source, not remembered.
+
+**1. `spreadCap` re-derives the ticks the layout already has.** `spreadCap:60`
+runs `niceTicks(...scatterDomain(cfg, axis), 5)` and `layoutScatter:640-641` runs
+the identical call for both axes. Duplicated work, and worse, duplicated TRUTH:
+the exported footnote cap and the plotted domain are computed twice from one
+input, so a change to either derivation silently separates them. Passing the
+layout's ticks in, or memoising on `cfg`, closes it.
+
+**2. The size legend fits against `chromeTop`; the other two legends fit against
+`legendTop`.** `scatter.ts:1285` against `:998` and `:1128`. The comment at the
+declaration says exactly why that is wrong — `chromeTop` is the position the
+layout ASKED for and `legendTop` is where the fitted plot actually put it, and
+the two differ whenever the frame is squeezed. The effect is conservative (the
+key is dropped too eagerly rather than drawn off-canvas) which is why nothing has
+reported it, but it is the precise inconsistency this file's comments hunt.
+
+**3. The trajectory ignores spread displacement.** `scatter.ts:392` draws the
+trail through `x.to(p.x)` / `y.to(p.y)` while the markers it connects are drawn
+at `px`/`py` (`:1225`, `:1230`), which apply `scatter.spread`. With
+`scatter.spread` and `decor.trajectory` both on, the trail connects undisplaced
+positions to displaced markers. The comment at the point-label block makes
+exactly this argument for labels and this block did not get it.
+
+**UNEXERCISED BY ANY GATE.** The two features never co-occur in
+`examples/showcase.json`, so the 96-render SVG fingerprint, the snapshot, the
+frame-fit sweep and the overlap sweep are all silent on it. A fix needs a
+showcase entry that turns both on, or it is a change nothing can see.
+
 ### `two slides claiming one slot` has failed 16 times with ZERO host friction — OPEN QUESTION, 2026-09-20, last seen 2026-09-29
 
 Found by aggregating the archive after round 475 failed it, rather than by the
