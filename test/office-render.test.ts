@@ -79,6 +79,7 @@ import {
  */
 const ADDS_TO_DEFEAT_ONE_SLIDE = 1 + MAX_ADD_RETRY_ROUNDS;
 import { readFileSync } from "fs";
+import { describeOffenders, sweep } from "./helpers/module-source";
 import { syncsSoFar, resetSyncCount, slideCount } from "../src/render/powerpoint";
 import { onTrace, setTracing, traceAbout, traceLog } from "../src/core/trace";
 import { planReconcile } from "../src/core/reconcile";
@@ -3981,6 +3982,65 @@ describe("reading a demo deck back and repairing it", () => {
     // Pass A + pass B + pass C, each paged. One context per grouped SLIDE would
     // be n on its own.
     expect(trips.contexts - before, "opened a context per grouped slide").toBeLessThan(n);
+  });
+
+  /**
+   * AN UNMEASURED GROUP IS NAMED, not silently absent.
+   *
+   * `countGroupChildren` pages the deck and, when a page's sync faults, retries
+   * one slide at a time so a single unreadable group does not cost the other
+   * nineteen their measurement. That retry swallowed its failures — the code
+   * read `.catch(() => {})` until 2026-09-29.
+   *
+   * Its own comment is the argument against that: "a measurement missing here is
+   * what makes the repair pass 'fix' a chart that was never broken". An
+   * unmeasured slide is precisely the input `planReconcile` can act wrongly on,
+   * so WHICH slides went unmeasured is the fact the archive needs — and
+   * swallowing left it reasoning from an absence nobody could explain afterwards.
+   *
+   * Driven with `faults.refuseGroupRead`, which throws AT THE SYNC rather than
+   * at the property access — a distinction the fake documents at length, because
+   * only the sync-level throw reaches `countGroupChildrenPage`'s caller.
+   *
+   * A `picture` slide does NOT exercise this, which is what the first draft of
+   * this test got wrong: its child count is caught inside the page function
+   * (`try { …group.shapes.getCount() } catch { return undefined }`) and simply
+   * left unset, so the page resolves and the retry never runs. The slide comes
+   * back unmeasured either way — which is exactly why asserting on the SNAPSHOT
+   * would have proved nothing about the path under test.
+   */
+  it("names the slides whose group children could not be counted", async () => {
+    const deck = [
+      demoSlide("g0", { slot: { i: 0, title: "Line" }, shapes: 3, grouped: true, tagged: true }),
+      demoSlide("g1", { slot: { i: 1, title: "Pie" }, shapes: 3, grouped: true, tagged: true }),
+    ];
+    installHost(deck);
+    faults.refuseGroupRead = true;
+    const seen: { message: string; data?: Record<string, unknown> }[] = [];
+    setTracing(true);
+    onTrace((e) => seen.push(e));
+    let snaps;
+    try {
+      snaps = await snapshotAddedSlides(0, 2);
+    } finally {
+      onTrace(undefined);
+      setTracing(false);
+      faults.refuseGroupRead = false;
+    }
+
+    // The premise: these really are unmeasured. If the fake ever starts
+    // answering, this test would pass its trace assertion for the wrong reason.
+    expect(
+      snaps.every((s) => s.groupChildren === undefined),
+      "the fake counted children after all — this no longer exercises the failure",
+    ).toBe(true);
+
+    const said = seen.filter((e) => e.message === "group children left unmeasured");
+    expect(said.length, "the retry swallowed its failures again").toBeGreaterThanOrEqual(1);
+    // NAMED, not just counted. A bare tally is the absence this replaced.
+    const slides = said.flatMap((e) => (e.data?.slides as string[] | undefined) ?? []);
+    expect(slides.length, "reported a count with no slides in it").toBeGreaterThanOrEqual(1);
+    expect(slides.join(" "), "a slide was reported without its deck index").toMatch(/#\d/);
   });
 
   it("deletes a duplicate slide, clears a stale banner, and re-groups a loose chart", async () => {
@@ -7911,7 +7971,18 @@ describe("counting what the round asks of the host", () => {
     expect(body, "the counter stopped incrementing").toMatch(/SYNCS\+\+/);
     // Nothing may destructure `sync` off a context anywhere, or that path
     // escapes the patch entirely.
-    expect(source, "a destructured sync would bypass the counter").not.toMatch(/const\s*\{[^}]*\bsync\b[^}]*\}\s*=/);
+    //
+    // WIDENED FROM THIS FILE TO ALL OF `src/`, 2026-09-29. `source` is
+    // `powerpoint.ts` alone, and the rule is about the sync COUNTER — the number
+    // every round file reports as `syncs`. Counted 2026-09-29: `powerpoint.ts`
+    // 97 `.sync()` calls, `host-probe.ts` 67, `experiments.ts` 34 — the last two
+    // on contexts `withProbeContext` hands them, so they are counted by the same
+    // patch and a destructured `sync` in either would undercount the round while
+    // this guard stayed green. Zero destructured anywhere under `src/` today.
+    const destructured = sweep(/const\s*\{[^}]*\bsync\b[^}]*\}\s*=/, "src");
+    expect(destructured, `a destructured sync would bypass the counter:\n${describeOffenders(destructured)}`).toEqual(
+      [],
+    );
   });
 
   it("actually counts, and counts each sync exactly once", async () => {

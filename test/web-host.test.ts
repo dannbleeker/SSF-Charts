@@ -2107,12 +2107,29 @@ describe("what a group that SUCCEEDS leaves behind", () => {
  */
 describe("what a collection load asks the host for", () => {
   it("never loads a bare items — the property it will read has to be named", async () => {
-    const { readFileSync } = await import("node:fs");
-    const src = readFileSync("src/render/powerpoint.ts", "utf8");
-    const bare = src.split("\n").flatMap((line, i) => (/\.load\(\s*["']items["']\s*\)/.test(line) ? [i + 1] : []));
+    /**
+     * ── WIDENED FROM `powerpoint.ts` TO ALL OF `src/`, 2026-09-29 ─────────────
+     * This is the archetype of the sweep that dies quietly. It read one file by
+     * name, and the rule it enforces is about Office.js collection loads — which
+     * `host-probe.ts` and `experiments.ts` also issue, 44 and 22 of them. Move a
+     * collection read out of `powerpoint.ts` and this guard does not go red; it
+     * goes green over code nobody is watching, permanently.
+     *
+     * Free to widen: measured 2026-09-29, there are ZERO bare `load("items")`
+     * anywhere under `src/`, so the wider sweep starts from the same clean slate
+     * the narrow one reported.
+     *
+     * `sweep` also blanks comments before matching, which this did not. A
+     * paragraph explaining why bare `items` is wrong would have counted as a
+     * violation of it — the trap this repo has met twice, most recently in a
+     * slide-id sweep that matched a comment beside the code it was pinning.
+     */
+    const { describeOffenders, expectSweptSomething, sweep } = await import("./helpers/module-source");
+    expectSweptSomething("src");
+    const bare = sweep(/\.load\(\s*["']items["']\s*\)/, "src");
     expect(
       bare,
-      `bare load("items") at line(s) ${bare.join(", ")} — name the properties, as every other collection load here does`,
+      `bare load("items") — name the properties, as every other collection load here does:\n` + describeOffenders(bare),
     ).toEqual([]);
   });
 });
@@ -2132,10 +2149,31 @@ describe("what a collection load asks the host for", () => {
  */
 describe("what the repair pass's numbers actually count", () => {
   it("does not call the slot-tag count 'tagged'", async () => {
-    const { readFileSync } = await import("node:fs");
-    const src = readFileSync("src/render/powerpoint.ts", "utf8");
-    const deckRead = src.slice(src.indexOf('trace("repair", "read the deck back"'));
-    const body = deckRead.slice(0, deckRead.indexOf("});"));
+    /**
+     * ── THE ANCHOR IS CHECKED NOW, 2026-09-29 ────────────────────────────────
+     * This is a NARROW ban on purpose — it is about one trace call's field names,
+     * not a tree-wide rule — so it is not widened. What it needed was an anchor
+     * that fails loudly when the call moves.
+     *
+     * It read `src.slice(src.indexOf(…))`, and `indexOf` answers -1 when the call
+     * is not there. `slice(-1)` is then the LAST CHARACTER of the file, and the
+     * `indexOf("});")` inside it is -1 too, so `body` came out as the empty
+     * string — against which `not.toMatch` passes happily. Half the assertion
+     * survived by luck: the positive `toMatch(/withSlotTag:/)` fails on "".
+     *
+     * `sourceDeclaring` finds whichever file under `src/` holds the call and
+     * throws if that is none of them or more than one, so a relocation is a red
+     * test rather than a quiet one.
+     */
+    const { sourceDeclaring } = await import("./helpers/module-source");
+    const ANCHOR = 'trace("repair", "read the deck back"';
+    const src = sourceDeclaring(/trace\("repair", "read the deck back"/, "src");
+    const at = src.indexOf(ANCHOR);
+    expect(at, "the deck-read trace call is gone — this guard is looking at nothing").toBeGreaterThan(-1);
+    const deckRead = src.slice(at);
+    const end = deckRead.indexOf("});");
+    expect(end, "the deck-read trace call has no end — the slice would run to the end of the file").toBeGreaterThan(-1);
+    const body = deckRead.slice(0, end);
     expect(body, "the deck read still reports a slot count under the name 'tagged'").not.toMatch(/\btagged:/);
     expect(body, "the slot count lost its name entirely").toMatch(/withSlotTag:/);
   });
@@ -2466,14 +2504,43 @@ describe("the tag keys this add-in writes", () => {
       expect(value, `${name} is "${value}" — the web host would not read it back`).toBe(value.toUpperCase());
   });
 
-  it("catches a lowercase key written anywhere in the renderer", async () => {
+  it("catches a lowercase key written anywhere in shipped source", async () => {
     // The constants are one route; a string literal passed straight to
     // `tags.add` is the other, and the probe already uses that form.
-    const { readFileSync } = await import("node:fs");
-    const src = readFileSync("src/render/powerpoint.ts", "utf8") + readFileSync("src/render/host-probe.ts", "utf8");
-    const literals = [...src.matchAll(/tags\.(?:add|getItem|getItemOrNullObject)\(\s*"([^"]+)"/g)].map((m) => m[1]);
-    for (const key of literals)
-      expect(key, `the tag key "${key}" is not upper case — see office-js#6079`).toBe(key.toUpperCase());
+    /**
+     * ── TWO FAULTS FIXED HERE, 2026-09-29 ─────────────────────────────────────
+     * IT COULD PASS HAVING CHECKED NOTHING. `literals` was collected and then
+     * looped over, so an empty list meant the loop never ran and the test went
+     * green. Its sibling above has had `expect(keys.length).toBeGreaterThan(3)`
+     * all along for exactly this reason; this half never got one. A pattern that
+     * stops matching — a rename, a helper wrapping `tags.add`, code moving to a
+     * third file — would have retired the guard without a word.
+     *
+     * AND IT READ TWO FILES BY NAME, which is how it came to be too narrow.
+     * `src/render/experiments.ts` writes `POWERCHART_EXPERIMENT` through the same
+     * literal form and was swept by nothing — three of the eight call sites in
+     * the tree were outside the two files this named.
+     *
+     * Comments are blanked before matching now, too: a paragraph quoting a
+     * lowercase key as the thing not to do would otherwise have failed this.
+     */
+    const { describeOffenders, expectSweptSomething, sweep } = await import("./helpers/module-source");
+    expectSweptSomething("src");
+    const lower = sweep(/tags\.(?:add|getItem|getItemOrNullObject)\(\s*"(?![A-Z0-9_]+")/, "src");
+    expect(
+      lower,
+      `a tag key is not upper case — see office-js#6079, the web host will not read it back:\n` +
+        describeOffenders(lower),
+    ).toEqual([]);
+
+    // AND THE SWEEP STILL SEES THE CALL SITES. Eight today, across three files.
+    // A floor rather than an equality: adding a tagged write is ordinary work,
+    // losing the ability to see them is not.
+    const all = sweep(/tags\.(?:add|getItem|getItemOrNullObject)\(\s*"/, "src");
+    expect(
+      all.length,
+      "no tags.add/getItem call sites found — the pattern stopped matching and this guard is checking nothing",
+    ).toBeGreaterThanOrEqual(5);
   });
 });
 
