@@ -178,6 +178,38 @@ so a re-fetch anywhere healed a stale proxy held anywhere — and that one
 kindness is why a whole class of stale-proxy bug could only be found by a human
 running the add-in in a real PowerPoint. Do not "simplify" it back.
 
+## The structure of `src/` is checked too, and the sweeps are tree-wide
+
+Added 2026-09-29, after a survey found four source sweeps enforcing a general
+rule while reading a single file by name.
+
+- **`helpers/module-source.ts`** — the shared sweep. `sweep(pattern, dir)` walks
+  a directory, blanks block, HTML and line comments (newlines preserved, so the
+  reported line is the one a reader opens the file to), and returns
+  `file:line  code` for every offender. `expectSweptSomething` is the guard on
+  the guard: a widened sweep that resolves to zero files passes every ban built
+  on it, forever. `sourceDeclaring` finds whichever file holds a declaration and
+  throws on zero matches or on more than one, so a slice-based guard fails loudly
+  when its target moves instead of slicing the wrong text.
+
+  **A ban pinned to one path is defeated by moving the code — it does not go
+  red, it goes quiet.** That is the failure this closes, and the first tree-wide
+  run of the empty-catch ban found five violations nobody had seen.
+
+- **`import-cycles.test.ts`** — there is no `eslint-plugin-import` here, so
+  nothing else looks at the module graph. A cycle is legal TypeScript and the
+  suite loads modules in an order that usually survives it; it fails in the
+  BUNDLE, as an undefined binding at init, inside PowerPoint. Three combo-base
+  edges into `column.ts` are declared in `ACCEPTED_CYCLE_EDGES` with the reason
+  `column.ts:38` already gives, and each is checked to still BE an edge, so a
+  stale entry fails rather than quietly permitting something else.
+
+- **`function-size.test.ts`** — a ratchet over every function in `src/` at or
+  over 150 **code** lines, measured from the TypeScript AST. Code lines and not
+  raw lines because this source is 48% comment: a ratchet that fired when
+  somebody documented a function would be switched off within a month. Growth is
+  allowed, hiding it is not — re-record with `UPDATE_FUNCTION_SIZES=1`.
+
 ## The CI configuration is code too
 
 `workflows.test.ts` reads `.github/workflows/` and pins the few settings this

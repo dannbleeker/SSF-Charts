@@ -26,9 +26,30 @@ renderers: SVG (`src/render/svg.ts`, preview + tests), Office.js
 | `src/core/`                     | the engine, **zero Office imports**: `chart.ts` (`buildChart`), `layout/<kind>.ts` one per chart kind, `decor.ts`, `scene.ts` (the node contract **and** the three-renderer parity rules), `geometry.ts`, `format.ts`, `color.ts`, `collide.ts`, `samples.ts`                                                                          |
 | `src/core/`, run-time reasoning | `placement.ts` (where a chart goes on a slide that already has content), `reconcile.ts` (what a run ACTUALLY produced, once the host stopped moving), `trace.ts` (the ordered record a run nobody watched leaves behind)                                                                                                               |
 | `src/render/`                   | `svg.ts` (the reference renderer), `powerpoint.ts` (Office.js, the live add-in), `ooxml.ts` (post-processes a `.pptx` to carry the slot tags and groups pptxgenjs cannot write), `pptx-deck.ts` (builds a whole deck in the browser, handed over in one call), `host-probe.ts` (the answer sheet — what THIS PowerPoint actually does) |
-| `src/taskpane/`                 | `app.ts`, `datasheet.ts`, `selftest.ts` (the in-host battery), `crashlog.ts` (the record that survives a run which never ends), `i18n.ts`, `templates.ts`                                                                                                                                                                              |
+| `src/taskpane/`                 | `app.ts` (the product's own pane), `harness-ui.ts` (the Testing panel and every helper only it uses — see below), `datasheet.ts`, `selftest.ts` (the in-host battery), `crashlog.ts` (the record that survives a run which never ends), `i18n.ts`, `templates.ts`                                                                       |
 | `skill/scripts/`                | `render-pptx.mjs` + `pptx-paint.mjs`, the headless renderer. **Outside `tsconfig.include` (`["src", "test"]`), so never typechecked**                                                                                                                                                                                                  |
 | `scripts/`                      | `triage.mjs`, `verify-deck.mjs`, `validate-ooxml.mjs`, `host-baseline.mjs`, `visible-charts.mjs`, `office-js-watch.mjs`, and the `build-*` set                                                                                                                                                                                         |
+
+**`app.ts` and `harness-ui.ts`, and which one a change belongs in.** The pane
+ships its own Testing panel, and until 2026-09-29 it was mixed into `app.ts` —
+`wireInsert` was 1,369 lines wiring the product's controls and the `demo-*` /
+`experiment-*` ones from the same brace. The panel and the ~1,890 lines of
+helpers only it used now live in `harness-ui.ts`. Anything a USER presses is
+`app.ts`; anything the round driver presses is `harness-ui.ts`.
+
+`harness-ui.ts` takes its seven dependencies as an argument rather than importing
+them, and that is structural: `app.ts` imports it, so importing back would close
+an ESM cycle — which `tsc` and the whole suite would pass while the bundle handed
+one side an undefined binding at init, inside PowerPoint. `test/import-cycles.test.ts`
+is what notices. The same rule applies to anything else extracted from the pane.
+
+**Function size is ratcheted.** `test/function-size.test.ts` records every
+function in `src/` at or over 150 CODE lines (comments and blanks excluded,
+measured from the TypeScript AST) and fails when one grows or a new one appears.
+Re-record deliberately with
+`UPDATE_FUNCTION_SIZES=1 node ./node_modules/vitest/vitest.mjs run test/function-size.test.ts`
+— growth is allowed, hiding it is not. Note that raw lines and code lines rank
+very differently here: `groupAndTagAll` is 827 lines and 267 of code.
 
 **Adding a `SceneNode` kind: six seams fail loudly, one does not.** Four fail
 at the SOURCE, as compile errors — `nodeToSvg` (`src/render/svg.ts`), `addNode`
