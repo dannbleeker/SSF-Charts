@@ -637,7 +637,12 @@ const settle = () => new Promise((r) => setTimeout(r, 0));
  * inside `Office.onReady`, so the stub must both look like a host (mocked
  * `isPowerPointHost`) and fire onReady synchronously at import.
  */
-async function bootHostPane(opts?: { deckStyle?: Record<string, unknown> | null; keepPicturePref?: boolean }) {
+async function bootHostPane(opts?: {
+  deckStyle?: Record<string, unknown> | null;
+  keepPicturePref?: boolean;
+  /** Override the pane's query string. Only the opt-in gate's own test uses it — see below. */
+  search?: string;
+}) {
   host.selectionBounds = null;
   host.slideShapes = [];
   host.deckCharts = [];
@@ -741,7 +746,25 @@ async function bootHostPane(opts?: { deckStyle?: Record<string, unknown> | null;
       /* a jsdom without storage is still a valid pane */
     }
 
-  window.history.replaceState({}, "", "/taskpane.html");
+  /**
+   * `?harness=1`, BECAUSE THAT IS THE ONLY WAY THESE CONTROLS ARE EVER REACHED.
+   *
+   * `TESTING_UI_NEEDS_OPT_IN` became `true` on 2026-09-29. A pane opened without
+   * the parameter hides Automation ▸ Testing — and, deliberately, also unchecks
+   * `#demo-trace` and calls `setTracing(false)`, because `hidden` does not
+   * uncheck a checkbox and verbose tracing must not be left running for a user
+   * with its only switch invisible.
+   *
+   * Half this file drives `demo-*`, and in production every one of those clicks
+   * comes from `round.mjs`, which sideloads `manifest-harness.xml`. Booting
+   * without the parameter and then clicking them models a pane that cannot
+   * exist. It also silently costs the trace: the round-log test at
+   * "abandons a tail that never answers" asserts the filed round carries
+   * `gave up collecting deck evidence`, and with tracing off it carries nothing
+   * — an assertion that reads as a lost diagnostic when the diagnostic was
+   * never recorded.
+   */
+  window.history.replaceState({}, "", `/taskpane.html${opts?.search ?? "?harness=1"}`);
   const parsed = new DOMParser().parseFromString(readFileSync("src/taskpane/taskpane.html", "utf8"), "text/html");
   parsed.querySelectorAll("script").forEach((s) => s.remove());
   document.body.innerHTML = parsed.body.innerHTML;
@@ -4161,5 +4184,47 @@ describe("Explode respects the same budget the insert path enforces", () => {
     $("explode").click();
     await settle();
     expect(host.calls.updateChart, "refused an ordinary chart").toHaveLength(1);
+  });
+});
+
+/**
+ * THE HALF OF THE OPT-IN GATE THAT NEEDS A HOST.
+ *
+ * `TESTING_UI_NEEDS_OPT_IN` became `true` on 2026-09-29. Hiding
+ * Automation ▸ Testing is the visible half and `test/pane-state.test.ts` owns
+ * it; this is the half that is not visible at all.
+ *
+ * `#demo-trace` ships `checked`, and `wireHarness` reads it at boot to call
+ * `setTracing(true)` — which reaches `enableExtendedErrorLogging`, the Office.js
+ * switch that makes every proxy object carry its debug info. `hidden` takes an
+ * element out of the accessibility tree; it does not uncheck a checkbox. So a
+ * gate that only hid the section would have left verbose tracing running for
+ * every published user with its only switch invisible — strictly worse than the
+ * ungated pane it replaced, and completely silent.
+ *
+ * It has to be asserted HERE rather than beside its sibling because
+ * `wireHarness` is only reached down the Office branch of `wireInsert`. The
+ * pane-state file boots without an `Office` global, so there `setTracing` is
+ * never called either way and the assertion would be true of a pane that could
+ * not have turned tracing on. A check that cannot tell "off" from "never
+ * attempted" is not a check.
+ */
+describe("the opt-in gate and verbose tracing", () => {
+  it("leaves Office's extended logging off for a pane nobody opted in", async () => {
+    await bootHostPane({ search: "" });
+    expect($("testing-section").hidden, "a user's pane still shows Automation ▸ Testing").toBe(true);
+    expect(($("demo-trace") as HTMLInputElement).checked, "the trace toggle is hidden but still on").toBe(false);
+    const { tracing } = await import("../src/core/trace");
+    expect(tracing(), "verbose tracing is running for a user who cannot see the switch").toBe(false);
+  });
+
+  it("turns it on for the pane the round driver opens", async () => {
+    // The other side of the same coin, and the one that keeps the loop alive: a
+    // round whose trace is empty explains nothing about why it failed. Every
+    // task-pane URL in `manifest-harness.xml` carries this parameter.
+    await bootHostPane({ search: "?harness=1" });
+    expect($("testing-section").hidden, "the round driver's pane cannot reach the Testing section").toBe(false);
+    const { tracing } = await import("../src/core/trace");
+    expect(tracing(), "the driver's pane records nothing, so a failed round explains nothing").toBe(true);
   });
 });

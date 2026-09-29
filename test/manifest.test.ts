@@ -290,8 +290,27 @@ describe("hiding the test harness from a published add-in", () => {
       /id="testing-section"[\s\S]*id="demo-trace"/,
     );
     const gate = /if \(TESTING_UI_NEEDS_OPT_IN[\s\S]*?\n\}/.exec(appSrc)?.[0] ?? "";
-    expect(gate, "the gate does not uncheck the trace toggle").toContain('getElementById("demo-trace")');
-    expect(gate, "the gate does not stop tracing that has already started").toContain("setTracing(false)");
+    /**
+     * COMMENTS STRIPPED BEFORE MATCHING, and this one was caught the hard way.
+     *
+     * Commenting the line out — `// setTracing(false);` — left both assertions
+     * below green, because the text is still in the block. The gate's OWN
+     * comments name both symbols too: the block explains at length why
+     * unchecking `#demo-trace` and calling `setTracing(false)` are two different
+     * things. So this guard was reading the postmortem and reporting the fix.
+     *
+     * The same strip, for the same reason, is in `pane-state.test.ts`'s
+     * one-note detector and `test/helpers/module-source.ts`. Verified by
+     * commenting each line out and watching this fail, 2026-09-29.
+     */
+    const gateCode = gate
+      .split(/\/\*[\s\S]*?\*\//)
+      .join("")
+      .split("\n")
+      .map((l) => l.replace(/\/\/.*$/, ""))
+      .join("\n");
+    expect(gateCode, "the gate does not uncheck the trace toggle").toContain('getElementById("demo-trace")');
+    expect(gateCode, "the gate does not stop tracing that has already started").toContain("setTracing(false)");
   });
 
   it("requires a harness manifest the moment the switch is flipped", () => {
@@ -301,14 +320,30 @@ describe("hiding the test harness from a published add-in", () => {
       expect(optIn).toBe("false");
       return;
     }
-    // Flipped: at least one manifest must ask for the pane WITH the opt-in, or
-    // no round can be driven against the deployment ever again.
-    const withParam = MANIFESTS.filter((m) => /taskpane\.html\?[^"<]*harness=1/.test(read(m)));
+    // Flipped: THE MANIFEST THE DRIVER ACTUALLY SIDELOADS must ask for the pane
+    // with the opt-in, or no round can be driven against the deployment ever
+    // again.
+    //
+    // "Does at least one manifest carry it" was the first thing written here and
+    // it is the weaker question: it passes while `round.mjs` points at
+    // `manifest-prod.xml`, which is precisely the arrangement that kills the
+    // loop. So the driver's own choice is read out of its source instead.
+    // `manifest-harness.xml` is deliberately not in `MANIFESTS` — it is
+    // GENERATED, and `test/build-manifest-harness.test.ts` owns its properties.
+    const driverSrc = read("scripts/round.mjs");
+    const sideloads = /MANIFEST_PATH = [^\n]*?\?\?\s*"([^"]+)"/.exec(driverSrc)?.[1];
+    expect(sideloads, "`round.mjs` no longer names the manifest it sideloads in a readable way").toBeDefined();
+    const driverManifest = (sideloads ?? "").split("/").pop() ?? "";
     expect(
-      withParam,
-      "TESTING_UI_NEEDS_OPT_IN is true but no manifest opens the pane with `?harness=1` — " +
+      driverManifest,
+      "TESTING_UI_NEEDS_OPT_IN is true and `round.mjs` sideloads a manifest that is not the harness one — " +
         "the round loop cannot reach `Probe, then self-test` and will stop without saying so",
-    ).not.toEqual([]);
+    ).toBe("manifest-harness.xml");
+    expect(
+      /taskpane\.html\?[^"<]*harness=1/.test(read(driverManifest)),
+      `TESTING_UI_NEEDS_OPT_IN is true but ${driverManifest} does not open the pane with \`?harness=1\` — ` +
+        "the round loop cannot reach `Probe, then self-test` and will stop without saying so",
+    ).toBe(true);
     // And the manifest a USER installs must NOT carry it, or nothing was gained.
     expect(
       /taskpane\.html\?[^"<]*harness=1/.test(read("manifest-prod.xml")),

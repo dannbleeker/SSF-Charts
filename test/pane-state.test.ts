@@ -1597,3 +1597,51 @@ describe("what Same Scale says it did", () => {
     ).toBe(1);
   });
 });
+
+/**
+ * THE OPT-IN GATE, CHECKED BY RUNNING IT RATHER THAN BY READING IT.
+ *
+ * `TESTING_UI_NEEDS_OPT_IN` was flipped to `true` on 2026-09-29, which changed
+ * what a user receives: Automation ▸ Testing is now hidden unless the pane is
+ * opened with `?harness=1`, and `manifest-prod.xml` never carries it.
+ *
+ * Everything guarding that flip until now was a SOURCE SWEEP —
+ * `test/manifest.test.ts` reads `app.ts` and asserts the gate contains the right
+ * strings. That catches a deleted line. It cannot catch a gate that runs and
+ * does nothing: a renamed id in the HTML, an `Office.onReady` that re-checks the
+ * toggle after the gate ran, a `hidden` set on the wrong node. All three are
+ * failures the store reviewer would find and no test here would.
+ *
+ * The second half is the part with teeth. Hiding a section does not turn it off
+ * — `#demo-trace` ships `checked` and `wireInsert` reads it at boot to call
+ * `setTracing(true)`, which reaches `enableExtendedErrorLogging`. Shipping the
+ * gate WITHOUT the uncheck would leave verbose tracing running for every user
+ * with its only switch invisible, which is worse than shipping no gate at all.
+ *
+ * ONLY THE CHECKBOX IS ASSERTED HERE, and deliberately. This file boots a pane
+ * with no `Office` global, so `wireInsert` takes its "Not running inside
+ * PowerPoint" branch and never reaches `wireHarness` — which is what reads the
+ * toggle and calls `setTracing`. A `tracing()` assertion here would therefore
+ * pass on a pane that could not have turned tracing on in the first place, and
+ * a check that cannot tell "off" from "never attempted" is not a check. That
+ * half lives in `test/pane-host-actions.test.ts`, which stubs Office.
+ */
+describe("the testing panel's opt-in gate", () => {
+  it("hides the section, and unchecks the toggle, for a pane nobody opted in", async () => {
+    await bootPane();
+    expect($("testing-section").hidden, "a user's pane still shows Automation ▸ Testing").toBe(true);
+    // `hidden` is an attribute, not an off switch — see the header.
+    expect(($("demo-trace") as HTMLInputElement).checked, "the trace toggle is hidden but still on").toBe(false);
+  });
+
+  it("leaves both alone for the pane the round driver opens", async () => {
+    // `manifest-harness.xml` puts this parameter on every task-pane URL, and
+    // `round.mjs` sideloads that manifest. Without this half the flip would be
+    // indistinguishable from deleting the harness.
+    await bootPane("?harness=1");
+    expect($("testing-section").hidden, "the round driver's pane cannot reach the Testing section").toBe(false);
+    expect(($("demo-trace") as HTMLInputElement).checked, "the driver's pane boots with the trace toggle off").toBe(
+      true,
+    );
+  });
+});

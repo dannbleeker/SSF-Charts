@@ -3770,12 +3770,19 @@ const deepLink = new URLSearchParams(location.search);
  * queries app.ts makes at init keep working. Removing the subtree would mean
  * auditing every one of those, for no gain.
  *
- * **DEFAULT `false`, WHICH IS TODAY'S BEHAVIOUR.** Flipping this changes what a
- * user receives, so it is the owner's call and not this file's. Flip it, and
- * regenerate the manifests, together: on its own this hides the section from the
- * round driver as well and the loop stops.
+ * **ON SINCE 2026-09-29, AND THE CONDITION FOR IT WAS THE DRIVER.** This shipped
+ * `false` because flipping it alone would have hidden the section from the round
+ * loop too and stopped it. `round.mjs` sideloads `manifest-harness.xml`, which
+ * carries `?harness=1` on every task-pane URL, so the loop is unaffected and the
+ * flip costs it nothing. The owner's call, made; what a user receives changed
+ * with it.
+ *
+ * **THIS HIDES THE PANEL. IT DOES NOT UNSHIP IT.** The harness is still in the
+ * bundle — `hidden` is a DOM attribute, not a build exclusion. Taking those
+ * ~13,400 lines out of what users download is a separate change, and it is the
+ * dynamic import of `./harness-ui`.
  */
-const TESTING_UI_NEEDS_OPT_IN = false;
+const TESTING_UI_NEEDS_OPT_IN = true;
 if (TESTING_UI_NEEDS_OPT_IN && deepLink.get("harness") !== "1") {
   const testing = document.getElementById("testing-section");
   if (testing) testing.hidden = true;

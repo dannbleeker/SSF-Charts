@@ -26,22 +26,24 @@ const PAIRS = [
  * The manifest the ROUND LOOP sideloads: identical to the production one except
  * that every task-pane URL carries `?harness=1`.
  *
- * WHY IT EXISTS. `app.ts` can hide the Automation ▸ Testing section unless the
+ * WHY IT EXISTS. `app.ts` hides the Automation ▸ Testing section unless the
  * pane is opened with `harness=1` — demo deck, self-test, host probe, download
  * run log, clean up the last round. Its own comment is the argument: "A stranger
  * cannot parse it, and two of those buttons change their document. That is fine
  * for a sideloaded tool and is a problem for a store listing, where a reviewer
  * opens every tab cold."
  *
- * THE GATE WAS BUILT AND LEFT OFF, because flipping it alone would hide the
- * section from the round driver as well and stop the loop —
- * `TESTING_UI_NEEDS_OPT_IN` says exactly that. This is the missing half: with a
- * harness manifest emitted and the driver sideloading it, flipping that constant
- * costs the loop nothing.
+ * THE GATE WAS BUILT AND LEFT OFF, because flipping it alone would have hidden
+ * the section from the round driver as well and stopped the loop —
+ * `TESTING_UI_NEEDS_OPT_IN` said exactly that. This file was the missing half:
+ * with a harness manifest emitted and the driver sideloading it, the flip cost
+ * the loop nothing. It was taken on 2026-09-29.
  *
- * NOTHING CHANGES TODAY. The constant is still `false`, so `harness=1` is read
- * and ignored. This only makes the flip available; whether to take it is the
- * owner's call, because it changes what a user receives.
+ * SO THIS IS NO LONGER OPTIONAL MACHINERY. `manifest-harness.xml` is now the
+ * only manifest that yields a drivable pane, and the round loop will not work
+ * without it. `test/manifest.test.ts` asserts both halves of that from the
+ * constant's current value: at least one manifest carries `harness=1`, and
+ * `manifest-prod.xml` carries none.
  *
  * ONLY `taskpane.html` URLs. The gate lives in the task pane's bundle; icons and
  * the support URL are not pane loads and rewriting them would mean nothing.
