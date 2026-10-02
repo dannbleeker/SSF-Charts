@@ -60,17 +60,67 @@ a task.
 ## 0. Product health, measured 2026-09-06
 
 The one summary worth reading first, split on whether a build contains the
-two-master fix (`6dfaa4b`, 2026-09-04). **As of round 413** — the post-fix rows
+two-master fix (`6dfaa4b`, 2026-09-04). **As of round 497** — the post-fix rows
 grow with every round, so they are anchored rather than left to rot:
 
     era / arm        rounds   all-green   scenario pass rate
     PRE-fix  16:9       250         194                96.9%
     PRE-fix  4:3         48          28                94.3%
-    post-fix 16:9         9           8                99.4%
-    post-fix 4:3         28          24                97.1%
+    post-fix 16:9        76          55                97.2%
+    post-fix 4:3         45          32                96.9%
 
-    crash records:  94 on PRE-fix builds,  3 on post-fix,  97 total
-                    ^ NOT RE-DERIVABLE — see below
+    crash records:  93 deaths on PRE-fix builds, 16 on post-fix, 109 total
+                    from 115 files — a FILE IS NOT A DEATH, see below
+
+**REFRESHED 2026-10-02, FROM 413 TO 497.** The pre-fix rows are byte-for-byte
+what they were, which is the check that the refresh moved only data: that era is
+CLOSED and its rows cannot legitimately change. The post-fix arms grew 9 → 76 and
+28 → 45.
+
+**THE DEFINITIONS WERE NEVER LOST — THEY ARE IN CI, and I rediscovered that the
+expensive way.** `test/backlog-health-table.test.ts` parses these four rows and
+the `As of round NNN` anchor out of this file and re-derives them at that anchor.
+Its `derive()` is the authority, and it is ONE rule, not the three I spent an hour
+reverse-engineering out of the published figures:
+
+    pass  = selftest.filter(s => s.ok).length
+    total = selftest.length
+    green = (pass === total)
+
+Everything else follows from it. **Every skip carries `ok: false`** — measured
+across 7,045 scenario entries: no skip has `ok: true`, and no `ok: true` entry is
+skipped — so "all-green" is automatically strict and the pass rate automatically
+counts a skip against, with no choice made anywhere. And `derive()` groups on
+`slideSize.width`, so the 54 rounds recording no size at all (023–078, every one
+PRE-fix) fall into a bucket with no row here. That is why PRE 16:9 reads 250 and
+not the 304 a regroup through `roundProfile` gives — that helper defaults a
+missing size to `16:9`, and 250 + 54 = 304.
+
+**SO DO NOT RE-DERIVE THIS TABLE BY HAND. RUN THE TEST.** It is stable by
+construction — it moves only when a person edits the table or the anchor — and
+this was the fifth time this project has re-measured something its own instruments
+already measured.
+
+**THE 2.2-POINT FALL AT post-fix 16:9 IS MOSTLY SKIPS — AND "ENTIRELY SKIPS" IS
+STILL WRONG.** 99.4% → 97.2% reads as a regression and is largely an artefact of
+the rate counting a skip against:
+
+    post-fix 16:9   skips counted against   99.4%  →  97.2%   (fall 2.18 points)
+                    scenarios that RAN      99.4%  →  99.3%   (fall 0.11)
+                    skips                       0  →     30
+
+Skips account for 2.07 of the 2.18 points, about 95%. The remaining 0.11 is real:
+failures went **1 → 10** across 67 more rounds — rounds 422, 435, 446, 447, 467
+and 487. A first draft of this paragraph said "entirely skips", which was
+literally false, and that is why the decomposition is printed rather than
+summarised.
+
+**AND NEITHER MOVEMENT IS A TREND, because the baseline is one event.** The
+published 99.4% rested on **1 failure in 166 scenarios over 9 rounds**. Against 9
+in 1,273 the failure rate goes 0.60% → 0.72%, which a single prior event cannot
+distinguish from noise in either direction. What the refresh does support: the
+two-master fix's gain HELD across eight times as many rounds, and 4:3 is 94.3%
+pre-fix against 96.9% post. Nothing here says the product got worse.
 
 The crash line resisted three attempts to reproduce it on 2026-09-06 and none
 of them landed on 97: counting `.md` reports by filename date gives 108 / 0,
@@ -81,11 +131,61 @@ both exist for the whole period, so "a crash record" is not one thing. Left
 exactly as it was rather than replaced with whichever number looked best.
 Whoever fixes it should say what a record IS beside the count.
 
+**ANSWERED 2026-10-02. A RECORD IS ONE HOST DEATH, AND A FILE IS NOT ONE.**
+
+    a death  =  one distinct pane trace buffer
+                identified by (build sha, `startedAt` to the millisecond),
+                equivalently by a hash of the `steps` array
+
+Counted that way: **115 files hold 109 deaths — 93 PRE-fix, 16 post-fix**, by git
+ancestry of `6dfaa4b` against each record's own `build` field. The era is decided
+by ancestry, not by filename date: a date orders the FILES and ancestry orders the
+CODE, and the question is which code died.
+
+**SIX FILES ARE RE-DOWNLOADS OF A DEATH ALREADY RECORDED,** and five of the six
+are post-fix — so counting files overstates the post-fix arm by 31% (21 against
+16), and that arm is the one the whole era comparison rests on. Two groupings that
+could not both be wrong the same way agree exactly on 109: a SHA-1 of the raw
+`steps` array, and `(build, startedAt)` to the millisecond.
+
+    4275306  2026-08-29T03:22:08.936Z   2 files   whole-file byte-identical
+    d80dbea  2026-09-06T16:16:43.157Z   2 files
+    bc88a7c  2026-09-07T08:04:33.174Z   3 files
+    630e4b3  2026-09-07T20:35:50.170Z   2 files
+    36916a5  2026-09-07T21:56:04.802Z   2 files
+
+**The mechanism is visible in one field.** The pane's buffer survives in
+`localStorage` until some later round downloads it, so a round that finds an
+orphaned buffer downloads it again — and `frontedWhenRescued` is the tell: the
+first copy names the deck (`"Presentation64.pptx"`), every re-download carries
+`null`, because by then the deck is no longer fronted. Build, `startedAt`, `seq`,
+`dropped`, step count and findings count are identical across each group; that
+field is the only thing that differs.
+
+So the old `94 / 3 / 97` was a FILE count. Its 94 reproduces exactly as files and
+is 93 as deaths; its 3 was correct the day it was written, and 13 more post-fix
+deaths were recorded between then and 2026-09-20.
+
+**AND IT IS STILL A FLOOR, not a rate.** A crash that closes the pane destroys
+the trace buffer before anything can download it, so those deaths leave no record
+at all — round 492 (2026-09-29) met PowerPoint's own crash dialog at readiness and
+produced none. The newest record is `2026-09-20T06-23-20`.
+
+**One trap for whoever filters these.** `kind` is `ssf-charts-crash-log` on 100
+records and `powerchart-crash-log` on 15 — the product's former name — so a
+filter on the current spelling silently drops 15.
+
+**THIS COUNT IS NOW GUARDED,** by `test/backlog-health-table.test.ts`, which
+already re-derived the four rows above and did not look at this line. That is
+exactly why this one drifted for four weeks while the table could not.
+
 (An earlier draft of this paragraph added "`crashes/` is gitignored, so this can
 only be checked on the machine that runs rounds", which is wrong and worth
-correcting rather than deleting: only `crashes/*.md` is ignored. The 98
-`-crashed-run.json` files are committed, and are the half a stranger can check.
-See that directory's README.)
+correcting rather than deleting: only `crashes/*.md` is ignored. The
+`-crashed-run.json` files are committed — 115 of them now, 98 when that was
+written — and are the half a stranger can check. The `.md` half cannot be counted
+by anyone but the machine that runs rounds, which is the second reason it is the
+wrong unit. See that directory's README.)
 
 Re-derived 2026-09-06 evening: the 4:3 row read `26 / 22 / 96.8%` and rounds
 412 and 413 had landed since. The other three rows reproduced to the digit,
