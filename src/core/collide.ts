@@ -78,6 +78,14 @@ const FLIPPABLE = [/^combo-label-/, /^cagr-label$/];
 const MAX_ANCHORED_TRAVEL = 2;
 
 /**
+ * The farthest `resolveLabelCollisions` carries a label that is not anchored to
+ * a single mark: ten upward steps of 0.55 em, in multiples of its own size. A
+ * series name is free to travel this far, so a placer that is meant to do at
+ * least as well as the pass it replaces for them must be allowed the same.
+ */
+export const MAX_NUDGE_TRAVEL = 5.5;
+
+/**
  * Flippable labels whose bound BELOW is measured from their mark: a combo's point
  * labels, which hang just above a marker they name.
  *
@@ -229,6 +237,66 @@ export function resolveLabelCollisions(nodes: SceneNode[], canvasH?: number): vo
     }
     settled.insert(box, box);
   }
+}
+
+/**
+ * WHAT A SLOT KEEPS OFF EVERY OBSTACLE, and it is not for looks. `overlaps`
+ * above is a strict inequality over floats, and two boxes that touch exactly —
+ * which is what "the nearest free centre" is, by construction — come out of the
+ * sums a hair either side of equal. `resolveLabelCollisions` then sees an
+ * overlap, nudges the label it settles second, and the slot is gone.
+ *
+ * Measured on the names `seriesLabelNodes` shrinks to fit, whose pitch is
+ * EXACTLY their tight height (`step / 1.25` at a 1.25 box): seven touching names
+ * on a 120x90 dual-axis combo each climbed a step or two through that pass, and
+ * the top one onto a line name placed in the clear air above them.
+ */
+const AIR = 0.05;
+
+/**
+ * The vertical centre NEAREST `want` at which a label `h` tall, painting across
+ * `x0..x1`, keeps clear of `obstacles` — or null when no centre within
+ * `maxTravel` of it does.
+ *
+ * ONE DIMENSION ON PURPOSE. A name in the right-hand gutter may move up or down
+ * its strip and nowhere else: sideways is the plot on one side and the canvas
+ * edge on the other, and a name that left its column would stop reading as part
+ * of the strip. So the question is only which stretches of y an obstacle shuts
+ * the label out of, and every answer is either `want` itself or one of those
+ * stretches' two ends — just above an obstacle or just below it.
+ *
+ * `lo` and `hi` bound the label's own painted extent (the title's ink above,
+ * the canvas below), not its centre, so a caller passes the same limits it
+ * would give a box.
+ */
+export function nearestClearCentre(
+  want: number,
+  h: number,
+  x0: number,
+  x1: number,
+  lo: number,
+  hi: number,
+  obstacles: Box[],
+  maxTravel: number,
+): number | null {
+  const half = h / 2;
+  const a = lo + half;
+  const b = hi - half;
+  if (b < a) return null;
+  // A centre c is shut out by an obstacle in this column when it lies strictly
+  // inside (top - half - AIR, bottom + half + AIR): the label's box would then
+  // cross it or come within AIR of it.
+  const shut = obstacles
+    .filter((o) => o.x < x1 && o.x + o.w > x0)
+    .map((o): [number, number] => [o.y - half - AIR, o.y + o.h + half + AIR]);
+  const free = (c: number) => c >= a && c <= b && !shut.some(([s, e]) => c > s && c < e);
+  const candidates = [want, a, b, ...shut.flat()];
+  let best: number | null = null;
+  for (const c of candidates) {
+    if (!free(c) || Math.abs(c - want) > maxTravel) continue;
+    if (best == null || Math.abs(c - want) < Math.abs(best - want)) best = c;
+  }
+  return best;
 }
 
 /**

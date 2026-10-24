@@ -22,6 +22,7 @@ import {
   chromeNodes,
   computeFrame,
   computeFrameHorizontal,
+  footnoteH,
   labelBesidePoint,
   legendWrapWalk,
   seriesLegendLabels,
@@ -45,7 +46,7 @@ import { layoutMekko } from "./mekko";
 import { layoutLine } from "./line";
 import { columnHasData, columnNegativeTotal, columnPositiveTotal, columnSignedTotal } from "./totals";
 import { maxOf, minOf } from "../agg";
-import { tightBox } from "../collide";
+import { MAX_NUDGE_TRAVEL, nearestClearCentre, resolveLabelCollisions, tightBox } from "../collide";
 
 /**
  * The nearest drawn category before / after `c`, or -1.
@@ -1488,6 +1489,16 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
 
   /** Upright line names, collected for one shared spread down the gutter. */
   const gutterExtras: GutterName[] = [];
+  /**
+   * Where the merge does not run (a secondary axis shares the strip), each line
+   * draws its own name — and every name is ALSO kept here, so that if one of them
+   * finds nowhere to stand the strip can still be laid out in one pass. See
+   * `uprightNameSlot` and the spread below.
+   */
+  const spareExtras: GutterName[] = [];
+  /** What each homeless name does if the strip cannot be laid out in one pass: shrink into whatever room there is. */
+  const homeless: (() => void)[] = [];
+  const names = ownNamePlacer(nodes, cfg, style, decor);
   lines.forEach((s, li) => {
     const color = seriesColor(style, cols.length + li, s.color);
     const toY = toYs[li];
@@ -1707,7 +1718,7 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       const nameFs = H ? bandFontSize(fs, Math.max(0, rowPitch - pointFs * 1.4), 1.05) : fs;
       let lf = nameFs;
       while (lf > 5 && textWidth(s.name, lf) > lw) lf -= 0.5;
-      const nameY = H
+      let nameY = H
         ? horizontalNameY(end.y, nameFs, cfg.height, rowPitch)
         : uprightNameY(end.y, fs, cfg.height, titleInkBottom(cfg, style));
       /**
@@ -1759,32 +1770,20 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
        * emits them have to be one test, and now the gate is "something was
        * collected".
        */
+      const extra: GutterName = {
+        name: s.scenario ? `${s.name} (${s.scenario})` : s.name,
+        color,
+        y: end.y,
+        nodeName: `combo-series-label-${li}`,
+      };
       if (!H && !secondary && result.anchors.seriesLabelAnchors) {
-        gutterExtras.push({
-          name: s.scenario ? `${s.name} (${s.scenario})` : s.name,
-          color,
-          y: end.y,
-          nodeName: `combo-series-label-${li}`,
-        });
+        gutterExtras.push(extra);
         return;
       }
-      const legendNamesIt = nodes.some(
-        (n) => n.kind === "text" && /^legend-\d+$/.test(n.name ?? "") && String((n as TextNode).text ?? "") === s.name,
-      );
-      const nameBox = { x: lx, y: nameY ?? 0, w: lw, h: nameFs * 1.4 };
-      const saidTwiceAndInTheWay =
-        legendNamesIt &&
-        nodes.some((n) => {
-          if (n.kind !== "text") return false;
-          const t = n as TextNode;
-          if (!String(t.text ?? "").trim() || /^legend-/.test(t.name ?? "")) return false;
-          const b = tightBox(t);
-          return (
-            nameBox.x < b.x + b.w && b.x < nameBox.x + nameBox.w && nameBox.y < b.y + b.h && b.y < nameBox.y + nameBox.h
-          );
-        });
-      if (nameFs > 0 && nameY != null && !saidTwiceAndInTheWay)
-        nodes.push({
+      if (!H && result.anchors.seriesLabelAnchors) spareExtras.push(extra);
+      /** The name at `y`, drawn at size `f`. */
+      const emitName = (y: number, f: number) => {
+        const nameNode: TextNode = {
           kind: "text",
           x: lx,
           // Sideways the name sits BELOW the line's last point, and the floor at 0
@@ -1795,16 +1794,39 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
           // under it on the slide, since neither PowerPoint renderer clips.
           // Bounded at both ends now; `combo-series-label-` is movable, so
           // de-collision can still lift it off whatever it lands on.
-          y: nameY,
+          y,
           w: lw,
           h: nameFs * 1.4,
-          text: clipToWidth(s.name, lf, lw),
-          fontSize: lf,
+          text: clipToWidth(s.name, f, lw),
+          fontSize: f,
           color: style.text,
           align: H ? "center" : "left",
           valign: "middle",
           name: `combo-series-label-${li}`,
-        });
+        };
+        nodes.push(nameNode);
+        if (!H) names.book(nameNode, end.y, li);
+      };
+      /**
+       * UPRIGHT, WHERE THE NAME DRAWS ITSELF, IT STANDS WHERE NOTHING ELSE DOES.
+       * See `uprightNameSlot`. A name with no such place at its size is homeless:
+       * the strip is laid out in one pass below if it can be, and if it cannot the
+       * name is made smaller until it fits somewhere, and left out only if there
+       * is nowhere at the smallest size either.
+       */
+      if (!H && nameY != null) {
+        const natural = nameY;
+        const stands = (from: number, to: number) => names.slot(natural, end.y, li, s.name, from, to, lx, lw);
+        nameY = stands(lf, lf)?.y ?? null;
+        if (nameY == null)
+          homeless.push(() => {
+            const hit = stands(lf - 0.5, MIN_LABEL_FS);
+            if (hit) emitName(hit.y, hit.f);
+          });
+      }
+      const nameBox = { x: lx, y: nameY ?? 0, w: lw, h: nameFs * 1.4 };
+      if (nameFs > 0 && nameY != null && !legendNamesItAndSomethingIsInTheWay(nodes, s.name, nameBox))
+        emitName(nameY, lf);
     }
   });
   /**
@@ -1832,42 +1854,22 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
   // NAME ABOVE ITS LAST POINT, in the loop above, which it was not doing: the
   // loop handed every upright name to this spread and returned, so "keep the old
   // arrangement" kept nothing.
-  if (gutterExtras.length) {
-    for (let i = nodes.length - 1; i >= 0; i--) if (/^series-label-\d+$/.test(nodes[i].name ?? "")) nodes.splice(i, 1);
-    // The anchors are there: the loop above collected a name only for a base that
-    // published them.
-    const gutter = seriesLabelNodes(
-      colCfg,
-      style,
-      result.anchors.plot,
-      result.anchors.seriesLabelAnchors!,
-      gutterExtras,
-    );
-    nodes.push(...gutter);
-    /**
-     * AND THE SECONDARY STRIP YIELDS AGAIN, because it shares this gutter and
-     * its own rule ran too early to see these names.
-     *
-     * That strip already gives way to whatever was drawn before it — the rule is
-     * a few hundred lines up — but it is emitted BEFORE the lines exist, so it
-     * could only yield to the column names. Moving the line names into the same
-     * strip put fourteen new pairs of tick number on line name: the shape of
-     * trade this file has already made twice, a family fixed and a neighbour
-     * grown.
-     *
-     * Same verdict as before. A tick that cannot be labelled inside the chart
-     * keeps its gridline and loses its number; a line name upright has no legend
-     * behind it and is the only thing naming that series.
-     */
-    const gutterBoxes = gutter.map((n) => tightBox(n as TextNode));
-    for (let i = nodes.length - 1; i >= 0; i--) {
-      const n = nodes[i];
-      if (n.name !== "secondary-axis" || n.kind !== "text") continue;
-      const b = tightBox(n as TextNode);
-      if (gutterBoxes.some((g) => b.x < g.x + g.w && g.x < b.x + b.w && b.y < g.y + g.h && g.y < b.y + b.h))
-        nodes.splice(i, 1);
-    }
-  }
+  //
+  // AND THE OLD ARRANGEMENT STOPS WHERE ITS NAME HAS NOWHERE TO STAND. Drawing
+  // the names again put 90 pairs of text over text back into the overlap sweep
+  // (see `uprightNameSlot`), 31 of them on a ten-series dual-axis combo whose
+  // strip holds ten names and no room. A name that is homeless takes the strip
+  // to the spread after all — for that chart only, so the ticks it deletes are
+  // the ones of a chart that had no room for them and its names — and where even
+  // the spread has nothing to give, each homeless name shrinks into what room is
+  // left.
+  const spread = gutterExtras.length ? gutterExtras : homeless.length ? spareExtras : [];
+  const spreadApplied =
+    spread.length > 0 && applyGutterSpread(nodes, colCfg, style, result.anchors, spread, spread === spareExtras);
+  // No spread to be had, so each name without a place shrinks into the room there
+  // is — down to the size below which no label in this engine is drawn — and is
+  // left out only if there is none at that size either.
+  if (!spreadApplied) for (const shrink of homeless) shrink();
   return result;
 }
 
@@ -2213,6 +2215,246 @@ export function uprightNameY(pointY: number, fs: number, canvasH: number, titleI
   // than the old clamp: the clamp's destination on a frame this short is the
   // title, and a name that reads as part of the chart's title names nothing.
   return null;
+}
+
+/**
+ * Does the legend already name this series, with something other than the legend
+ * in the way of the name at the end of its line? Then the name is said twice and
+ * yields — the rule explained where `layoutCombo` calls this.
+ */
+function legendNamesItAndSomethingIsInTheWay(
+  nodes: SceneNode[],
+  name: string,
+  box: { x: number; y: number; w: number; h: number },
+): boolean {
+  const legendNamesIt = nodes.some(
+    (n) => n.kind === "text" && /^legend-\d+$/.test(n.name ?? "") && String((n as TextNode).text ?? "") === name,
+  );
+  return (
+    legendNamesIt &&
+    nodes.some((n) => {
+      if (n.kind !== "text") return false;
+      const t = n as TextNode;
+      if (!String(t.text ?? "").trim() || /^legend-/.test(t.name ?? "")) return false;
+      const b = tightBox(t);
+      return box.x < b.x + b.w && b.x < box.x + box.w && box.y < b.y + b.h && b.y < box.y + box.h;
+    })
+  );
+}
+
+/**
+ * Where an upright combo's line name stands when its own spot has text in it:
+ * that spot if it is clear, otherwise the nearest clear one UP OR DOWN the
+ * gutter within the settle pass's reach, otherwise null (the name is homeless).
+ *
+ * WHY THE NAME NEEDS A PLACE OF ITS OWN. Where the gutter is merged, one spread
+ * lays every name in it out against every other. Where it is not — a secondary
+ * axis, a pareto, a 100% base — the name stands just above (or below) its line's
+ * last point and knows nothing of what else is in the strip: the column names,
+ * the secondary tick numbers, the other lines' names. Naming those lines again
+ * (r2-11) put 90 new pairs of text over text into the overlap sweep, three
+ * families of them, all one defect:
+ *
+ *   - a pareto at 300x60/18: "Cumulative %" at 13.5pt just under the title and
+ *     0.1pt onto the column name at 5pt, 46 pairs (one per kind the option
+ *     rewrites into a combo);
+ *   - a pareto at 480x300/18 with long series names: the name hangs 3.6pt under
+ *     the point, and the top tick "100" is centred ON the point and reaches
+ *     9.2pt below it, 13 pairs;
+ *   - ten series on a dual-axis combo, three of them lines ending 3pt apart:
+ *     three names above the same few points and seven column names beneath,
+ *     31 pairs over five frames.
+ *
+ * `resolveLabelCollisions` cannot be left to this, which was the first thought.
+ * It only moves a label UP, a name already at the top of its strip has the title
+ * above it and nothing to climb into, and of two names that collide it moves the
+ * upper one — the column name, which had nowhere to go either way.
+ *
+ * Tick numbers are obstacles first: a spot among them is preferred to a tick
+ * given up, because the axis is what makes the line's values readable. Only when
+ * no spot clear of the ticks is near enough do they stop being obstacles, and the
+ * caller then drops the ones the name stands on — the verdict `gutterExtras`
+ * already carries for the merged gutter: a tick that cannot be labelled keeps its
+ * gridline and loses its number, and an upright line name has no legend behind it.
+ *
+ * `limits` bound the name's own extent: the title's ink above (as `uprightNameY`
+ * already insists), the foot of the plot below, and — tightened by the caller —
+ * the names of the other lines already drawn, so the gutter reads in the order
+ * the lines end. The travel allowed is the pass's own (`MAX_NUDGE_TRAVEL`): a
+ * placer that may move a name less far than the pass it stands in for loses to it
+ * exactly where the strip is crowded — over 3,000 random dual-axis charts a reach
+ * of 2 em gave up 499 tick numbers and 142 line names, counted against the scene
+ * before this placer existed, where this one gives up 241 and 118.
+ */
+export function uprightNameSlot(
+  settled: TextNode[],
+  drawn: ReturnType<typeof tightBox>[],
+  naturalY: number,
+  fs: number,
+  lf: number,
+  x0: number,
+  x1: number,
+  limits: { top: number; bottom: number },
+): number | null {
+  // The name's node is `fs * 1.4` tall with its text centred in it, so its centre
+  // is a fixed distance from its top whatever size the text is drawn at; what is
+  // painted is the text's own height, which is smaller when the name was shrunk.
+  const toCentre = fs * 0.7;
+  const painted = Math.min(fs * 1.4, lf * 1.25);
+  for (const ticksBlock of [true, false]) {
+    const c = nearestClearCentre(
+      naturalY + toCentre,
+      painted,
+      x0,
+      x1,
+      limits.top,
+      limits.bottom,
+      [...settled.filter((t) => ticksBlock || t.name !== "secondary-axis").map(tightBox), ...drawn],
+      fs * MAX_NUDGE_TRAVEL,
+    );
+    if (c != null) return c - toCentre;
+  }
+  return null;
+}
+
+/**
+ * The line names an upright combo draws on its own, and the room they share —
+ * what `layoutCombo` asks of `uprightNameSlot` and nothing else.
+ *
+ * `settled` is the strip as the settle pass will leave it, WITHOUT the line
+ * names: every other text on the chart, moved by `resolveLabelCollisions` exactly
+ * as it will be once the whole scene is built. A name placed in clear air at
+ * layout time is only clear if what is around it stays where it was, and the
+ * column names do not: when the strip is full the spread pitches them at exactly
+ * their own height, the pass reads touching as overlapping, and they climb into
+ * whatever room was left above them — measured on a 120x90 dual-axis combo, where
+ * seven names rose a step or two each, the top one onto a line name that had been
+ * put in the clear air above them. Asking the pass itself is the one answer that cannot
+ * disagree with it, and a name clear of THIS strip is left alone by the real
+ * pass, by induction: it only ever moves a label up, settles bottom-up, and a
+ * label stops at the first step that clears what is settled — a step that
+ * already cleared the strip without the name still does.
+ *
+ * Computed once, from a copy, because the pass moves nodes in place. The point
+ * labels are left out because they settle after the names and move around them,
+ * never the other way.
+ */
+function ownNamePlacer(nodes: SceneNode[], cfg: ChartConfig, style: ChartStyle, decor: Decorations) {
+  /** The names drawn so far: where each line ended, which line it is, and where its name stands. */
+  const drawn: { endY: number; li: number; box: ReturnType<typeof tightBox> }[] = [];
+  let strip: TextNode[] | null = null;
+  const settled = () =>
+    (strip ??= (() => {
+      const copy = nodes
+        .filter((n) => !/^combo-(?:label|series-label)-\d+/.test(n.name ?? ""))
+        .map((n) => (n.kind === "text" ? { ...n } : n));
+      resolveLabelCollisions(copy, cfg.height);
+      return copy.filter((n): n is TextNode => n.kind === "text" && !!String(n.text ?? "").trim());
+    })());
+  return {
+    /**
+     * Where line `li`, which ended at `endY`, may stand — in the order the lines
+     * end — at the largest size from `from` down to `to` that has a place.
+     */
+    slot(natural: number, endY: number, li: number, name: string, from: number, to: number, lx: number, lw: number) {
+      const above = (d: (typeof drawn)[number]) => d.endY < endY || (d.endY === endY && d.li < li);
+      const limits = {
+        top: Math.max(titleInkBottom(cfg, style), ...drawn.filter(above).map((d) => d.box.y + d.box.h)),
+        // Not into the footnote's band, which is added after the layouts are done.
+        bottom: Math.min(
+          cfg.height - footnoteH(cfg, style, decor),
+          ...drawn.filter((d) => !above(d)).map((d) => d.box.y),
+        ),
+      };
+      for (let f = from; f >= to; f -= 0.5) {
+        const x1 = lx + Math.min(lw, textWidth(clipToWidth(name, f, lw), f));
+        const y = uprightNameSlot(
+          settled(),
+          drawn.map((d) => d.box),
+          natural,
+          style.fontSize,
+          f,
+          lx,
+          x1,
+          limits,
+        );
+        if (y != null) return { y, f };
+      }
+      return null;
+    },
+    /** A name has been drawn: remember where, and take the tick numbers it stands on. */
+    book(node: TextNode, endY: number, li: number): void {
+      const box = tightBox(node);
+      drawn.push({ endY, li, box });
+      for (let i = nodes.length - 1; i >= 0; i--) {
+        const t = nodes[i];
+        if (t.name !== "secondary-axis" || t.kind !== "text") continue;
+        const b = tightBox(t as TextNode);
+        if (box.x < b.x + b.w && b.x < box.x + box.w && box.y < b.y + b.h && b.y < box.y + box.h) nodes.splice(i, 1);
+      }
+    },
+  };
+}
+
+/**
+ * Lay the right-hand gutter out again in one pass, with the line names in it, and
+ * say whether it was done.
+ *
+ * `layoutColumns` has already spread its own names down this strip and emitted
+ * them, knowing nothing of the lines. Those nodes are removed and the strip is
+ * laid out again with every name in it.
+ *
+ * AS A FALLBACK (`fallback`: the lines drew their own names and one found no room)
+ * the spread is the way out for a strip that has no room to stand a name in, and a
+ * strip it cannot lay out either is answered with NOTHING, for every name in it —
+ * a verdict that may be taken for a chart nobody can read, and may not be taken
+ * for one whose column names are standing and legible just because a line name
+ * was homeless. There the spread is not applied: the column names stay as the base
+ * laid them and the names the lines drew stay, which is the state this chart was
+ * in before its lines were named at all, plus the ones that found room.
+ */
+function applyGutterSpread(
+  nodes: SceneNode[],
+  colCfg: ChartConfig,
+  style: ChartStyle,
+  anchors: LayoutAnchors,
+  extras: GutterName[],
+  fallback: boolean,
+): boolean {
+  // The anchors are there: the lines collected a name only for a base that
+  // published them.
+  const gutter = seriesLabelNodes(colCfg, style, anchors.plot, anchors.seriesLabelAnchors!, extras);
+  if (fallback && !gutter.length) return false;
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const name = nodes[i].name ?? "";
+    // The line names drawn on their own are laid out again with the rest.
+    if (/^series-label-\d+$/.test(name) || (fallback && /^combo-series-label-\d+$/.test(name))) nodes.splice(i, 1);
+  }
+  nodes.push(...gutter);
+  /**
+   * AND THE SECONDARY STRIP YIELDS AGAIN, because it shares this gutter and
+   * its own rule ran too early to see these names.
+   *
+   * That strip already gives way to whatever was drawn before it — the rule is
+   * a few hundred lines up — but it is emitted BEFORE the lines exist, so it
+   * could only yield to the column names. Moving the line names into the same
+   * strip put fourteen new pairs of tick number on line name: the shape of
+   * trade this file has already made twice, a family fixed and a neighbour
+   * grown.
+   *
+   * Same verdict as before. A tick that cannot be labelled inside the chart
+   * keeps its gridline and loses its number; a line name upright has no legend
+   * behind it and is the only thing naming that series.
+   */
+  const gutterBoxes = gutter.map((n) => tightBox(n as TextNode));
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const n = nodes[i];
+    if (n.name !== "secondary-axis" || n.kind !== "text") continue;
+    const b = tightBox(n as TextNode);
+    if (gutterBoxes.some((g) => b.x < g.x + g.w && g.x < b.x + b.w && b.y < g.y + g.h && g.y < b.y + b.h))
+      nodes.splice(i, 1);
+  }
+  return true;
 }
 
 /**

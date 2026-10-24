@@ -5,7 +5,7 @@ import { splineSegments } from "../src/core/layout/line";
 import { sampleConfig } from "../src/core/samples";
 import { textWidth } from "../src/core/scene";
 import type { LineNode, RectNode, Scene, SceneNode, TextNode } from "../src/core/scene";
-import type { ChartConfig } from "../src/core/types";
+import type { ChartConfig, ChartKind } from "../src/core/types";
 
 /**
  * Eight findings in the line, area and combo layouts: date spacing that moved
@@ -519,6 +519,294 @@ describe("r2-11: an upright combo names its line wherever its column names are n
     expect(
       scene.nodes.some((n) => n.kind === "text" && /^legend-\d+$/.test(n.name ?? "") && n.text === "Margin %"),
     ).toBe(true);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+
+describe("r2-11, the other half: the names it draws again do not land on the text beside them", () => {
+  /**
+   * Naming those lines again put 90 pairs of text over text into the overlap
+   * sweep (785 -> 875) in three families: a pareto at 300x60 (46), a pareto with
+   * long series names at 480x300 (13, a tick number under the name), and a
+   * ten-series dual-axis combo over five frames (31). Each is built here the way
+   * `overlap-budget.test.ts` builds it, and measured by the same rule: ink that
+   * shares more than a point squared.
+   */
+  const inkOf = (t: TextNode) => {
+    const w = textWidth(t.text, t.fontSize, t.bold);
+    const x = t.align === "right" ? t.x + t.w - w : t.align === "center" ? t.x + (t.w - w) / 2 : t.x;
+    const base =
+      t.valign === "top"
+        ? t.y + t.fontSize
+        : t.valign === "bottom"
+          ? t.y + t.h - t.fontSize * 0.25
+          : t.y + t.h / 2 + t.fontSize * 0.36;
+    return { x0: x, y0: base - t.fontSize * 0.8, x1: x + w, y1: base + t.fontSize * 0.21 };
+  };
+  const texts = (scene: Scene) =>
+    scene.nodes.filter((n): n is TextNode => n.kind === "text" && !!String(n.text).trim());
+  /** Every pair of texts on the chart with a gutter name in it that shares ink, as "a / b". */
+  const gutterPairs = (scene: Scene) => {
+    const ts = texts(scene);
+    const out: string[] = [];
+    for (let i = 0; i < ts.length; i++)
+      for (let j = i + 1; j < ts.length; j++) {
+        if (!/series-label/.test(`${ts[i].name} ${ts[j].name}`)) continue;
+        const a = inkOf(ts[i]);
+        const b = inkOf(ts[j]);
+        const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+        const h = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+        if (w > 0 && h > 0 && w * h > 1) out.push(`${ts[i].name} "${ts[i].text}" / ${ts[j].name} "${ts[j].text}"`);
+      }
+    return out;
+  };
+  const named = (scene: Scene, re: RegExp) => texts(scene).filter((t) => re.test(t.name ?? ""));
+  const lineNames = (scene: Scene) => named(scene, /^combo-series-label-\d+$/);
+  const columnNames = (scene: Scene) => named(scene, /^series-label-\d+$/);
+  const ticks = (scene: Scene) => named(scene, /^secondary-axis$/);
+
+  /** The sweep's own data shapes. */
+  const tenSeries = (c: ChartConfig, rise: (i: number) => number = (i) => i): ChartConfig => ({
+    ...c,
+    data: {
+      ...c.data,
+      series: Array.from({ length: 10 }, (_, i) => ({
+        ...c.data.series[i % c.data.series.length],
+        name: `Series ${i + 1}`,
+        values: c.data.series[i % c.data.series.length].values.map((v) => (v == null ? v : v + rise(i))),
+      })),
+    },
+  });
+  const longNames = (c: ChartConfig): ChartConfig => ({
+    ...c,
+    data: { ...c.data, series: c.data.series.map((s) => ({ ...s, name: `${s.name} including allocations` })) },
+  });
+  const at = (c: ChartConfig, w: number, h: number, fontSize: number): ChartConfig =>
+    ({ ...c, width: w, height: h, style: { fontSize } }) as ChartConfig;
+  const sample = (kind: ChartKind, extra: Partial<ChartConfig> = {}) =>
+    ({ ...sampleConfig(kind), ...extra }) as ChartConfig;
+
+  describe("a pareto on a frame too short for its font (300x60, 18pt)", () => {
+    // `pareto` rewrites whatever kind it is on into a combo, which is why the
+    // sweep counted this once per kind; two of them are enough to say so.
+    it.each<ChartKind>(["stacked", "mekko"])("%s: the line's name and the column's name share no ink", (kind) => {
+      const scene = buildChart(at(sample(kind, { pareto: true }), 300, 60, 18));
+      expect(lineNames(scene).map((t) => t.text)).toEqual(["Cumulative %"]);
+      expect(columnNames(scene).length, "the column's name is still there").toBeGreaterThan(0);
+      expect(gutterPairs(scene)).toEqual([]);
+    });
+  });
+
+  describe("a pareto whose top tick number sits where the name hangs (480x300, 18pt, long series names)", () => {
+    it.each<ChartKind>(["cascade", "mekko"])(
+      "%s: the name stands clear of the tick numbers and every one is kept",
+      (kind) => {
+        const cfg = at(longNames(sample(kind, { pareto: true })), 480, 300, 18);
+        const scene = buildChart(cfg);
+        expect(lineNames(scene).map((t) => t.text)).toEqual(["Cumulative %"]);
+        expect(gutterPairs(scene)).toEqual([]);
+        // The tick the name hung under is the top of the axis — the 100% the line
+        // ends on. Moving the name aside must not cost the axis that number.
+        expect(ticks(scene).map((t) => t.text)).toContain("100");
+      },
+    );
+  });
+
+  describe("ten series on a dual-axis combo, three of them lines that end 3pt apart", () => {
+    const build = (w: number, h: number, fs: number) =>
+      buildChart(at(tenSeries(sample("combo", { secondaryAxis: true })), w, h, fs));
+
+    it.each([
+      [160, 120, 10],
+      [200, 150, 10],
+      [200, 150, 18],
+      [480, 300, 18],
+    ])("%ix%i at %ipt: every name is drawn and no two share ink", (w, h, fs) => {
+      const scene = build(w, h, fs);
+      expect(columnNames(scene).map((t) => t.text)).toHaveLength(7);
+      expect(
+        lineNames(scene)
+          .map((t) => t.text)
+          .sort(),
+      ).toEqual(["Series 3", "Series 6", "Series 9"]);
+      expect(gutterPairs(scene)).toEqual([]);
+    });
+
+    /**
+     * The names that are drawn read top to bottom in the order their lines end. A
+     * name is left out before it is drawn out of that order: a name that names
+     * someone else's line is worse than none, which is the failure the settle pass
+     * orders its labels to prevent.
+     */
+    const inEndOrder = (scene: Scene) => {
+      const endY = (li: number) => {
+        const marks = scene.nodes.filter((n) => new RegExp(`^combo-marker-${li}-\\d+$`).test(n.name ?? ""));
+        const last = marks[marks.length - 1] as RectNode;
+        return last.y + last.h / 2;
+      };
+      const drawn = lineNames(scene)
+        .sort((a, b) => a.y - b.y)
+        .map((t) => Number(t.name?.replace("combo-series-label-", "")));
+      return { drawn, byEnd: [...drawn].sort((a, b) => endY(a) - endY(b)) };
+    };
+
+    it("the lines are named in the order they end, top to bottom", () => {
+      const { drawn, byEnd } = inEndOrder(build(200, 150, 18));
+      expect(drawn).toHaveLength(3);
+      expect(drawn).toEqual(byEnd);
+    });
+
+    it.each([
+      [120, 90, 10],
+      [160, 120, 10],
+      [160, 120, 18],
+      [200, 150, 10],
+      [300, 60, 10],
+    ])("%ix%i at %ipt: a name that finds no room is left out, not put out of order", (w, h, fs) => {
+      const { drawn, byEnd } = inEndOrder(build(w, h, fs));
+      expect(drawn).toEqual(byEnd);
+    });
+
+    // The same strip with the lines the other way up, so the FIRST line drawn is the
+    // one that ends highest and every later one has to be placed below its name.
+    it.each([
+      [120, 90, 10],
+      [160, 120, 10],
+      [160, 120, 18],
+      [200, 150, 10],
+      [200, 150, 18],
+      [300, 60, 10],
+    ])("%ix%i at %ipt, lines the other way up: the same order", (w, h, fs) => {
+      const cfg = at(
+        tenSeries(sample("combo", { secondaryAxis: true }), (i) => 9 - i),
+        w,
+        h,
+        fs,
+      );
+      const { drawn, byEnd } = inEndOrder(buildChart(cfg));
+      expect(drawn.length, "some line is named").toBeGreaterThan(0);
+      expect(drawn).toEqual(byEnd);
+    });
+
+    it.each([
+      [120, 90, 10],
+      [160, 120, 18],
+    ])("%ix%i at %ipt, where seven column names already fill the strip: nothing is drawn over anything", (w, h, fs) => {
+      const scene = build(w, h, fs);
+      // No room is no room. A name that cannot stand anywhere in the order its line
+      // ends is left out, as the merged gutter leaves out every name it cannot lay
+      // out — never drawn across another one — and the column names are not taken
+      // with it.
+      expect(columnNames(scene)).toHaveLength(7);
+      expect(lineNames(scene).length, "at least the line that has room is named").toBeGreaterThan(0);
+      expect(gutterPairs(scene)).toEqual([]);
+    });
+
+    it("a name with no room at its size is made smaller until it has some (160x120, 18pt)", () => {
+      const scene = build(160, 120, 18);
+      const [nearest, shrunk] = lineNames(scene).sort((a, b) => a.name!.localeCompare(b.name!));
+      // "Series 3" ends lowest and keeps the chart's size; "Series 6" ends just above
+      // it and stands in the little room left over the strip, at the size that fits.
+      expect([nearest.text, shrunk.text]).toEqual(["Series 3", "Series 6"]);
+      expect(shrunk.fontSize).toBeLessThan(nearest.fontSize);
+      expect(shrunk.fontSize).toBeGreaterThanOrEqual(5);
+    });
+  });
+
+  describe("two lines that end a few points apart", () => {
+    // Found by drawing 3,000 random dual-axis charts and asking whether the names
+    // read in the order the lines end: 210 of them did not once the first line
+    // drawn was allowed to be named below one that ends under the second. The
+    // first drawn is not the highest here, which is what the ten-series data above
+    // never exercises.
+    const lines = (cats: string[], endsA: (number | null)[], endsB: (number | null)[]) => [
+      { name: "Product", values: cats.map((_, i) => 30 + i * 10) },
+      { name: "Target", type: "line", values: endsA },
+      { name: "Cumulative %", type: "line", values: endsB },
+    ];
+    const cats = ["C1", "C2", "C3", "C4", "C5"];
+    const chart = (extra: Partial<ChartConfig>, size: [number, number], fs: number): ChartConfig =>
+      ({
+        kind: "combo",
+        width: size[0],
+        height: size[1],
+        title: "A rather long chart title that names the measure",
+        data: { categories: cats, series: lines(cats, [21, 15, 38, 80, null], [43, 71, 44, 38, 76]) },
+        decorations: { seriesLabels: true, categoryAxis: true },
+        style: { fontSize: fs },
+        ...extra,
+      }) as ChartConfig;
+
+    it.each([
+      ["a 100% base", { combo: { columns: "stacked100" } }, [480, 300], 10],
+      ["a secondary axis at 160x120, 24pt", { secondaryAxis: true }, [160, 120], 24],
+      ["a secondary axis at 120x90, 8pt", { secondaryAxis: true }, [120, 90], 8],
+    ] as [string, Partial<ChartConfig>, [number, number], number][])(
+      "%s: the names read in the order the lines end",
+      (_label, extra, size, fs) => {
+        const scene = buildChart(chart(extra, size, fs));
+        const endY = (li: number) => {
+          const marks = scene.nodes.filter((n) => new RegExp(`^combo-marker-${li}-\\d+$`).test(n.name ?? ""));
+          const last = marks[marks.length - 1] as RectNode;
+          return last.y + last.h / 2;
+        };
+        const drawn = lineNames(scene)
+          .sort((a, b) => a.y - b.y)
+          .map((t) => Number(t.name?.replace("combo-series-label-", "")));
+        expect(drawn.length, "both lines are named").toBe(2);
+        expect(drawn).toEqual([...drawn].sort((a, b) => endY(a) - endY(b)));
+        expect(gutterPairs(scene)).toEqual([]);
+      },
+    );
+  });
+
+  describe("a footnote's band is reserved for the footnote", () => {
+    const chart = (size: [number, number], fs: number): ChartConfig =>
+      ({
+        kind: "combo",
+        width: size[0],
+        height: size[1],
+        title: "Revenue and margin by segment",
+        footnote: "Source: an internal model",
+        secondaryAxis: true,
+        data: {
+          categories: ["C1", "C2", "C3", "C4", "C5"],
+          series: [
+            { name: "Product", values: [48, 11, 56, 37, 13] },
+            { name: "Legacy", values: [87, 50, 12, 64, 29] },
+            { name: "Target", type: "line", values: [11, 79, null, 54, 81] },
+          ],
+        },
+        decorations: { seriesLabels: true, categoryAxis: true, valueAxis: true },
+        style: { fontSize: fs },
+      }) as ChartConfig;
+
+    it("a line's name does not stand where the footnote is (300x60, 24pt)", () => {
+      const scene = buildChart(chart([300, 60], 24));
+      expect(gutterPairs(scene).filter((p) => p.includes('"Source'))).toEqual([]);
+    });
+
+    it("control: with room, the same chart names its line and shares no ink with the footnote", () => {
+      const scene = buildChart(chart([480, 300], 10));
+      expect(lineNames(scene).map((t) => t.text)).toEqual(["Target"]);
+      expect(texts(scene).some((t) => t.name === "footnote")).toBe(true);
+      expect(gutterPairs(scene)).toEqual([]);
+    });
+  });
+
+  describe("controls: a name with clear air keeps the spot it always had", () => {
+    it.each([
+      [480, 300],
+      [960, 540],
+    ])("the sample combo with a secondary axis, %ix%i: above its line's last point", (w, h) => {
+      const scene = buildChart(at(sample("combo", { secondaryAxis: true }), w, h, 10));
+      const [name] = lineNames(scene);
+      const marks = scene.nodes.filter((n) => /^combo-marker-0-\d+$/.test(n.name ?? "")) as RectNode[];
+      const end = marks[marks.length - 1];
+      expect(name.y).toBeCloseTo(end.y + end.h / 2 - 10 * 1.6, 5);
+      expect(gutterPairs(scene)).toEqual([]);
+    });
   });
 });
 
