@@ -84,6 +84,15 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
    banner appears for every chart except the one already open in the pane —
    including its copy on another slide after **Duplicate Slide**.
 
+   If you resized the chart on the slide by hand, an edit that leaves every bar
+   and label where it is (a new title, new colours, a restyled outline) keeps
+   your size. An edit that has to move or resize a bar or label redraws the chart
+   at the size the pane's settings give it, so the hand resize is lost — the
+   alternative was a chart with some bars stretched and the edited ones not,
+   reading the wrong value. The same redraw happens if you have
+   changed the stacking order of shapes inside the chart's group (Bring to
+   Front on a single bar or label).
+
    Very occasionally PowerPoint draws the chart and then refuses to save its
    settings back onto it. The chart is on the slide and looks right; it just
    cannot be re-opened from the pane. **The pane now says so** instead of

@@ -214,6 +214,118 @@ function changedGroups(a: SceneNode, b: SceneNode): NodeChange[] {
 }
 
 /**
+ * What a host read back from one shape. A field is absent when the host did not
+ * answer for it, which is an ordinary outcome here and never evidence of
+ * anything — see `checkShapesAgainstScene`.
+ */
+export interface LiveShape {
+  name?: string;
+  width?: number;
+  height?: number;
+}
+
+/** The first place the shapes on the slide and the scene they should be drawing part company. */
+export interface ShapeMismatch {
+  what: "name" | "size";
+  /** Index into the scene's nodes, which is also the shape's place in the one-for-one mapping. */
+  index: number;
+  node: string | undefined;
+  expected: string | [number, number];
+  found: string | [number, number];
+}
+
+export interface ShapeCheck {
+  /** Shapes whose NAME the host read back and that matched their node's. */
+  names: number;
+  /** Rect shapes whose SIZE the host read back and that matched. */
+  sizes: number;
+  /** The first disagreement, or null. */
+  off: ShapeMismatch | null;
+}
+
+/**
+ * How far a rect's live side may sit from the scene's before it counts as
+ * changed. The host stores EMU and rounds, so a bar drawn 35.7pt wide reads back
+ * as 35.7 to a couple of decimals; a point is far above that and far below any
+ * resize a person would make on purpose.
+ */
+const SIZE_TOLERANCE = 1;
+
+/**
+ * The floor `addNode` and `applyNodeInPlace` both put under a rect's sides, so
+ * a node that lays out to nothing is compared with what was actually drawn.
+ */
+const MIN_RECT_SIDE = 0.2;
+
+/**
+ * Do the shapes on the slide look like the scene the plan was diffed against?
+ *
+ * `planSceneUpdate` compares two scenes with each other, and
+ * `sceneFingerprint` compares the stored config with the stored fingerprint.
+ * NEITHER LOOKS AT A SHAPE. "The rebuilt scene is what is on the slide" was a
+ * premise, and the slide is something a person can change: select one member of
+ * a group and Bring it to Front, rename a bar in the Selection Pane, drag the
+ * group's handle. The count of members survives all three, so the one-for-one
+ * guard passed and the writer put a bar's geometry on a label.
+ *
+ * Two facts the host can be asked, both already known to this module:
+ *
+ * - **name.** `applyNodeInPlace` and the live adders write `shape.name =
+ *   node.name`, and the fingerprint covers the names, so a matching fingerprint
+ *   means the shape at index `i` was DRAWN under `nodes[i].name`. If it now
+ *   carries ANOTHER NODE'S name, two shapes have traded places and the
+ *   positional mapping is no longer the mapping. That is the only name that is
+ *   evidence: a name this scene has no node for says nothing about order. The
+ *   deck builder (`skill/scripts/pptx-paint.mjs`) never names its shapes, so a
+ *   chart inserted that way carries `Shape 3` and `Text 12` until its first
+ *   redraw, and its first edit is allowed to be fast; a bar a person renamed in
+ *   the Selection Pane is still where it was. Kinds that draw several shapes
+ *   under suffixed names (`-f0`, `-edge`) are not compared at all.
+ * - **size** (`sizes`), for rects only. A user resize scales every member, so
+ *   writing the changed bars at the scene's size leaves them beside neighbours
+ *   at the stretched one — and the edited bar reads the wrong value against
+ *   its neighbours as well as sitting off the axis. A text box is left out
+ *   because its host-side height depends on an autosize setting that is
+ *   written in a try and may not have landed. The caller asks for sizes only
+ *   when it is about to write geometry: a retitle writes none, is right on a
+ *   stretched chart, and should not cost the person their resize.
+ *
+ * NARROW ON PURPOSE, the way `positionalGuessNamesOurs` is: a mismatch needs
+ * POSITIVE evidence — another node's name, or a size the host read back and that
+ * is wrong. A field the host did not answer for, or answered with a name this
+ * scene does not know, is skipped, so a host that reads none of them behaves
+ * exactly as before. `names` and `sizes` count what WAS compared, so the caller
+ * can tell "checked 24 and all agree" from "checked nothing", which return the
+ * same `off: null`.
+ */
+export function checkShapesAgainstScene(prev: Scene, live: readonly LiveShape[], opts: { sizes: boolean }): ShapeCheck {
+  const out: ShapeCheck = { names: 0, sizes: 0, off: null };
+  const ours = new Set(prev.nodes.map((n) => n.name).filter(Boolean));
+  const count = Math.min(prev.nodes.length, live.length);
+  for (let i = 0; i < count; i++) {
+    const node = prev.nodes[i];
+    const shape = live[i];
+    if (node.name && node.kind !== "wedge" && node.kind !== "polygon" && shape.name && ours.has(shape.name)) {
+      if (shape.name !== node.name) {
+        out.off = { what: "name", index: i, node: node.name, expected: node.name, found: shape.name };
+        return out;
+      }
+      out.names++;
+    }
+    if (opts.sizes && node.kind === "rect" && Number.isFinite(shape.width) && Number.isFinite(shape.height)) {
+      const want: [number, number] = [Math.max(MIN_RECT_SIDE, node.w), Math.max(MIN_RECT_SIDE, node.h)];
+      const got: [number, number] = [shape.width as number, shape.height as number];
+      if (Math.abs(got[0] - want[0]) > SIZE_TOLERANCE || Math.abs(got[1] - want[1]) > SIZE_TOLERANCE) {
+        out.off = { what: "size", index: i, node: node.name, expected: want, found: got };
+        return out;
+      }
+      out.sizes++;
+    }
+  }
+  return out;
+}
+
+/**
  * Whether a plan is worth taking, given what the redraw would have cost.
  *
  * Kept separate from `planSceneUpdate` because it is a judgement about COST,

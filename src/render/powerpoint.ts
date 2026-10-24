@@ -42,7 +42,13 @@ import { estimateOfficeShapes } from "../core/scene";
 import { buildChart } from "../core/chart";
 import { buildDeckBase64 } from "./pptx-deck";
 import type { ChartConfig } from "../core/types";
-import { planSceneUpdate, sceneFingerprint, worthUpdating, type NodeChange } from "../core/scene-diff";
+import {
+  checkShapesAgainstScene,
+  planSceneUpdate,
+  sceneFingerprint,
+  worthUpdating,
+  type NodeChange,
+} from "../core/scene-diff";
 import { toHex6, alphaOf, isNamedColor } from "../core/color";
 import type { PolygonNode, Scene, SceneNode, TextNode, WedgeNode } from "../core/scene";
 import { NOT_COMPLETE_NAME, planReconcile } from "../core/reconcile";
@@ -2977,7 +2983,11 @@ export async function updateChartsInSlides(
       // apart, since a grouped chart has none either. Without this the reading
       // says "no growth" over a population that may have contained nothing at
       // risk, which is not an all-clear and would be read as one.
-      old.load("left,top,type");
+      //
+      // `name,width,height` ride the same load: an ungrouped chart's tagged shape
+      // IS node 0, and `tryInPlaceUpdate` checks it against the scene before it
+      // writes anything. See `checkShapesAgainstScene`.
+      old.load("left,top,type,name,width,height");
       // The config this chart was drawn from, and the fingerprint of the scene
       // it produced — both read in the sync that was already resolving the
       // shape, so the fast path below costs no extra round trip when it does
@@ -3012,7 +3022,7 @@ export async function updateChartsInSlides(
       // every chart it cannot group. `old` above only escaped it by accident:
       // its load("left,top") is what put it in the sync — a REAL property,
       // which is the only kind that counts. See `queueNullCheck`.
-      for (const p of parts) queueNullCheck(p);
+      for (const p of parts) queuePartReads(p);
       // A GROUPED CHART HAS NO PARTS TAG BY DESIGN — its shapes live inside the
       // group and are deleted with it, so `ungroupedFallback` correctly writes
       // nothing for it. The in-place update then refused every grouped chart for
@@ -3275,6 +3285,14 @@ export async function updateChartsInSlides(
      * through a different door.
      */
     let landedInPlace = 0;
+    /**
+     * The targets in-place landings hand back that are NOT the caller's own, by
+     * index in `alive` — the same index `placed` uses. An edit that moved the
+     * chart's corner returns its target with the corner it left
+     * (`cornerAfterEdit`); one that moved nothing is absent and takes the
+     * fall-through at the return, as it always has.
+     */
+    const movedInPlace = new Map<number, EditTarget>();
     for (const [i, entry] of alive.entries()) {
       // Stop BEFORE this chart's delete, and break rather than throw. Every
       // chart past here is still whole — untouched old shapes, nothing queued —
@@ -3333,15 +3351,15 @@ export async function updateChartsInSlides(
       // redrawing. Before the delete, so a refusal costs nothing: nothing has
       // been removed yet and the loop below does the whole job as it always
       // has. See `tryInPlaceUpdate` for every reason it says no.
-      if (
-        await tryInPlaceUpdate(context, entry, opts, {
-          config: entry.wasConfig && tagValue(entry.wasConfig),
-          scene: entry.wasScene && tagValue(entry.wasScene),
-        })
-      ) {
+      const landed = await tryInPlaceUpdate(context, entry, opts, {
+        config: entry.wasConfig && tagValue(entry.wasConfig),
+        scene: entry.wasScene && tagValue(entry.wasScene),
+      });
+      if (landed) {
         // Counted, NOT pushed into `rendered`. See `landedInPlace`: pushing it
         // would hand `groupAndTagAll` a chart whose shapes it never drew, and
         // shift every later chart's `placed` index onto another chart's ids.
+        if (landed !== it.target) movedInPlace.set(i, landed);
         landedInPlace++;
         continue;
       }
@@ -3518,6 +3536,8 @@ export async function updateChartsInSlides(
       // to resolve one shape with the 5010 this repo has logged 66 times in a
       // single run.
       planned[i] = it.opts?.tagData;
+      const stayed = movedInPlace.get(i);
+      if (stayed) return stayed;
       // Through `placed`, never by position: a chart that failed above is
       // absent from `rendered`, so `tagged` is shorter than `alive` and
       // indexing it directly would hand every chart after the failure the
@@ -12172,13 +12192,23 @@ const officeHex = (color: string): string => {
  * `fill.transparency` (PowerPointApi 1.4, the pinned set) so a translucent colour
  * authored in the config matches the SVG preview and the skill's pptx instead of
  * being dropped.
+ *
+ * `replacing` is for a shape that already has a fill, and it is the other half
+ * of the sentence above. A NEW shape starts opaque, so an opaque colour needs no
+ * transparency write and gets none; a shape being RECOLOURED may have been drawn
+ * translucent, and `setSolidColor` is documented only as "sets the fill to a
+ * uniform color" — nothing says it clears an alpha already there. Without the
+ * write a series moved from `#1f77b480` to `#1f77b4` kept half its opacity, the
+ * differ filed the change under `fill`, and the new fingerprint vouched for a
+ * shape that was never made opaque. Written only on the in-place route, so what
+ * a new shape is sent is exactly what it was.
  */
-function solidFill(fill: PowerPoint.ShapeFill, color: string): void {
+function solidFill(fill: PowerPoint.ShapeFill, color: string, replacing = false): void {
   fill.setSolidColor(officeHex(color));
   const t = 1 - alphaOf(color);
-  if (t > 0.0001) {
+  if (t > 0.0001 || replacing) {
     try {
-      fill.transparency = t;
+      fill.transparency = t > 0.0001 ? t : 0;
     } catch {
       /* transparency unsupported on this host — solid is the graceful floor */
     }
@@ -12191,13 +12221,16 @@ function solidFill(fill: PowerPoint.ShapeFill, color: string): void {
  * through solidFill (which kept the alpha) — so one series colour rendered at two
  * different opacities depending on segment slope. Routing both through this keeps
  * them consistent, and picks up the rgb()/hsl()/3-digit forms too.
+ *
+ * `replacing` is the same switch `solidFill` has, for the same reason: an outline
+ * recoloured in place keeps whatever alpha it was drawn with unless it is told 0.
  */
-function strokeColor(lf: PowerPoint.ShapeLineFormat, color: string): void {
+function strokeColor(lf: PowerPoint.ShapeLineFormat, color: string, replacing = false): void {
   lf.color = officeHex(color);
   const t = 1 - alphaOf(color);
-  if (t > 0.0001) {
+  if (t > 0.0001 || replacing) {
     try {
-      lf.transparency = t;
+      lf.transparency = t > 0.0001 ? t : 0;
     } catch {
       /* line transparency unsupported — opaque is the graceful floor */
     }
@@ -12212,10 +12245,10 @@ function strokeColor(lf: PowerPoint.ShapeLineFormat, color: string): void {
  * measured diffs say almost none of it is needed: a retitle changes one node of
  * twenty-four, a single edited data point changes two.
  *
- * Returns true only when the chart is now correct on the slide. Every other
- * answer is false, and false means the caller deletes and redraws exactly as it
- * always has — so this can only ever make an update faster, never wrong. It
- * refuses when:
+ * Returns the target to hand back only when the chart is now correct on the
+ * slide. Every other answer is false, and false means the caller deletes and
+ * redraws exactly as it always has — so this can only ever make an update
+ * faster, never wrong. It refuses when:
  *
  * - the chart carries no stored config, so there is no old scene to diff;
  * - the stored config does not parse, or renders to a different node count than
@@ -12225,7 +12258,12 @@ function strokeColor(lf: PowerPoint.ShapeLineFormat, color: string): void {
  *   scene being diffed is not the one on the slide;
  * - `planSceneUpdate` refuses, or the change is too much of the chart to be
  *   worth it;
- * - any shape it would have to write to is one the host will not confirm.
+ * - any shape it would have to write to is one the host will not confirm;
+ * - a shape carries another node's name (a child brought to the front), or —
+ *   only when geometry has to be written — a rect is not the size the stored
+ *   config draws (the user resized the chart). The fingerprint vouches for the
+ *   config and the tags, never for the shapes, so these are asked of the shapes:
+ *   see `checkShapesAgainstScene`.
  *
  * The tag writes ride in the same sync as the property writes, deliberately. A
  * chart whose picture is new and whose config is old is the worst outcome
@@ -12345,6 +12383,20 @@ export function groupReadHasBeenRefused(): boolean {
   return groupReadRefused;
 }
 
+/**
+ * Queue the reads an ungrouped chart's loose part is resolved for: that the host
+ * answers for it at all, and the name and size `tryInPlaceUpdate` compares with
+ * the scene before it writes — the loose-chart counterpart of what
+ * `queueGroupMembers` loads for a group's members.
+ *
+ * ONE load, with `id` first: that is the whole of what `queueNullCheck` asks
+ * for, so `isNullObject` populates exactly as it did, and a host that answers a
+ * request answers it whole rather than one property list at a time.
+ */
+function queuePartReads(part: PowerPoint.Shape): void {
+  part.load("id,name,width,height");
+}
+
 function queueGroupMembers(shape: PowerPoint.Shape): PowerPoint.ShapeScopedCollection | undefined {
   if (!supports("1.8")) return undefined;
   // Asked once per session, not once per round. The refusal is a fact about
@@ -12355,8 +12407,11 @@ function queueGroupMembers(shape: PowerPoint.Shape): PowerPoint.ShapeScopedColle
     const members = (shape as unknown as { group?: { shapes?: PowerPoint.ShapeScopedCollection } }).group?.shapes;
     if (!members) return undefined;
     // The ids, in the group's own order — which is drawing order, the same
-    // order the parts tag records.
-    members.load("items/id");
+    // order the parts tag records. And the names and sizes, because that order
+    // is an assumption a person can break from inside the group (Bring to Front
+    // on one child) and the group can be resized, and both are checked against
+    // the scene before anything is written: see `checkShapesAgainstScene`.
+    members.load("items/id,items/name,items/width,items/height");
     return members;
   } catch {
     return undefined;
@@ -12451,10 +12506,25 @@ function groupMembersInOrder(members: PowerPoint.ShapeScopedCollection | undefin
   // THAT ASSUMPTION IS NOT PROVEN ON THE HOST, and it is worth saying plainly:
   // if `ShapeGroup.shapes` ever answered in some other order, the mapping would
   // be wrong rather than absent, and a wrong mapping writes a scrambled chart
-  // instead of refusing. Two things make that survivable — the one-for-one
-  // count guard still refuses anything that does not line up, and the self-test
-  // battery edits charts and checks the result, so a scrambled write fails a
-  // scenario loudly rather than reaching a user quietly.
+  // instead of refusing.
+  //
+  // THIS PARAGRAPH USED TO CALL THAT SURVIVABLE, on two grounds, and neither
+  // held for the case that matters. The one-for-one count guard refuses a group
+  // that is the wrong LENGTH, and a reorder keeps the length: select one child,
+  // Bring to Front, and every member after its old slot is off by one with the
+  // count intact. And the self-test battery edits charts and checks the result,
+  // but no scenario reorders a shape, so it could not fail on one. The write
+  // landed bar geometry on text boxes and label strings on bars, traced
+  // `updated only the shapes that changed`, and every later edit renamed more of
+  // them.
+  //
+  // What makes the assumption survivable is that the shapes carry the evidence:
+  // a chart drawn live names every shape for its node, so `tryInPlaceUpdate`
+  // reads the names back and refuses a group in which two have traded places
+  // (`checkShapesAgainstScene`). The mapping is still positional; it is now
+  // positional AND verified — wherever the shapes are named. A chart the deck
+  // builder inserted has default names until its first redraw, and for that edit
+  // the order is trusted exactly as it always was.
   return items;
 }
 
@@ -12469,7 +12539,7 @@ async function tryInPlaceUpdate(
   },
   opts: InsertOptions,
   tags: { config?: string; scene?: string },
-): Promise<boolean> {
+): Promise<EditTarget | false> {
   const { it, old, groupMembers } = entry;
   let parts = entry.parts;
   // HOW MANY SYNCS THIS UPDATE ISSUES, counted here rather than read from
@@ -12674,7 +12744,38 @@ async function tryInPlaceUpdate(
   const confirmed = anchor ? isConfirmedMember : isLive;
   if (plan.changed.some((n) => !confirmed(shapes[n])))
     return no("the host would not confirm every shape that had to change", { changed: plan.changed.length });
+  // WHAT IS ACTUALLY ON THE SLIDE, asked of the shapes. Everything above vouches
+  // for the scenes and the tags and for nothing a person can change by hand: the
+  // member count survives a child brought to the front, a bar renamed in the
+  // Selection Pane and a corner drag alike. `writesGeometry` because a resize
+  // only does damage to a shape whose geometry is written — a retitle, a recolour
+  // or a font change leaves a stretched chart consistently stretched, and
+  // redrawing for it would throw the person's resize away for nothing.
+  const writesGeometry = plan.parts.some((p) => p.includes("box"));
+  const read = checkShapesAgainstScene(
+    prev,
+    shapes.map((s) => ({
+      name: loadedValue(() => s.name),
+      width: loadedValue(() => s.width),
+      height: loadedValue(() => s.height),
+    })),
+    { sizes: writesGeometry },
+  );
+  if (read.off)
+    return no(
+      read.off.what === "name"
+        ? "a shape carries another node's name, so the group was reordered and its order no longer maps to the scene"
+        : "the chart was resized since it was drawn, so writing its changed shapes at the stored config's size would mix two scales",
+      { at: read.off.index, node: read.off.node, expected: read.off.expected, found: read.off.found },
+    );
   const { dx, dy } = frameOrigin(opts);
+  // Whether this edit can have moved the corner the origin tag is measured from.
+  // That corner is the tagged shape's own left/top: the GROUP's for a grouped
+  // chart, which is the bounding box of its members, and node 0's otherwise.
+  const cornerMayMove =
+    !!it.target.origin &&
+    (anchor ? writesGeometry : plan.changed.some((n, k) => n === 0 && plan.parts[k].includes("box")));
+  let landed: EditTarget = it.target;
   try {
     // IN CHUNKS, because what this host refuses is size, not share.
     //
@@ -12711,11 +12812,43 @@ async function tryInPlaceUpdate(
     // leave a chart whose config claims an edit its shapes have not taken.
     old.tags.add(CHART_TAG, it.opts.tagData);
     old.tags.add(CHART_SCENE_TAG, sceneFingerprint(it.scene));
+    // THE ALT TEXT IS PART OF WHAT THE EDIT CHANGED, and neither the differ nor
+    // the fingerprint can say so: `Scene.title` and `Scene.desc` are not nodes.
+    // A retitle or a renamed category is a correct in-place write that left the
+    // chart announcing its old title and old categories to a screen reader, while
+    // the redraw route rewrites both. Unconditional, as the redraw is, and queued
+    // after the tags. Gated and wrapped inside `applyAltText`, for the reason
+    // given there.
+    applyAltText(old, opts);
+    // Read in THIS sync, which runs after every geometry write has committed, so
+    // the group's box is the one the edit left rather than the one before it.
+    if (cornerMayMove) old.load("left,top");
     syncsHere++;
     {
       const at = Date.now();
       await boundedSync(context, "writing the chart's tags after an in-place update");
       syncMs.push(Date.now() - at);
+    }
+    if (cornerMayMove) {
+      const moved = cornerAfterEdit(it.target, old, dx, dy);
+      if (moved === "unreadable")
+        return no(
+          "the host would not say where the chart's corner is after the edit, so its origin tag cannot be kept true",
+        );
+      if (moved) {
+        // Only when the corner really moved (the tag is otherwise untouched: it is
+        // stable while nobody moves the chart, and a pure drag needs no rewrite
+        // because `frameOriginAt` already follows it). Its own sync, after the
+        // config and fingerprint, for the reason they are after the shapes.
+        old.tags.add(CHART_ORIGIN_TAG, JSON.stringify([dx, dy, moved.left, moved.top]));
+        syncsHere++;
+        {
+          const at = Date.now();
+          await boundedSync(context, "writing the chart's origin tag after an in-place update");
+          syncMs.push(Date.now() - at);
+        }
+        landed = moved;
+      }
     }
   } catch (err) {
     trace("draw", "in-place update refused — redrawing instead", {
@@ -12791,11 +12924,58 @@ async function tryInPlaceUpdate(
     // Counted locally as well, so a future blindness in the WeakMap shows up as
     // a DISAGREEMENT between the two rather than as a quiet zero.
     contextSyncs: syncsAtStart,
-    // In order. The last one is always the tag write; the ones before it are
+    // In order. The last one is always a tag write — the config's, or the origin
+    // tag's when the edit moved the chart's corner — and the ones before it are
     // the shape writes, `IN_PLACE_WRITES_PER_SYNC` at a time.
     syncMs,
+    // WHAT THE SHAPES WERE ASKED BEFORE ANYTHING WAS WRITTEN. `checkShapesAgainstScene`
+    // returns no disagreement both when every shape agreed and when the host
+    // answered for none of them, and a success line that cannot tell those apart
+    // would read a host that never answers as a host that always agrees. These
+    // are the counts compared: 24 names on a 24-node chart is a checked mapping,
+    // 0 is an unchecked one.
+    checked: { names: read.names, sizes: read.sizes },
   });
-  return true;
+  return landed;
+}
+
+/**
+ * Where the chart's corner is after an in-place edit, if it is not where the
+ * origin tag says it should be.
+ *
+ * The origin tag is `[frameLeft, frameTop, cornerLeft, cornerTop]`, and the next
+ * update turns it into a frame by `frame + (liveCorner - recordedCorner)`, so the
+ * only thing that makes a drag readable is that nothing but a drag moves the
+ * corner. An in-place edit breaks that when it moves the shape the corner is
+ * read from: a grouped chart's corner is its group's bounding box, and raising
+ * the tallest bar of an untitled chart lifts the box with it. The tag then
+ * names a corner the chart no longer has, the next update reads the difference
+ * as a drag, and writes its changed shapes that far from the unchanged ones —
+ * 7pt after a value edit, 57pt after Same Scale with headroom, compounding
+ * edit by edit. The redraw route does not have this problem because
+ * `groupAndTagAll` re-records the corner from the group it has just made.
+ *
+ * What the tag really encodes is the OFFSET from frame to corner (the scene's
+ * ink margin), so that is what is compared: a drag moves both and leaves the
+ * offset alone, which is why a drag alone never calls for a rewrite. When the
+ * offset has changed, the answer is the target as the redraw would have
+ * returned it — the frame the edit was drawn at, and the corner it left.
+ */
+function cornerAfterEdit(
+  target: EditTarget,
+  old: PowerPoint.Shape,
+  dx: number,
+  dy: number,
+): EditTarget | "unreadable" | undefined {
+  const o = target.origin;
+  const left = loadedValue(() => old.left);
+  const top = loadedValue(() => old.top);
+  if (!o) return undefined;
+  if (typeof left !== "number" || typeof top !== "number") return "unreadable";
+  const shifted =
+    Math.abs(left - dx - (o.anchorLeft - o.left)) > 0.01 || Math.abs(top - dy - (o.anchorTop - o.top)) > 0.01;
+  if (!shifted) return undefined;
+  return { ...target, left, top, origin: { left: dx, top: dy, anchorLeft: left, anchorTop: top } };
 }
 
 /**
@@ -12894,13 +13074,29 @@ export function applyNodeInPlace(
       shape.width = Math.max(0.2, n.w);
       shape.height = Math.max(0.2, n.h);
     }
+    // The adders write onto a shape that was just made, and this writes onto one
+    // that has a past. Two things a fresh shape never needs follow from that:
+    //
+    //   - the fill's alpha is written even when it is 0 (`solidFill`'s
+    //     `replacing`), or a bar recoloured from translucent to opaque stays
+    //     translucent;
+    //   - the outline is switched ON before it is coloured. A new rectangle
+    //     starts with its outline showing, so `addNode` never says so; but an
+    //     actual-scenario column is drawn with no stroke and gets
+    //     `lineFormat.visible = false`, and this branch is how it becomes a plan
+    //     or forecast column. Colour and weight alone left it hidden on the
+    //     fake, and nothing on record shows a host turning it back on.
+    //
+    // The lockstep scan in `test/office-render.test.ts` only asks that every
+    // property the adder writes is written here too, so it could not see either.
     if (wants("fill")) {
       if (n.fill === "none") shape.fill.clear();
-      else solidFill(shape.fill, n.fill);
+      else solidFill(shape.fill, n.fill, true);
     }
     if (wants("line")) {
       if (n.stroke && (n.strokeWidth ?? 0) > 0) {
-        strokeColor(shape.lineFormat, n.stroke);
+        shape.lineFormat.visible = true;
+        strokeColor(shape.lineFormat, n.stroke, true);
         shape.lineFormat.weight = n.strokeWidth ?? 1;
       } else {
         shape.lineFormat.visible = false;

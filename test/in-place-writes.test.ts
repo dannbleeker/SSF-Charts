@@ -108,7 +108,37 @@ describe("an in-place write sends only the properties that changed", () => {
     // figure `powerpoint.ts` quotes from the host's own statement list, which
     // is how this file knows it is counting the same thing the host charges for.
     expect(wrote(text()), "a whole text node is no longer twenty statements").toHaveLength(20);
-    expect(wrote(rect()), "a whole rect is no longer seven statements").toHaveLength(7);
+    // Eight, not seven, since the applier started writing the fill's alpha even
+    // when it is 0: a bar recoloured from translucent to opaque would otherwise
+    // stay translucent. See the next two cases.
+    expect(wrote(rect()), "a whole rect is no longer eight statements").toHaveLength(8);
+  });
+
+  /**
+   * A shape that is being RECOLOURED has a past, and the adder's shortcuts are
+   * only right for a new one. `setSolidColor` is documented as setting the colour
+   * and says nothing of an alpha already there, so the transparency is written
+   * even when it is 0 — on the in-place route only.
+   */
+  it("writes the fill's transparency on a recolour, and the outline's too", () => {
+    expect(wrote(rect(), ["fill"])).toContain("fill.transparency");
+    const outlined = wrote(rect({ stroke: "#2a78d6", strokeWidth: 1.5 }), ["line"]);
+    expect(outlined).toContain("lineFormat.transparency");
+  });
+
+  /**
+   * An outline gained in place has to be switched ON, and BEFORE it is coloured:
+   * the adder never says so because a new rectangle starts with its outline
+   * showing, but a column drawn as an actual has `visible = false`.
+   */
+  it("switches an outline on before it colours it", () => {
+    const seen = wrote(rect({ stroke: "#2a78d6", strokeWidth: 1.5 }), ["line"]);
+    expect(seen).toContain("lineFormat.visible");
+    expect(seen.indexOf("lineFormat.visible"), "the outline is coloured before it is shown").toBeLessThan(
+      seen.indexOf("lineFormat.color"),
+    );
+    // …and losing the stroke still hides it, once.
+    expect(wrote(rect({ stroke: undefined }), ["line"]).filter((s) => s === "lineFormat.visible")).toHaveLength(1);
   });
 
   /** The edit the fast path exists for. Twenty statements to change one string. */
