@@ -207,7 +207,9 @@ export interface InsertOptions {
    * Insert and wrong for a recovery: when an in-place update has already
    * deleted a chart and then failed to redraw it, the replacement has to go
    * back to the slide the chart came from, whatever is on screen by then.
-   * Falls back to the selected slide when the id no longer resolves.
+   * Falls back to the selected slide when the deck's own listing no longer
+   * holds the id. If the listing itself cannot be read the id is tried as given,
+   * and a slide that is not there fails the draw rather than falling back.
    */
   slideId?: string;
   /**
@@ -568,12 +570,27 @@ export function namedShape(): { slideId: string; shapeId: string } | null {
  *
  * A failed scan leaves the record alone: it has said nothing about the deck, and
  * discarding evidence on no evidence is its own mistake.
+ *
+ * "FAILED" INCLUDES A SCAN THAT RETURNED. `listChartsInDeck` does not throw when
+ * pages will not read — it counts them into `unread` and hands back whatever
+ * charts it did find, which on a deck whose every page failed is none. That is
+ * the same empty array as a deck with no charts, and this function used to read
+ * it as one (`unread=8 slides=8` is an ordinary answer on this host). Only a
+ * COMPLETE scan may conclude the deck holds no chart; see `scanIsComplete`,
+ * whose rule is that every caller drawing a conclusion from what a scan did not
+ * contain asks first. A throw from the slide count already left the record
+ * alone, in `harness-ui.ts`'s catch, so the two kinds of failed scan now agree.
  */
 export async function refreshNamedShapeFromDeck(): Promise<{ slideId: string; shapeId: string } | null> {
   const scan = await listChartsInDeck();
   const found = scan.charts.find((c) => c.target.slideId && c.target.shapeId && c.target.slideId !== VISIBLE_SLIDE_KEY);
   if (found) rememberNamedShape(found.target.slideId, found.target.shapeId);
-  else lastNamedShape = null;
+  else if (scanIsComplete(scan)) lastNamedShape = null;
+  else
+    trace("probe", "the deck scan could not see the whole deck — keeping the recorded chart", {
+      gap: scanGap(scan),
+      kept: lastNamedShape !== null,
+    });
   return lastNamedShape;
 }
 
@@ -1777,13 +1794,26 @@ async function insertSceneIntoSlideInner(
      * which is what `renderShapesChunked` asks of a thunk in the first place.
      */
     let index = -1;
+    // The deck ANSWERED, every id in the answer was readable, and the id is not
+    // among them: the slide is not in the deck. Not the same as `index === -1`,
+    // which is also what an unanswered listing or one with unreadable ids
+    // leaves — see where it is used. (`slideIds` holds its listings to the same
+    // bar for the same reason: an id nobody could read is not an absent one.)
+    let notInTheDeck = false;
     if (opts.slideId) {
       const all = context.presentation.slides;
       all.load("items/id");
       await context.sync();
       const items = loadedItems(all);
-      index = items?.findIndex((s) => loadedValue(() => s.id) === opts.slideId) ?? -1;
+      const ids = items?.map((s) => loadedValue(() => s.id));
+      index = ids?.indexOf(opts.slideId) ?? -1;
+      notInTheDeck = !!ids && index < 0 && ids.every((id) => typeof id === "string" && !!id);
       trace("insert", "resolved the target slide to an index", { slideId: opts.slideId, index });
+      if (notInTheDeck)
+        trace("insert", "the slide named for this chart is not in the deck — drawing on the selected slide", {
+          slideId: opts.slideId,
+          deckSlides: ids!.length,
+        });
     }
     /**
      * BOTH come from the index once it resolves, and the first draft got this
@@ -1799,7 +1829,21 @@ async function insertSceneIntoSlideInner(
      * The thunk still RE-ACQUIRES on every call — the half that fixes the held
      * proxy — while this single handle exists only to carry the id out.
      */
-    const slide = index >= 0 ? context.presentation.slides.getItemAt(index) : getTargetSlide(context, opts.slideId);
+    // AN ID THE LISTING DID NOT HOLD IS NOT HANDED TO `getTargetSlide`, whose
+    // `getItem` returns a proxy on the real host and refuses a dead id at the
+    // FIRST SYNC THAT USES IT — inside `renderShapesChunked`, long after the
+    // fallback it was relied on for could have fired. The insert then threw (the
+    // outer recovery cannot help: `reading` is only taken for `index >= 0`) where
+    // `InsertOptions.slideId` promises the selected slide. Only the test fake
+    // throws at the call, which is how the suite saw the fallback work. So when
+    // the deck has just said the slide is absent, no id is passed and the
+    // selected slide is the target. A listing that did NOT answer still gets the
+    // id: there the slide may well be there, and the draw's own error is the
+    // honest outcome if it is not.
+    const slide =
+      index >= 0
+        ? context.presentation.slides.getItemAt(index)
+        : getTargetSlide(context, notInTheDeck ? undefined : opts.slideId);
     slide.load("id");
     const getSlide: SlideThunk = index >= 0 ? () => context.presentation.slides.getItemAt(index) : () => slide;
     onPhase?.("queue", `${scene.nodes.length} nodes`);
@@ -1846,6 +1890,13 @@ async function insertSceneIntoSlideInner(
        * GONE: whatever had landed went with it. There is nothing left to draw
        * twice. The double-draw risk exists only while the slide SURVIVES, which
        * is exactly what `reading !== "gone"` already excludes.
+       *
+       * ONLY IF "GONE" MEANS THE SLIDE IS MISSING. It once meant "the index is
+       * past the end of the deck", and a slide that survived an earlier slide's
+       * deletion satisfied that while still holding its committed batches — the
+       * premise above was false for it and the chart was drawn twice. The
+       * classifier now asks the listing for the id first; see
+       * `askWhatTheDeckStillHolds`.
        */
       trace("insert", "the draw failed — deciding whether it can be re-run", {
         reading,
@@ -2222,12 +2273,23 @@ export async function addSlideForChart(): Promise<string | null> {
      * accepts. Two extra deck reads per add, on a path that already costs a
      * slide add and a settle.
      *
-     * REFUSES RATHER THAN GUESSES in all three unhappy cases: a deck that will
-     * not list before the add (nothing is added at all, so no orphan is left);
-     * one that will not list after; and a diff that is not exactly one slide,
-     * which means something else changed the deck underneath and the answer
-     * cannot be attributed. Null is what the caller already handles — `app.ts`
+     * REFUSES RATHER THAN GUESSES when it has to: a deck that will not list
+     * before the add (nothing is added at all, so no orphan is left), one that
+     * will not list after even on a second ask, and a diff whose newest slides
+     * cannot be proved new. Null is what the caller already handles — `app.ts`
      * says "Could not add a slide — inserting here instead."
+     *
+     * A DIFF THAT IS NOT EXACTLY ONE SLIDE USED TO BE A REFUSAL, FULL STOP, and
+     * the slides it refused to name stayed in the deck. This host does both
+     * things it can produce here: ONE `add()` lands TWO slides (every
+     * `scratch slide landed but could not be named` event in the archive has
+     * `after - before === 2`), and appending renumbers an existing slide so the
+     * diff names two ids for a deck that grew by one. `addSlides` hands out a
+     * thunk for the first and says `added`; this then returned null, and the
+     * user who had accepted "put it on a slide of its own" got two blank slides
+     * at the end of the deck, a message saying no slide could be added, and the
+     * slow insert the offer exists to spare them. `claimAppendedSlide` owns what
+     * happens instead.
      */
     /**
      * BEFORE the add, deliberately: a deck we cannot list is a deck whose new
@@ -2293,15 +2355,83 @@ export async function addSlideForChart(): Promise<string | null> {
      *
      * A null here is handled: `app.ts` falls back to the slide the user was on.
      */
-    const after = await listOnce();
-    if (!after) return null;
+    // ASKED TWICE, like the listing before the add and for the same reason: a
+    // single failed sync here is a bad moment, and the cost of treating it as a
+    // refusal is not "no id" but a slide the add has already put in the deck.
+    const after = (await listOnce()) ?? (await listOnce());
+    if (!after) {
+      trace("host", "a slide was added for a chart but the deck would not list afterwards", {
+        before: before.length,
+      });
+      return null;
+    }
     const fresh = after.filter((id) => !known.has(id));
-    // Not exactly one means something else changed the deck underneath and the
-    // answer cannot be attributed to this add.
-    return fresh.length === 1 ? fresh[0] : null;
+    if (fresh.length === 1) return fresh[0];
+    return await claimAppendedSlide(before, after);
   } catch {
     return null;
   }
+}
+
+/**
+ * The slide `addSlideForChart` hands back when the id diff names more than one
+ * new id — and the cleanup that goes with claiming it.
+ *
+ * Two host behaviours put more than one id in the diff, and they need opposite
+ * handling of what is left over:
+ *
+ *   the deck grew by ONE, two ids are new   appending renumbered an existing
+ *                                           slide. One slide landed; nothing to
+ *                                           take back.
+ *   the deck grew by TWO or more            one `add()` landed several slides.
+ *                                           All but the one we use are ours and
+ *                                           blank, and are taken back out.
+ *
+ * `slides.add()` APPENDS, so the slides the add made are the last `grew` of the
+ * deck. That is the whole basis, and it is checked rather than assumed: every
+ * one of those trailing ids must be absent from the listing taken before the
+ * add. A tail that contains a slide the deck already held means the add did not
+ * land where an add lands, and this refuses — it names nothing and deletes
+ * nothing, because the only thing worse than a blank slide left behind is a
+ * slide of the user's removed. `addScratchSlide` makes the same claim on the
+ * same evidence (`test/host-probe.test.ts` arms `addsAtFront` and
+ * `renumbersOnAdd` together to prove the freshness half).
+ *
+ * The LAST of the new slides is the one used, as there. The others go through
+ * `deleteSlideById`, which re-reads the deck and matches the id before it
+ * deletes by position. When one will not go the chart is still put on its own
+ * slide — what the user asked for — and the leftover is traced, because a
+ * silent blank slide in a finished deck is the defect this repairs.
+ */
+async function claimAppendedSlide(before: string[], after: string[]): Promise<string | null> {
+  const known = new Set(before);
+  const grew = after.length - before.length;
+  const added = grew >= 1 ? after.slice(-grew) : [];
+  if (!added.length || added.some((id) => known.has(id))) {
+    trace("host", "the deck's newest slides could not be attributed to the add made for a chart", {
+      before: before.length,
+      after: after.length,
+      grew,
+    });
+    return null;
+  }
+  const claimed = added[added.length - 1];
+  const extras = added.slice(0, -1);
+  const stuck: string[] = [];
+  // Highest first, so taking one out cannot move the position of another still
+  // to go.
+  for (const id of [...extras].reverse()) if (!(await deleteSlideById(id))) stuck.push(id);
+  // A different line from `addScratchSlide`'s "claimed the appended slide
+  // though the id list churned": `poolIdChurn` counts that one, and these are a
+  // different population (a slide for a chart, not a probe's scratch).
+  trace("host", "claimed the appended slide for a chart though the id diff named several", {
+    before: before.length,
+    after: after.length,
+    landed: grew,
+    removed: extras.length - stuck.length,
+    leftBehind: stuck.length,
+  });
+  return claimed;
 }
 
 async function slideShapeCounts(
@@ -2558,6 +2688,111 @@ function confirmedParts(parts: PowerPoint.Shape[], listed: (PowerPoint.Shape | u
     if (shape) there.push(shape);
   });
   return there;
+}
+
+/** The number a shape id ends in, or undefined when it does not end in one. */
+function shapeOrdinal(id: string): number | undefined {
+  const n = /(\d+)$/.exec(id);
+  return n ? Number(n[1]) : undefined;
+}
+
+/**
+ * Which of these ungrouped charts name parts that ANOTHER chart on the slide
+ * names too — and so are not theirs to rewrite or delete.
+ *
+ * An ungrouped chart's identity is its parts tag: the anchor carries the ids of
+ * the chart's other shapes, and the update resolves them on the slide and treats
+ * whatever it finds as the chart. That is only true while the tag is on the
+ * shape that drew them. The tag survives a copy (desktop keeps shape tags, and
+ * `partIdsOf` says it travels into other decks), and a same-slide duplicate —
+ * Ctrl+D, or copy and paste — gives the copy NEW shape ids and the ORIGINAL's
+ * parts tag. Every id in it then resolves to a live shape of the original, and
+ * the copy's update wrote its changed nodes onto the original's bars (leaving
+ * the original a bar short and the copy two bars deep), or on a redraw deleted
+ * all twenty-three of the original's parts and stranded the copy's own under
+ * the new drawing.
+ *
+ * NOTHING ELSE ON THE SHAPES CAN SAY SO. The parts carry no tag of their own, and
+ * the copy's anchor tag is a verbatim copy of the original's — fingerprint,
+ * origin and all. The only evidence is that a SECOND shape on the slide names the
+ * same ids, so that is what is read: the parts tag of every top-level shape that
+ * is not one of the chart's own parts, two syncs for the whole batch and none at
+ * all when no chart in it has a parts list (a grouped chart has none, and is not
+ * exposed — its members are read off the group).
+ *
+ * THE OWNER IS THE OLDER ANCHOR. Two shapes sharing a parts list are a chart and
+ * its copy, and a shape added to a slide is given an id above those already on it,
+ * so the lower id is the original. Editing the original still works exactly as it
+ * did; only the chart that is NOT the owner has its list dropped. An id that
+ * carries no number cannot be ordered, and then nobody owns the list: a
+ * stray under a redraw is a visible, fixable outcome, and a wrong delete of
+ * someone else's chart is neither (the rule `confirmedParts` already states).
+ *
+ * A chart whose list is dropped is updated with the anchor alone — redrawn, with
+ * its own parts left where they are, because nothing can say which they are. It
+ * costs the copy a clean edit; it cannot cost the original a shape.
+ *
+ * Best-effort: a slide the host will not list says nothing, and the caller then
+ * behaves exactly as it did before this existed.
+ */
+async function partsNamedByAnotherChart<E extends { it: { target: EditTarget } }>(
+  context: PowerPoint.RequestContext,
+  entries: E[],
+): Promise<Set<E>> {
+  const foreign = new Set<E>();
+  const listed = entries.filter((e) => e.it.target.partIds?.length && e.it.target.shapeId);
+  if (!listed.length) return foreign;
+  const bySlide = new Map<string, E[]>();
+  for (const e of listed) bySlide.set(e.it.target.slideId, [...(bySlide.get(e.it.target.slideId) ?? []), e]);
+  try {
+    const reads = [...bySlide.keys()].map((slideId) => {
+      const shapes = context.presentation.slides.getItemOrNullObject(slideId).shapes;
+      shapes.load("items/id");
+      return { slideId, shapes };
+    });
+    await boundedSync(context, "listing a slide whose charts name their parts");
+    const asked: { slideId: string; id: string; parts: PowerPoint.Tag }[] = [];
+    for (const { slideId, shapes } of reads) {
+      const items = loadedItems(shapes);
+      if (!items) continue;
+      // A chart's own parts are never the claimant: the question is who ELSE
+      // names them.
+      const ours = new Set(bySlide.get(slideId)!.flatMap((e) => e.it.target.partIds ?? []));
+      for (const shape of items) {
+        const id = loadedValue(() => shape.id);
+        if (typeof id !== "string" || ours.has(id)) continue;
+        const parts = shape.tags.getItemOrNullObject(CHART_PARTS_TAG);
+        parts.load("value");
+        asked.push({ slideId, id, parts });
+      }
+    }
+    await boundedSync(context, "reading which shapes name a chart's parts");
+    for (const { slideId, id, parts } of asked) {
+      const named = partIdsOf(parts);
+      if (!named) continue;
+      for (const e of bySlide.get(slideId)!) {
+        const own = e.it.target.shapeId;
+        if (id === own || !named.some((n) => e.it.target.partIds!.includes(n))) continue;
+        // The chart keeps its list only when it is provably the older of the two.
+        // An id with no number in it cannot be ordered, and then nobody owns it.
+        const mine = shapeOrdinal(own);
+        const theirs = shapeOrdinal(id);
+        if (mine !== undefined && theirs !== undefined && mine < theirs) continue;
+        foreign.add(e);
+        trace("update", "a chart's parts list names shapes another chart on the slide names too — leaving them alone", {
+          slideId,
+          shapeId: own,
+          alsoNamedBy: id,
+          shared: named.filter((n) => e.it.target.partIds!.includes(n)).length,
+          of: e.it.target.partIds!.length,
+        });
+      }
+    }
+    for (const { parts } of asked) untrack(parts);
+  } catch (err) {
+    trace("update", "could not ask who else names a chart's parts", { error: errorText(err) });
+  }
+  return foreign;
 }
 
 /**
@@ -3151,11 +3386,16 @@ export async function updateChartsInSlides(
     // an id-keyed lookup handed a chart that was never refused — or was refused
     // on its own slide — the proxy of whichever other slide's chart shared its
     // number. See `reReadRefusedShapes`.
+    // A parts list another chart on the slide names too is not this chart's to
+    // write to or delete — see `partsNamedByAnotherChart`. Asked of the ENTRIES
+    // before they are re-wrapped below, because the set is keyed by them.
+    const foreign = await partsNamedByAnotherChart(context, withOld);
     const withOldSettled = withOld.map((e) => {
       const again = recovered.get(e);
+      const base = foreign.has(e) ? { ...e, parts: [] as PowerPoint.Shape[] } : e;
       return again
-        ? { ...e, old: again.shape, reacquired: true, listedParts: again.parts }
-        : { ...e, reacquired: false, listedParts: [] as (PowerPoint.Shape | undefined)[] };
+        ? { ...base, old: again.shape, reacquired: true, listedParts: foreign.has(e) ? [] : again.parts }
+        : { ...base, reacquired: false, listedParts: [] as (PowerPoint.Shape | undefined)[] };
     });
 
     // A GROUP REFUSED IN THIS BATCH CANNOT BE RE-ASKED IN THIS BATCH. It is
@@ -4007,6 +4247,24 @@ export interface DeckScan {
   /** Slides in the deck, so a caller can say "7 of 8" rather than "7". */
   slides: number;
   /**
+   * Charts that sit INSIDE a group the user made, one entry per chart: its
+   * 1-based slide number and the title its stored config carries.
+   *
+   * A slide lists only its top-level shapes, and grouping a chart with a caption
+   * or a logo (Ctrl+G, and the natural thing to do with a pile of loose shapes)
+   * makes the tagged shape a MEMBER of a group the user owns. The top-level read
+   * then answers "no tag" for that group and the chart is simply not in
+   * `charts` — with `unread`, `short` and `tagsUnread` all still zero, because
+   * the host answered everything it was asked. This is the fourth way a scan is
+   * short, and the only one the host cannot be blamed for.
+   *
+   * It is a count of what could not be INCLUDED, not of what could not be read:
+   * the update path resolves a chart by its shape id off the slide, and a
+   * grouped child cannot be reached that way, so finding these is a reason to
+   * refuse rather than a way to rescale them.
+   */
+  nested: { slide: number; title?: string }[];
+  /**
    * Every shape the scan saw, slide by slide — only when it was asked for.
    *
    * The scan already has this in its hands and used to throw it away, keeping
@@ -4049,7 +4307,7 @@ export interface SlideInventory {
  * ask this first. "No charts here" and "I could not look" are the same array.
  */
 export function scanIsComplete(scan: DeckScan): boolean {
-  return scan.unread === 0 && scan.short === 0 && scan.tagsUnread === 0;
+  return scan.unread === 0 && scan.short === 0 && scan.tagsUnread === 0 && scan.nested.length === 0;
 }
 
 /** What a scan missed, in words, or "" when it missed nothing. */
@@ -4058,6 +4316,15 @@ export function scanGap(scan: DeckScan): string {
   if (scan.unread) parts.push(`${scan.unread} of ${scan.slides} slide(s) would not answer`);
   if (scan.short) parts.push(`${scan.short} slide(s) answered with fewer shapes than they hold`);
   if (scan.tagsUnread) parts.push(`${scan.tagsUnread} shape(s) would not say whether they are charts`);
+  if (scan.nested.length) {
+    // Named, because "ungroup it" is only an instruction if the reader can find
+    // it: the slide, and the title when the stored config has one.
+    const where = scan.nested.map((n) => `slide ${n.slide}${n.title ? ` "${n.title}"` : ""}`).join(", ");
+    parts.push(
+      `${scan.nested.length} chart(s) sit inside a group you made (${where}), which a deck-wide read cannot reach — ` +
+        `ungroup ${scan.nested.length === 1 ? "it" : "them"} first`,
+    );
+  }
   return parts.join("; ");
 }
 
@@ -4074,6 +4341,101 @@ function tagAnswered(tag: { isNullObject: boolean; value: string }): boolean {
   return loadedValue(() => tag.isNullObject) !== undefined;
 }
 
+/** Whether the host calls this shape a group. Case-folded: `ShapeType` spells it `group`. */
+function isGroupShape(shape: PowerPoint.Shape): boolean {
+  return String(loadedValue(() => (shape as unknown as { type?: string }).type) ?? "").toLowerCase() === "group";
+}
+
+/** How many groups-inside-groups the scan follows before it calls the rest unknown. */
+const NESTED_GROUP_DEPTH = 3;
+
+/**
+ * The charts hidden inside groups the USER made, and the groups it could not open.
+ *
+ * `readChartsPage` reads a slide's top-level shapes, which is all a slide lists.
+ * A chart grouped with the user's own caption, logo or source note is no longer
+ * top-level: its tag sits on a member of a group that carries none, so the
+ * top-level read answers "not a chart" for the whole group and the scan reports
+ * itself complete over a deck with a chart missing from it. Same Scale then
+ * rescales the rest, says "applied to N charts", and the nested one keeps its own
+ * axis. The same happens to an ungrouped chart whose loose parts the user grouped:
+ * the tag is on a leaf anchor and a leaf keeps its tag when grouped.
+ *
+ * ONLY GROUPS THAT CARRY NO CHART TAG ARE OPENED, which is what keeps this cheap:
+ * our own chart groups are tagged and are the overwhelming majority of groups on
+ * a deck this add-in has drawn. Two syncs per level — the members' types, then
+ * their tags — and none at all on a page with no group of the user's.
+ *
+ * ASKED ONLY OF SHAPES THE HOST CALLS A GROUP: `Shape.group` on anything else is
+ * a GeneralException that poisons the sync it was queued in (`shapeGeometryByName`
+ * carries the archive's count of that).
+ *
+ * A group that will not open is returned as `blind` and the caller counts it
+ * with the tags nobody could ask about: "no chart in there" and "could not look"
+ * must not be the same answer, here least of all.
+ */
+async function chartsInsideUserGroups(
+  context: PowerPoint.RequestContext,
+  groups: { slide: number; shape: PowerPoint.Shape }[],
+  from: number,
+  to: number,
+): Promise<{ found: { slide: number; title?: string }[]; blind: number }> {
+  const found: { slide: number; title?: string }[] = [];
+  let blind = 0;
+  let level = groups;
+  for (let depth = 0; level.length && depth < NESTED_GROUP_DEPTH; depth++) {
+    const opened = level.map((g) => {
+      let members: PowerPoint.ShapeScopedCollection | undefined;
+      try {
+        members = (g.shape as unknown as { group?: { shapes?: PowerPoint.ShapeScopedCollection } }).group?.shapes;
+        members?.load("items/type");
+      } catch {
+        members = undefined;
+      }
+      return { g, members };
+    });
+    trace("pane", "deck scan — opening groups the user made", { from, to: to - 1, groups: level.length, depth });
+    const opening = `opening groups on slides ${from}-${to - 1}`;
+    await step(opening, () => withTimeout(context.sync(), READBACK_TIMEOUT_MS, opening));
+    const asked: { slide: number; shape: PowerPoint.Shape; config: PowerPoint.Tag }[] = [];
+    for (const { g, members } of opened) {
+      const items = members && loadedItems(members);
+      if (!items) {
+        blind++;
+        continue;
+      }
+      for (const shape of items) {
+        const config = shape.tags.getItemOrNullObject(CHART_TAG);
+        config.load("value");
+        asked.push({ slide: g.slide, shape, config });
+      }
+    }
+    const reading = `reading chart tags inside groups on slides ${from}-${to - 1}`;
+    await step(reading, () => withTimeout(context.sync(), READBACK_TIMEOUT_MS, reading));
+    level = [];
+    for (const a of asked) {
+      if (!tagAnswered(a.config)) blind++;
+      else if (tagValue(a.config)) found.push({ slide: a.slide, title: titleOfConfig(tagValue(a.config)) });
+      else if (isGroupShape(a.shape)) level.push({ slide: a.slide, shape: a.shape });
+      untrack(a.config);
+      untrack(a.shape);
+    }
+  }
+  // Still groups to open at the depth cap: not known to be empty of charts.
+  return { found, blind: blind + level.length };
+}
+
+/** The `title` a stored config carries, for naming a chart in words. Never throws. */
+function titleOfConfig(configJson: string | undefined): string | undefined {
+  if (!configJson) return undefined;
+  try {
+    const title = (JSON.parse(configJson) as { title?: unknown }).title;
+    return typeof title === "string" && title.trim() ? title.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** One page of a deck-wide chart scan. See `listChartsInDeck`. */
 async function readChartsPage(
   from: number,
@@ -4084,6 +4446,7 @@ async function readChartsPage(
   unread: number;
   short: number;
   tagsUnread: number;
+  nested: { slide: number; title?: string }[];
   inventory: SlideInventory[];
 }> {
   return ppRun(async (context) => {
@@ -4091,10 +4454,14 @@ async function readChartsPage(
     for (let i = from; i < to; i++) {
       const slide = context.presentation.slides.getItemAt(i);
       slide.load("id");
+      // `items/type` is LAST, so everything that matches on the start of the spec
+      // still sees the id first. It is what lets the tag read below tell a group
+      // the user made from a shape that is simply not a chart — see
+      // `chartsInsideUserGroups`.
       slide.shapes.load(
         withInventory
-          ? "items/id,items/left,items/top,items/name,items/width,items/height"
-          : "items/id,items/left,items/top",
+          ? "items/id,items/left,items/top,items/name,items/width,items/height,items/type"
+          : "items/id,items/left,items/top,items/type",
       );
       // The slide's own count, queued in the same sync, purely to catch a
       // collection that answers SHORT without throwing. A scalar rather than a
@@ -4148,7 +4515,7 @@ async function readChartsPage(
 
     let unread = 0;
     let short = 0;
-    const lookups: ({ slideId: string; shape: PowerPoint.Shape } & ChartTags)[] = [];
+    const lookups: ({ slideId: string; slide: number; shape: PowerPoint.Shape } & ChartTags)[] = [];
     const inventory: SlideInventory[] = [];
     for (const { slide, count, index } of perSlide) {
       // A slide whose shape collection the host did not answer tells us
@@ -4197,7 +4564,7 @@ async function readChartsPage(
           ...(typeof n === "number" ? { count: n } : {}),
         });
       }
-      for (const shape of shapes) lookups.push({ slideId, shape, ...chartTagsOf(shape) });
+      for (const shape of shapes) lookups.push({ slideId, slide: index + 1, shape, ...chartTagsOf(shape) });
     }
     // THE SECOND SYNC OF THE PAGE, and the heavier one: it settles a tag read
     // per shape rather than per slide, so its payload grows with what the deck
@@ -4237,6 +4604,33 @@ async function readChartsPage(
         };
       })
       .filter((c) => c !== undefined);
+    // GROUPS THE USER MADE, which the top-level read above cannot see into. A
+    // group whose own config tag ANSWERED "none" is not one of ours (every chart
+    // group of ours carries the tag), so it is the user's — and a chart grouped
+    // with their own caption is a member of it. See `chartsInsideUserGroups`.
+    //
+    // Best-effort in the one sense that matters: whatever this page already
+    // found stands whether or not the descent finishes. A descent that fails
+    // marks its groups unknown rather than empty.
+    const userGroups = lookups
+      .filter((l) => isGroupShape(l.shape) && tagAnswered(l.config) && !tagValue(l.config))
+      .map((l) => ({ slide: l.slide, shape: l.shape }));
+    let nested: { slide: number; title?: string }[] = [];
+    if (userGroups.length && supports("1.8")) {
+      try {
+        const inside = await chartsInsideUserGroups(context, userGroups, from, to);
+        nested = inside.found;
+        tagsUnread += inside.blind;
+      } catch (err) {
+        tagsUnread += userGroups.length;
+        trace("pane", "deck scan — a group the user made would not open", {
+          from,
+          to: to - 1,
+          groups: userGroups.length,
+          error: errorText(err),
+        });
+      }
+    }
     // Every value we need is now a plain string/number in `charts`; drop the
     // whole proxy sweep (one shape + its tags per shape, deck-wide) from memory.
     for (const l of lookups) {
@@ -4245,7 +4639,7 @@ async function readChartsPage(
       untrack(l.origin);
       untrack(l.shape);
     }
-    return { charts, unread, short, tagsUnread, inventory };
+    return { charts, unread, short, tagsUnread, nested, inventory };
   });
 }
 
@@ -4287,6 +4681,7 @@ export async function listChartsInDeck(opts: { withInventory?: boolean } = {}): 
   let unread = 0;
   let short = 0;
   let tagsUnread = 0;
+  const nested: DeckScan["nested"] = [];
   for (let start = 0; start < total; start += READBACK_PAGE) {
     const end = Math.min(start + READBACK_PAGE, total);
     try {
@@ -4296,6 +4691,7 @@ export async function listChartsInDeck(opts: { withInventory?: boolean } = {}): 
       unread += page.unread;
       short += page.short;
       tagsUnread += page.tagsUnread;
+      nested.push(...page.nested);
       /**
        * WHAT THIS PAGE ACTUALLY CONTRIBUTED, because the aggregate below cannot
        * say and the second page has never run on a live host.
@@ -4318,6 +4714,7 @@ export async function listChartsInDeck(opts: { withInventory?: boolean } = {}): 
         unread: page.unread,
         short: page.short,
         tagsUnread: page.tagsUnread,
+        nested: page.nested.length,
         chartsSoFar: charts.length,
       });
     } catch (err) {
@@ -4339,7 +4736,15 @@ export async function listChartsInDeck(opts: { withInventory?: boolean } = {}): 
       });
     }
   }
-  const scan = { charts, unread, short, tagsUnread, slides: total, ...(opts.withInventory ? { inventory } : {}) };
+  const scan = {
+    charts,
+    unread,
+    short,
+    tagsUnread,
+    nested,
+    slides: total,
+    ...(opts.withInventory ? { inventory } : {}),
+  };
   // ALWAYS, not only when the scan came back short.
   //
   // This used to trace on failure alone, which made every deck scan in every
@@ -4363,6 +4768,7 @@ export async function listChartsInDeck(opts: { withInventory?: boolean } = {}): 
     unread,
     short,
     tagsUnread,
+    nested: nested.length,
     complete: scanIsComplete(scan),
   });
   return scan;
@@ -8520,8 +8926,18 @@ const AUTHORITATIVE_SIZE_SOURCES: ReadonlySet<SlideSizeSource> = new Set(["pageS
  *
  * Not permanent: a user can change slide size mid-session from PowerPoint's own
  * Design tab, and a cached 16:9 would then place charts off the edge of a deck
- * that is now 4:3. `slideSize({ refresh: true })` re-reads, and the cheap rung
- * re-reads anyway (one property load costs a fraction of the sync it rides on).
+ * that is now 4:3. `slideSize({ refresh: true })` walks the whole ladder again,
+ * and every other call asks the cheap rung (`readPageSetupSize`) again before it
+ * answers from the cache.
+ *
+ * THAT SECOND CLAUSE WAS A SENTENCE WITH NO CODE BEHIND IT, and it stood here
+ * for weeks. The early return in `slideSize` skipped every rung whenever a
+ * measurement was cached, so the "re-read" never happened: no product caller
+ * passes `refresh` (`placeChart`'s call, the slide-swap deck and
+ * `chartOnItsOwnSlideAsFile` all call it bare), so a deck resized from 16:9 to
+ * 4:3 kept answering 960 until the pane reloaded. The next chart went beside the
+ * first at full size and ended 177pt past a 720pt slide. The test that pinned
+ * the behaviour asserted the stale 960 by design.
  */
 let cachedSlideSize: SlideSize | undefined;
 
@@ -8547,6 +8963,44 @@ async function slideSizeFromPptxBase64(base64: string): Promise<SlideSize | null
   } catch {
     return null;
   }
+}
+
+/**
+ * Rung 1 of `slideSize` on its own: ask `presentation.pageSetup`, bounded.
+ *
+ * `undefined` when the host cannot answer — below PowerPointApi 1.10, a throw,
+ * the bound expiring, or numbers that are not a size — and never a guess, so the
+ * ladder falls through and the cache re-check keeps what it already holds.
+ *
+ * Its own function because two callers ask this exact question: the ladder, on
+ * its way down, and the cache, which re-asks before it vouches for a measurement
+ * taken minutes ago. See `cachedSlideSize`.
+ */
+async function readPageSetupSize(): Promise<{ width: number; height: number } | undefined> {
+  if (!supports("1.10")) return undefined;
+  try {
+    // Bounded: this is rung ONE of a ladder whose whole design is "fall
+    // through to the next rung", and it runs on the Insert click path. An
+    // unbounded first rung turns a graceful degradation into a hang — the
+    // ladder never reaches rungs 2, 3 or 4, and the pane never draws.
+    const got = await boundedRun(
+      "reading the slide size",
+      async (context) => {
+        const setup = (context.presentation as unknown as { pageSetup: { slideWidth: number; slideHeight: number } })
+          .pageSetup;
+        (setup as unknown as { load(p: string): void }).load("slideWidth,slideHeight");
+        await context.sync();
+        return { width: setup.slideWidth, height: setup.slideHeight };
+      },
+      // NOT `SELECTION_TIMEOUT_MS`, which this borrowed until 2026-08-29 and
+      // which bounds five genuine selection calls besides this one.
+      SLIDE_SIZE_TIMEOUT_MS,
+    );
+    if (Number.isFinite(got.width) && Number.isFinite(got.height) && got.width > 0 && got.height > 0) return got;
+  } catch {
+    /* 1.10 advertised but the property is not there — the caller tries the next rung */
+  }
+  return undefined;
 }
 
 /**
@@ -8599,8 +9053,33 @@ export async function slideSize(opts: { refresh?: boolean } = {}): Promise<Slide
   // says so: rung 1 is one property load riding on a sync that happens anyway.
   // Rung 3 is the expensive one, and it is precisely the one no longer allowed
   // to stick.
-  if (!opts.refresh && cachedSlideSize && AUTHORITATIVE_SIZE_SOURCES.has(cachedSlideSize.source))
+  //
+  // AND A MEASUREMENT IS AN ANSWER FOR THE MOMENT IT WAS TAKEN, NOT FOR THE
+  // SESSION. This used to be `return cachedSlideSize` and nothing else, which
+  // is what made the sentence above only half true: the fallbacks could no
+  // longer stick, and the authoritative readings could never be corrected. A
+  // user changing Design > Slide Size with the pane open (16:9 to 4:3 is the
+  // ordinary case) kept being told 960 wide — `placeChart` put the next chart
+  // beside the first at full size and 177pt past the edge of the new slide —
+  // because nothing in the product passes `refresh`.
+  //
+  // So the cheap rung is asked again, and ONLY the cheap rung. Falling through
+  // to the export on every call would charge a whole-file round trip per
+  // insert for a question that almost always has the same answer; if rung 1
+  // cannot answer this time the last good measurement stands, which is what the
+  // cache was for. Rung 2's reading is upgraded when rung 1 can speak, for the
+  // reason the fallbacks are: a direct read outranks an exported file.
+  if (!opts.refresh && cachedSlideSize && AUTHORITATIVE_SIZE_SOURCES.has(cachedSlideSize.source)) {
+    const kept = cachedSlideSize;
+    const live = await readPageSetupSize();
+    if (!live) return kept;
+    cachedSlideSize = { ...live, source: "pageSetup" };
+    // Said only when it MOVED. Every insert asks, so a line per answer would
+    // bury the one the archive can use: that a deck was resized mid-session.
+    if (live.width !== kept.width || live.height !== kept.height)
+      trace("host", "slide size changed since it was read", { was: kept, now: cachedSlideSize });
     return cachedSlideSize;
+  }
 
   // HOW LONG EACH RUNG TOOK, because the archive can count these and cannot
   // time them.
@@ -8627,33 +9106,11 @@ export async function slideSize(opts: { refresh?: boolean } = {}): Promise<Slide
   const took = () => Date.now() - rungStarted;
 
   // Rung 1 — the direct read.
-  if (supports("1.10")) {
-    try {
-      // Bounded: this is rung ONE of a ladder whose whole design is "fall
-      // through to the next rung", and it runs on the Insert click path. An
-      // unbounded first rung turns a graceful degradation into a hang — the
-      // ladder never reaches rungs 2, 3 or 4, and the pane never draws.
-      const got = await boundedRun(
-        "reading the slide size",
-        async (context) => {
-          const setup = (context.presentation as unknown as { pageSetup: { slideWidth: number; slideHeight: number } })
-            .pageSetup;
-          (setup as unknown as { load(p: string): void }).load("slideWidth,slideHeight");
-          await context.sync();
-          return { width: setup.slideWidth, height: setup.slideHeight };
-        },
-        // NOT `SELECTION_TIMEOUT_MS`, which this borrowed until 2026-08-29 and
-        // which bounds five genuine selection calls besides this one.
-        SLIDE_SIZE_TIMEOUT_MS,
-      );
-      if (Number.isFinite(got.width) && Number.isFinite(got.height) && got.width > 0 && got.height > 0) {
-        cachedSlideSize = { ...got, source: "pageSetup" };
-        trace("host", "slide size read", { ...cachedSlideSize, ms: took() });
-        return cachedSlideSize;
-      }
-    } catch {
-      /* 1.10 advertised but the property is not there — try the next rung */
-    }
+  const direct = await readPageSetupSize();
+  if (direct) {
+    cachedSlideSize = { ...direct, source: "pageSetup" };
+    trace("host", "slide size read", { ...cachedSlideSize, ms: took() });
+    return cachedSlideSize;
   }
 
   // Rung 2 — export one slide and read what it declares.
@@ -9098,9 +9555,12 @@ async function slideIds(): Promise<string[] | undefined> {
  * settle window — and nothing recorded so far can tell them apart. Reading the
  * deck length at the moment of failure does:
  *
- *   deckSlides <= index                  the index is past the end: it is gone
- *   deckSlides >  index, not listed      still there, re-keyed under a new name
- *   still listed under the same id       there, named, and refused anyway
+ *   still listed under the same id       there, named — the slide survived, so
+ *                                        nothing may be drawn again (if the deck
+ *                                        shrank ahead of it, the index is what
+ *                                        went stale, not the slide)
+ *   not listed, deckSlides <= index      the index is past the end: it is gone
+ *   not listed, deckSlides >  index      still there, re-keyed under a new name
  *
  * WHY HERE AND NOT IN A PROBE. The probe sheet asks its questions early, on a
  * scratch slide, in a healthy session. This failure arrives 670 seconds in, on
@@ -9118,23 +9578,31 @@ async function askWhatTheDeckStillHolds(
 ): Promise<"gone" | "there" | "re-keyed" | "unreadable"> {
   try {
     const ids = await slideIds();
-    const verdict = !ids
-      ? "unreadable"
-      : index >= ids.length
-        ? "gone"
-        : ids.includes(slideId ?? "")
-          ? "there"
-          : "re-keyed";
+    // THE LISTING IS ASKED BEFORE THE INDEX. "Gone" is a claim about the SLIDE,
+    // and `ownSlideVanished` acts on it by redrawing the whole chart on the
+    // visible slide, on the premise that "whatever had landed went with it".
+    // This used to test `index >= ids.length` first, which is the same fact as
+    // "our slide is missing" only when nothing else left the deck: a slide is
+    // appended last, so ANY earlier slide deleted mid-draw moves it down one
+    // place, `getItemAt(index)` runs off the end, and the old order read that
+    // as gone while the deck still listed the slide under the same id with
+    // every batch that had committed. The retry then drew the chart a second
+    // time. Round 370's vanish is unaffected: there the id is missing too.
+    const listed = ids?.includes(slideId ?? "") ?? false;
+    const verdict = !ids ? "unreadable" : listed ? "there" : index >= ids.length ? "gone" : "re-keyed";
     trace("insert", "the draw failed — asking the deck what it still holds", {
       slideId,
       index,
       deckSlides: ids?.length ?? "unreadable",
       indexInRange: ids ? index < ids.length : "unreadable",
-      stillListedUnderTheSameId: ids ? ids.includes(slideId ?? "") : "unreadable",
+      stillListedUnderTheSameId: ids ? listed : "unreadable",
       reading: {
         unreadable: "unreadable",
         gone: "gone — the index is past the end of the deck",
-        there: "there, listed under the same id, and refused anyway",
+        there:
+          ids && index >= ids.length
+            ? "there, listed under the same id, but the deck shrank ahead of it and the index no longer reaches it"
+            : "there, listed under the same id, and refused anyway",
         "re-keyed": "there, but re-keyed under a name we do not hold",
       }[verdict],
     });
@@ -11969,8 +12437,17 @@ function tracePartsOutcome(
 function getTargetSlide(context: PowerPoint.RequestContext, slideId?: string): PowerPoint.Slide {
   if (slideId) {
     // getItem, not getItemOrNullObject: this returns synchronously, before any
-    // sync could tell us whether the id resolved, so there is no null to check
-    // — a dead id throws here and the selected slide is the honest fallback.
+    // sync could tell us whether the id resolved, so there is no null to check.
+    //
+    // THIS CATCH ONLY EVER FIRES AGAINST THE TEST FAKE. Office.js `getItem`
+    // hands back a proxy and a dead id is refused at the first sync that uses it
+    // ("GeneralException at SlideCollection.getItem on the FIRST batch" is in the
+    // crash records), long after this has returned. The comment here used to say
+    // "a dead id throws here and the selected slide is the honest fallback",
+    // which is a description of the fake. A caller that wants the selected slide
+    // for a slide that is not there must establish that from the deck's listing
+    // and pass NO id — `insertSceneIntoSlideInner` does. The catch stays because
+    // a host that does throw here should still land on the selected slide.
     try {
       return context.presentation.slides.getItem(slideId);
     } catch {

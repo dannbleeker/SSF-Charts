@@ -2125,9 +2125,17 @@ describe("listChartsInDeck", () => {
     s1.shapes.addGeometricShape("rectangle", { left: 0, top: 0, width: 1, height: 1 });
     const scan = await listChartsInDeck();
     expect(scan.inventory, "the inventory came back unasked").toBeUndefined();
-    expect(lastShapeLoadSpec(), "the default scan started asking for shape names").toBe(
-      "items/id,items/left,items/top",
+    // `items/type` joined the default request (r2-21): it is what tells a group
+    // the user made from a shape that is merely not a chart, and without it a
+    // chart grouped with the user's own caption is invisible to Same Scale. It is
+    // one short enum per shape, unlike the diagnostic fields this test exists to
+    // keep out — so the spec is pinned field by field rather than as a string.
+    const spec = lastShapeLoadSpec().split(",");
+    expect(spec, "the default scan stopped asking for what it reads").toEqual(
+      expect.arrayContaining(["items/id", "items/left", "items/top", "items/type"]),
     );
+    for (const heavy of ["items/name", "items/width", "items/height"])
+      expect(spec, `the default scan started asking for ${heavy}`).not.toContain(heavy);
   });
 
   it("finds tagged charts across all slides", async () => {
@@ -5218,13 +5226,21 @@ describe("reading the presentation's slide size", () => {
     }
   });
 
-  it("caches the answer, and re-reads on request", async () => {
+  it("re-reads the cheap rung on every call, and the whole ladder on request", async () => {
+    // THIS TEST USED TO PIN THE STALE ANSWER. It resized the deck and asserted
+    // that the next bare `slideSize()` still said 960, as "caching" — and no
+    // product caller passes `refresh`, so a Design > Slide Size change made with
+    // the pane open was never seen until the pane reloaded (r1-27, and the next
+    // chart ended 177pt past a 720pt slide). The cache is what a failed or
+    // stalled re-read falls back to; it is no longer what a healthy host's
+    // answer is taken from.
     installHost([makeSlide("s1")]);
     expect((await slideSize()).width).toBe(960);
     // The user changes slide size from PowerPoint's own Design tab.
     hostSlideSize.cx = 9144000;
-    expect((await slideSize()).width, "went back to the host for a cached value").toBe(960);
-    expect((await slideSize({ refresh: true })).width).toBe(720);
+    expect((await slideSize()).width, "answered from the cache after the deck was resized").toBe(720);
+    hostSlideSize.cx = 12192000;
+    expect((await slideSize({ refresh: true })).width).toBe(960);
   });
 
   it("does not let a fallback reading become the deck's permanent answer", async () => {

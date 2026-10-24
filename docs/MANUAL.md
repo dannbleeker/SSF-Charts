@@ -56,8 +56,9 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
    390×244 slot next to the first on 16:9, against 192×120 underneath it. On a
    4:3 deck there is only 150pt of width spare, which would squeeze the chart
    below the point of being readable, so it goes underneath instead. Your
-   deck's real slide size is read from PowerPoint, not assumed, so both cases
-   come out right.
+   deck's real slide size is read from PowerPoint on every insert, not assumed,
+   so both cases come out right — including after you change the slide size
+   with the pane still open.
 
    A slide with room in neither direction falls back to a small cascading
    offset, so the chart lands somewhere you can see and drag rather than off
@@ -92,6 +93,14 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
    reading the wrong value. The same redraw happens if you have
    changed the stacking order of shapes inside the chart's group (Bring to
    Front on a single bar or label).
+
+   A chart PowerPoint would not group stays a loose set of shapes, and a copy of
+   one made on the same slide (Ctrl+D) carries the original's list of shapes.
+   The pane works out which of the two is the original — the older one — and
+   edits that one as usual. The copy is redrawn without touching the
+   original, which leaves the copy's old shapes behind under the new drawing;
+   delete them, or insert the copy afresh. The original is never edited by
+   accident.
 
    Very occasionally PowerPoint draws the chart and then refuses to save its
    settings back onto it. The chart is on the slide and looks right; it just
@@ -417,8 +426,10 @@ count of how many of its options are currently on.
 - **Same scale** (deck-wide or selection) re-renders charts on a common axis.
   It will refuse rather than half-do the job: if PowerPoint would not describe
   every slide, or would not answer for some of the charts it was asked to
-  redraw, the pane says which and changes nothing rather than reporting a
-  shared scale the deck does not have. If the chart open in the pane is one of
+  redraw, or a chart sits inside a group you made yourself (say, grouped with
+  its source note — the pane names the slide and asks you to ungroup it), the
+  pane says which and changes nothing rather than reporting a shared scale the
+  deck does not have. If the chart open in the pane is one of
   them, the pane follows it to its redrawn shape and takes over the shared
   axis scale, so the next **Update chart** does not undo it.
 - **Download SVG / Download PNG** (overflow menu) save the preview as a vector
