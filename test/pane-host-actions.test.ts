@@ -1877,7 +1877,7 @@ describe("Elements and batch insert", () => {
     });
   }
 
-  it("batch-inserts every config in the JSON box onto the current slide", async () => {
+  it("batch-inserts every config in the JSON box, each on a slide of its own", async () => {
     ($("json-io") as HTMLTextAreaElement).value = JSON.stringify([
       { kind: "pie", data: { categories: ["A", "B"], series: [{ name: "S", values: [1, 1] }] } },
       { kind: "stacked", data: { categories: ["A"], series: [{ name: "S", values: [3] }] } },
@@ -1885,6 +1885,14 @@ describe("Elements and batch insert", () => {
     $("json-insert-batch").click();
     await settle();
     expect(host.calls.insertScene).toHaveLength(2);
+    // A slide added for each chart, and each chart sent to it at the origin a
+    // single insert uses — `fix-p2-batch-table-roundtrip.test.ts` checks where
+    // they land against the real renderer.
+    expect(host.addSlideCalls).toBe(2);
+    expect(host.calls.insertScene.map((o) => [o.slideId, o.left, o.top])).toEqual([
+      ["own-slide-1", 60, 90],
+      ["own-slide-1", 60, 90],
+    ]);
     expect($("host-note").textContent?.toLowerCase()).toContain("2 chart");
   });
 });

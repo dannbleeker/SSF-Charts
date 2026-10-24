@@ -550,14 +550,19 @@ chart: at the default font on a slide-sized frame every fit is the identity.
 - **Table from datasheet** — rule-based table (lines top/header/bottom only,
   never side borders, a gap every 5 rows, optional bold **Total row**).
   Cells accept effect tokens: `[hb:0.75]` mini harvey ball, `[up]` `[down]`
-  `[flat]` trend arrows, `[good]` `[bad]` semantic colors.
+  `[flat]` trend arrows, `[good]` `[bad]` semantic colors. A formula
+  (`=SUM(B2:B3)`) and a waterfall's computed total (`e`) print as the number the
+  chart shows, not as typed; every other cell prints exactly as typed.
 - **Agenda** — inserts one chapter slide per line, each highlighting its own
   chapter.
 
 ## Automation (JSON)
 
 **Export current** copies the chart's `ChartConfig` JSON; **Import** loads
-one; **Insert batch** inserts an array of configs at once. The same JSON
+one; **Insert batch** inserts an array of configs at once, each on a new slide
+of its own and fitted to it (a chart wider than the slide is scaled down, as a
+single Insert would). A config that cannot be drawn is skipped, and the note
+names which one and why while the rest still go in. The same JSON
 drives the CLI (`npm run render`) and the **Claude Agent Skill**
 (`skill-dist/ssf-charts.zip` — upload at claude.ai → Settings →
 Capabilities → Skills, then ask Claude for "a waterfall of …" on any

@@ -54,13 +54,22 @@ import { estimateOfficeShapes } from "../core/scene";
 import { setTracing, trace } from "../core/trace";
 import { buildDeckBase64 } from "../render/pptx-deck";
 import { buildTableScene } from "../core/elements";
+import { formatNumber } from "../core/format";
+import { isTotalToken, waterfallChain } from "../core/layout/waterfall";
 // The Testing panel is NOT imported here — it is loaded on demand, and that is
 // what keeps ~13,400 lines of harness out of every user's bundle. See the
 // `import("./harness-ui")` in `wireInsert`.
 import { lazy } from "../render/lazy";
 import { localizePane, localizeTree, t } from "./i18n";
 import { note, onStopRequested, setProgress, settledNotes, showStop, startElapsed, stopElapsed } from "./status";
-import { contiguousStacks, dataToSheet, mountDatasheet, sheetToData, type SheetModel } from "./datasheet";
+import {
+  contiguousStacks,
+  dataToSheet,
+  evaluateFormula,
+  mountDatasheet,
+  sheetToData,
+  type SheetModel,
+} from "./datasheet";
 import { BUILTIN_TEMPLATES } from "./templates";
 import { harveyScene, checkScene, flowScene, kpiScene, wireElementPreviews } from "./elements-ui";
 import { agendaChapters, wireAgendaPreview } from "./agenda-ui";
@@ -225,9 +234,18 @@ function stateFromConfig(cfg: ChartConfig): Omit<AppState, "editTarget"> {
     // index is also dropped in silence, which is the honest outcome for an
     // index naming a category that is not there.
     const cols = sheet.cells[0]?.length ?? 0;
+    // THE FIRST SERIES ROW, which is not always row 1. `dataToSheet` writes the
+    // "100%=" row and then the "X extent" row ahead of every series whenever the
+    // data carries them, so a token written at a fixed row 1 landed in one of
+    // those: `sheetToData` reads that row without the totals set, took the "e"
+    // for a blank, and exported `totalIndices: []` — the closing total bar and
+    // its label gone from a chart that had drawn them a moment before. A
+    // "100%=" row on a waterfall is inert to the engine (nothing in the waterfall
+    // layouts reads it), which is why it takes a paste from elsewhere to meet it.
+    const firstSeries = 1 + (data.hundredPercent ? 1 : 0) + (data.xExtent ? 1 : 0);
     for (const i of asArray<number>(cfg.waterfall?.totalIndices)) {
       if (!Number.isInteger(i) || i < 0 || i + 1 >= cols) continue;
-      if (sheet.cells[1]) sheet.cells[1][i + 1] = "e";
+      if (sheet.cells[firstSeries]) sheet.cells[firstSeries][i + 1] = "e";
     }
   }
   return {
@@ -248,7 +266,7 @@ function stateFromConfig(cfg: ChartConfig): Omit<AppState, "editTarget"> {
     decimals: cfg.numberFormat?.decimals != null ? String(cfg.numberFormat.decimals) : "auto",
     suffix: cfg.numberFormat?.suffix ?? "",
     locale: cfg.numberFormat?.locale ?? "en-US",
-    labelContent: asArray<string>(cfg.decorations?.labelContent).join(","),
+    labelContent: labelContentList(cfg.decorations?.labelContent).join(","),
     paletteName: paletteNameFor(cfg.style?.palette),
     style: cfg.style ? { ...cfg.style } : undefined,
     seriesColors: data.series.map((s) => s.color),
@@ -377,6 +395,23 @@ function asArray<T>(v: unknown): T[] {
 }
 
 /**
+ * `decorations.labelContent` as the engine reads it: a list, where a bare
+ * string is a list of one.
+ *
+ * `segmentLabel` accepts `"value"` for `["value"]` on purpose — "an easy thing to
+ * write by hand or to generate" — and the skill's callers do write it. The
+ * ingest boundary coerced every array field with `asArray` (1fc21b9, to stop
+ * `palette.join is not a function`), which answers `[]` for anything that is not
+ * an array, so the same config the engine
+ * draws with value labels opened in the pane as "Default", and the next Update
+ * pushed the kind's default labels onto a slide that had not asked for them.
+ * An empty list is NOT repaired here: `currentConfig` carries it, see there.
+ */
+function labelContentList(v: unknown): string[] {
+  return typeof v === "string" ? [v] : asArray<string>(v);
+}
+
+/**
  * The preset name for a palette, or "Default" when it matches none — including
  * a chart's own custom palette, which `state.style` carries instead.
  */
@@ -412,9 +447,17 @@ function currentConfig(): ChartConfig {
       if (m.scenario) s.scenario = m.scenario;
     }
   });
+  // An EMPTY list is a statement — "no label parts" — where `undefined` is "the
+  // kind's default", and the one string `state.labelContent` holds cannot say it:
+  // "" already means the default. The loaded list stays on `decorations`, where
+  // `stateFromConfig` left it, and is carried back out while the select has not
+  // been touched; the select drops it the moment the user picks anything.
+  const noLabelParts = Array.isArray(state.decorations.labelContent) && state.decorations.labelContent.length === 0;
   const labelParts = state.labelContent
     ? (state.labelContent.split(",") as NonNullable<Decorations["labelContent"]>)
-    : undefined;
+    : noLabelParts
+      ? []
+      : undefined;
   const explode = state.pieExplode
     .split(",")
     .map((v) => Number(v.trim()) - 1)
@@ -484,6 +527,57 @@ function currentConfig(): ChartConfig {
         : undefined,
     numberFormat,
   };
+}
+
+/**
+ * The datasheet as the TABLE element prints it: every cell as typed, except the
+ * two kinds the chart COMPUTES.
+ *
+ * "Table from datasheet" was handed `state.sheet.cells` — the raw input text —
+ * and only `sheetToData` evaluates anything, so the two documented features that
+ * meet in a totals row met badly: `=SUM(B2:B3)` went onto the slide as the
+ * formula, where the chart beside it draws 40, and a waterfall's total cell
+ * went on as a lone "e", where the chart draws 93. The "e" needs no typing at
+ * all: `stateFromConfig` seeds it for every total, so the built-in EBITDA bridge
+ * made a table whose closing cell read "e".
+ *
+ * The raw text has to stay the default, and that is why this is a pass over the
+ * cells rather than `sheetToData`: a table cell is TEXT, and `[up] +14%`, a
+ * label or a year must reach `buildTableScene` as typed for its effect tokens to
+ * be read. `sheetToData` would turn all of those into blanks.
+ *
+ * A formula the evaluator cannot read stays as typed — the chart takes it for a
+ * blank, but a table is the user's words, and a cell that silently vanished
+ * would hide the typo that caused it. Row names and the header are never
+ * evaluated, as in `sheetToData`.
+ *
+ * NOT DROPPED: the "100%=" and "X extent" rows and the blank stack separators
+ * still go in as cells. They are chart annotations in a chart and ordinary rows
+ * in a table — `HUNDRED_ROW` also matches a plain "100%" row label, which is a
+ * perfectly good thing to label a row of text.
+ *
+ * Numbers are printed the way the chart prints them (its decimals and locale,
+ * through the same `formatNumber`), without the suffix or forced sign that the
+ * typed cells beside them do not carry.
+ */
+function tableCells(): string[][] {
+  const { cells } = state.sheet;
+  const cfg = currentConfig();
+  const fmt = { decimals: cfg.numberFormat?.decimals ?? "auto", locale: cfg.numberFormat?.locale };
+  const bars = state.kind === "waterfall" ? waterfallChain(cfg) : [];
+  return cells.map((row, r) =>
+    row.map((raw, c) => {
+      if (r === 0 || c === 0) return raw;
+      const text = (raw ?? "").trim();
+      const bar = bars[c - 1];
+      if (bar?.isTotal && isTotalToken(text)) return formatNumber(bar.value, fmt);
+      if (text.startsWith("=") && text.length > 1) {
+        const v = evaluateFormula(cells, text.slice(1));
+        if (v != null && Number.isFinite(v)) return formatNumber(v, fmt);
+      }
+      return raw;
+    }),
+  );
 }
 
 // --- UI wiring ------------------------------------------------------------
@@ -1098,6 +1192,70 @@ function updateGroupCounts() {
   }
 }
 
+type ValueLine = NonNullable<Decorations["valueLines"]>[number];
+
+/**
+ * The value lines the pane's two controls describe, in the order the chart
+ * arrived with, and where the difference arrow's anchor lands in that list.
+ *
+ * TWO CONTROLS, ONE ORDERED LIST WITH AN INDEX INTO IT. The mean checkbox and the
+ * values box can say "a mean and some fixed values" and nothing about order, and
+ * `difference.fromValueLine` is a POSITION in the list they feed. The handler
+ * rebuilt the list mean-first on every keystroke, so a chart written
+ * `[{value: 100}, {mean}]` with `fromValueLine: 0` came back `[{mean}, {value:
+ * 100}]` after one touch of the values box, and the arrow that measured from the
+ * 100 line measured from the mean (+80 became +15) — silently, in ink.
+ *
+ * So the list is laid out on the SLOTS the chart came with: each loaded line is a
+ * slot, filled by the mean box (for the mean slot) or by the next typed value
+ * (for a value slot, in the order typed), and typed values beyond the slots go
+ * on the end. A chart the pane built has no mean slot until the box is ticked,
+ * and the mean goes first, as it always did. The anchor follows its SLOT, not
+ * its index: ask again with the same `loaded` and `anchor` and it comes out
+ * right whatever the box said a moment ago — which is what lets the line be
+ * typed out and back in (select, Backspace, retype) without losing the arrow.
+ *
+ * `anchor` is the index the chart LOADED with, into `loaded`. It comes back
+ * `undefined` while the line it names is not in the list, rather than as an
+ * index that now names some other line.
+ */
+export function layOutValueLines(
+  loaded: ValueLine[],
+  wantMean: boolean,
+  valuesText: string,
+  anchor: number | undefined,
+): { lines: ValueLine[]; anchor: number | undefined } {
+  const values: number[] = [];
+  for (const part of valuesText.split(",")) {
+    const v = Number(part.trim());
+    if (part.trim() && Number.isFinite(v)) values.push(v);
+  }
+  const slots: ValueLine["mode"][] = loaded.some((l) => l.mode === "mean") ? [] : ["mean"];
+  // Two mean lines are one box: the second is the first for anchoring purposes.
+  const slotOf = loaded.map((l) => {
+    if (l.mode === "mean" && slots.includes("mean")) return slots.indexOf("mean");
+    slots.push(l.mode);
+    return slots.length - 1;
+  });
+  const lines: ValueLine[] = [];
+  const at: number[] = [];
+  let next = 0;
+  for (const slot of slots) {
+    const line: ValueLine | undefined =
+      slot === "mean"
+        ? wantMean
+          ? { mode: "mean" }
+          : undefined
+        : next < values.length
+          ? { mode: "value", value: values[next++] }
+          : undefined;
+    at.push(line ? lines.push(line) - 1 : -1);
+  }
+  while (next < values.length) lines.push({ mode: "value", value: values[next++] });
+  const landed = Number.isInteger(anchor) ? (at[slotOf[anchor as number]] ?? -1) : -1;
+  return { lines, anchor: landed >= 0 ? landed : undefined };
+}
+
 function renderOptions() {
   optionsHost.innerHTML = "";
   const d = state.decorations;
@@ -1198,10 +1356,17 @@ function renderOptions() {
   const dTo = numInput((d.difference?.to ?? Math.max(0, nCats() - 1)) + 1);
   const dSeries = numInput((d.difference?.series ?? -1) + 1, 0);
   dSeries.title = "0 = column totals, 1+ = level of that series";
+  // The two fields of the arrow that no control here sets — see `layOutValueLines`
+  // for the anchor. Rebuilding the arrow from the three spinners alone dropped
+  // them on the first touch, and `percent` defaults to ON in `core/decor.ts`: a
+  // chart that said `percent: false` drew a percentage the moment a spinner was
+  // pressed, and an arrow anchored on a value line stopped being drawn.
+  const loadedDiff = d.difference;
+  const carried = () => ({ percent: loadedDiff?.percent, fromValueLine: valueLineLayout().anchor });
   const emitDiff = () => {
     const s = Number(dSeries.value) - 1;
     d.difference = diffCb.checked
-      ? { from: Number(dFrom.value) - 1, to: Number(dTo.value) - 1, series: s >= 0 ? s : undefined }
+      ? { from: Number(dFrom.value) - 1, to: Number(dTo.value) - 1, series: s >= 0 ? s : undefined, ...carried() }
       : undefined;
     renderPreview();
   };
@@ -1227,15 +1392,13 @@ function renderOptions() {
     .filter((v): v is { mode: "value"; value: number } => v.mode === "value")
     .map((v) => v.value)
     .join(", ");
+  const valueLineLayout = () => layOutValueLines(existing, vlMean.checked, vlValues.value, loadedDiff?.fromValueLine);
   const emitVl = () => {
-    const lines: NonNullable<Decorations["valueLines"]> = [];
-    if (vlMean.checked) lines.push({ mode: "mean" });
-    for (const part of vlValues.value.split(",")) {
-      const v = Number(part.trim());
-      if (part.trim() && Number.isFinite(v)) lines.push({ mode: "value", value: v });
-    }
+    const { lines, anchor } = valueLineLayout();
     d.valueLines = lines.length ? lines : undefined;
     d.valueLine = undefined;
+    // The arrow's anchor is an INDEX into the list just rebuilt.
+    if (d.difference) d.difference = { ...d.difference, fromValueLine: anchor };
     renderPreview();
   };
   vlMean.addEventListener("change", emitVl);
@@ -1415,6 +1578,9 @@ function renderOptions() {
   lcSel.value = state.labelContent;
   lcSel.addEventListener("change", () => {
     state.labelContent = lcSel.value;
+    // A pick replaces what the chart arrived with — including an empty list that
+    // `currentConfig` was carrying, which would otherwise come back on "Default".
+    delete d.labelContent;
     renderPreview();
   });
   lc.append("Label content ", lcSel);
@@ -2049,6 +2215,69 @@ $("copy-link").addEventListener("click", async () => {
 /** Cascading default insert position so repeated inserts don't pile up. */
 let insertOffset = 0;
 
+/** Where a chart starts on a slide, before anything on it moves it. */
+const INSERT_ORIGIN = { left: 60, top: 90 };
+
+/** Where a new chart went, at what size, and whether the rule had to move or shrink it. */
+interface Placed {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  shrunk?: boolean;
+  moved?: Placement["moved"];
+}
+
+/**
+ * Where a NEW chart goes on the slide the user is looking at, and at what size.
+ * Shared by the single insert and the batch insert's fallback, so the two cannot
+ * disagree about what "placed" means.
+ *
+ * Beside or below whatever is already on the slide, shrunk into the space left if
+ * it will not fit at full size. A fixed 14pt cascade against a 480x300 chart
+ * overlapped the previous one by better than 90%, which is what "they are built
+ * on top of each other" looked like. The cascade survives as the last resort, for
+ * a slide with room in neither direction.
+ *
+ * The slide's real size, not an assumed one: whether a second chart can sit
+ * beside the first is entirely a question about the width, and a 4:3 deck is
+ * 240pt narrower than the 16:9 this used to take for granted.
+ *
+ * A host that will not describe the slide gets the cascade, and gets it HERE
+ * rather than inside `placeChart`. `placeChart` cannot tell the difference: an
+ * empty `occupied` means "there is room everywhere", so `placeBeside` succeeds on
+ * its first pass and returns the origin unmoved, and its `fallback` argument is
+ * never reached. Two inserts onto a slide the host would not read therefore
+ * landed on exactly the same point — the pile this whole rule exists to prevent,
+ * and worse than the fixed cascade it replaced. A real host refused every shape
+ * read on a whole deck.
+ *
+ * The ENGINE's clamp, not `??`. A config arrives from the JSON box, a saved
+ * template, a shape tag written in another deck and the skill's caller, so
+ * `width` is a number in the types and anything at all in practice — `??` passes
+ * NaN, Infinity, 0 and negatives straight through. `placeChart` then shrinks a
+ * NaN width to fit and hands back 882 points, which is wider than the slide and
+ * finite enough to survive every check after it.
+ *
+ * `occupied` is handed back for the slow-insert offer, which prices the slide
+ * from the read this already made. `null` means the host would not say.
+ */
+async function placeOnCurrentSlide(
+  cfg: ChartConfig,
+): Promise<{ at: Placed; occupied: Awaited<ReturnType<typeof getSlideShapeBounds>> }> {
+  const size = {
+    width: clampDim(cfg.width, DEFAULT_SIZE.width),
+    height: clampDim(cfg.height, DEFAULT_SIZE.height),
+  };
+  const occupied = await getSlideShapeBounds();
+  const cascade = { left: INSERT_ORIGIN.left + insertOffset, top: INSERT_ORIGIN.top + insertOffset };
+  const at: Placed = occupied
+    ? placeChart(occupied, size, INSERT_ORIGIN, cascade, await slideSize())
+    : { ...cascade, ...size, shrunk: false, moved: "cascade" };
+  insertOffset = (insertOffset + 14) % 84;
+  return { at, occupied };
+}
+
 /**
  * Say which host phase we are in. A stalled Office.js sync never throws — it
  * simply never settles — so "Working…" alone cannot tell a slow host from a
@@ -2239,57 +2468,12 @@ async function runInsert(asNew: boolean) {
   // Hoisted so the slow-insert offer below can price the target slide from the
   // read this path already makes. `null` means the host would not say.
   let occupied: Awaited<ReturnType<typeof getSlideShapeBounds>> = null;
-  let at: {
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-    shrunk?: boolean;
-    moved?: Placement["moved"];
-  };
+  let at: Placed;
   if (intoPlaceholder) {
     at = { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height };
   } else {
-    // Nothing selected, so the chart has to be placed — beside or below
-    // whatever is already on the slide, shrunk into the space left if it will
-    // not fit at full size. A fixed 14pt cascade against a 480x300 chart
-    // overlapped the previous one by better than 90%, which is what "they are
-    // built on top of each other" looked like. The cascade survives as the last
-    // resort, for a slide with room in neither direction.
-    //
-    // The slide's real size, not an assumed one: whether a second chart can sit
-    // beside the first is entirely a question about the width, and a 4:3 deck is
-    // 240pt narrower than the 16:9 this used to take for granted.
-    //
-    // A host that will not describe the slide gets the cascade, and gets it
-    // HERE rather than inside `placeChart`. `placeChart` cannot tell the
-    // difference: an empty `occupied` means "there is room everywhere", so
-    // `placeBeside` succeeds on its first pass and returns the origin unmoved,
-    // and its `fallback` argument is never reached. Two inserts onto a slide the
-    // host would not read therefore landed on exactly the same point — the pile
-    // this whole rule exists to prevent, and worse than the fixed cascade it
-    // replaced. A real host refused every shape read on a whole deck.
-    // The ENGINE's clamp, not `??`. A config arrives from the JSON box, a saved
-    // template, a shape tag written in another deck and the skill's caller, so
-    // `width` is a number in the types and anything at all in practice —
-    // `??` passes NaN, Infinity, 0 and negatives straight through. `placeChart`
-    // then shrinks a NaN width to fit and hands back 882 points, which is wider
-    // than the slide and finite enough to survive every check after it.
-    const size = {
-      width: clampDim(cfg.width, DEFAULT_SIZE.width),
-      height: clampDim(cfg.height, DEFAULT_SIZE.height),
-    };
-    occupied = await getSlideShapeBounds();
-    at = occupied
-      ? placeChart(
-          occupied,
-          size,
-          { left: 60, top: 90 },
-          { left: 60 + insertOffset, top: 90 + insertOffset },
-          await slideSize(),
-        )
-      : { left: 60 + insertOffset, top: 90 + insertOffset, ...size, shrunk: false, moved: "cascade" };
-    insertOffset = (insertOffset + 14) % 84;
+    // Nothing selected, so the chart has to be placed — see `placeOnCurrentSlide`.
+    ({ at, occupied } = await placeOnCurrentSlide(cfg));
   }
   cfg = { ...cfg, width: at.width, height: at.height };
   const scene = buildChart(cfg);
@@ -2504,6 +2688,159 @@ async function runInsert(asNew: boolean) {
   if (said) note(said, setbacks.length || outcome?.status === "err" ? "err" : "ok");
 }
 
+/** What one Insert batch did, counted — everything its single note reports. */
+interface BatchOutcome {
+  /** Charts that reached the deck. */
+  landed: number;
+  /** Of those, the ones that went on the user's own slide because no slide could be added. */
+  crowded: number;
+  /** Charts that could not be inserted: where they stood in the list, their title, and why. */
+  skipped: { n: number; title: string; why: string }[];
+  /** Skipped charts whose slide had already been added when they failed. */
+  stranded: number;
+  rescued: number;
+  degraded: number;
+  /** Stop was pressed. The counts are then not a verdict, and `guard` words the stop. */
+  stopped: boolean;
+}
+
+/**
+ * Insert each chart in `configs` on a slide of its own, fitted to it, and count
+ * what became of every one.
+ *
+ * THE BATCH HAD NO PLACEMENT AT ALL. It handed every chart to the renderer
+ * with no left or top, and the renderer's default origin is (60, 90) —
+ * so a pasted array of N charts drew N charts on the same point, and one wider
+ * than the slide ran 240pt off a 4:3 edge. The single insert had been given the
+ * whole rule ("they are built on top of each other", a2078a6) and this handler
+ * predates it. Each chart now gets a slide of its own, which is what makes a
+ * batch legible, and the single insert's own rule on it: `placeChart` on an
+ * empty slide, which keeps the origin and shrinks a chart the slide cannot hold.
+ *
+ * WHERE NO SLIDE CAN BE ADDED, the chart goes where the user is, placed by
+ * `placeOnCurrentSlide` — the single insert's fallback, for the same reason it
+ * has one: this host DROPS `slides.add()` calls, and losing the chart is worse
+ * than losing the slide. Counted, and said.
+ *
+ * ONE CHART THAT CANNOT BE INSERTED DOES NOT END THE BATCH. The loop had no
+ * per-item isolation, so the first config to throw — one with no `data`,
+ * which `normalizeData` refuses on purpose "so a batch isolates a bad chart" — or
+ * the first insert the host refused ended it with every earlier chart already on
+ * the deck, every later one untried, and "Failed: …" over the lot. The natural
+ * retry then inserted the earlier ones a second time. `render-batch.mjs` and the
+ * skill's `render-pptx.mjs` isolate each config; so does the demo deck ("fails
+ * ALONE and is reported") and Same Scale ("reached {n} of {total}"). This is the
+ * one batch that did not.
+ *
+ * BUILT BEFORE THE SLIDE IS ADDED, so the commonest reason to skip — a config
+ * that cannot be built — leaves no blank slide behind. A host failure after the
+ * slide exists can, and `stranded` counts those so the note can say.
+ *
+ * Only the user's Stop escapes the loop as a throw. It is not a chart that failed.
+ */
+async function insertChartBatch(configs: ChartConfig[]): Promise<BatchOutcome> {
+  const out: BatchOutcome = {
+    landed: 0,
+    crowded: 0,
+    skipped: [],
+    stranded: 0,
+    rescued: 0,
+    degraded: 0,
+    stopped: false,
+  };
+  if (!configs.length) return out;
+  // Once: it does not change mid-batch, and a host that answers only from its
+  // slow rung would otherwise charge that wait per chart.
+  const slide = await slideSize();
+  // As the single insert does, for the same two published bugs — see `runInsert`.
+  await dropShapeSelection();
+  for (const [i, c] of configs.entries()) {
+    if (isStopRequested()) {
+      out.stopped = true;
+      break;
+    }
+    let slideAdded = false;
+    try {
+      const requested = { ...DEFAULT_SIZE, ...c };
+      const size = {
+        width: clampDim(requested.width, DEFAULT_SIZE.width),
+        height: clampDim(requested.height, DEFAULT_SIZE.height),
+      };
+      let at: Placed = placeChart([], size, INSERT_ORIGIN, INSERT_ORIGIN, slide);
+      let cfg: ChartConfig = { ...requested, width: at.width, height: at.height };
+      let scene = buildChart(cfg);
+      let pic = await chartPicture(cfg, scene);
+      const slideId = (await addSlideForChart()) ?? undefined;
+      slideAdded = !!slideId;
+      if (!slideId) {
+        at = (await placeOnCurrentSlide(requested)).at;
+        if (at.width !== cfg.width || at.height !== cfg.height) {
+          cfg = { ...requested, width: at.width, height: at.height };
+          scene = buildChart(cfg);
+          pic = await chartPicture(cfg, scene);
+        }
+      }
+      await insertSceneIntoSlide(scene, {
+        tagData: JSON.stringify(cfg),
+        left: at.left,
+        top: at.top,
+        pictureBase64: pic.png,
+        ...(slideId ? { slideId } : {}),
+      });
+      out.landed++;
+      if (!slideId) out.crowded++;
+      // A warn WITH a png is the rescue succeeding, not failing — see the same
+      // distinction in doSameScale.
+      if (pic.warn && !pic.png) out.degraded++;
+      else if (pic.warn) out.rescued++;
+    } catch (err) {
+      if (isStopped(err)) throw err;
+      const why = errorText(err);
+      trace("pane", "a batch chart was skipped", { chart: i + 1, why, slideAdded });
+      out.skipped.push({ n: i + 1, title: typeof c?.title === "string" ? c.title : "", why });
+      if (slideAdded) out.stranded++;
+    }
+  }
+  return out;
+}
+
+/**
+ * The two clauses of the batch note that are not about pictures: what was
+ * inserted, and what was not.
+ *
+ * Only the first few skipped charts are named. The note is one line in a narrow
+ * pane, and a list of fifty identical host errors is not more informative than
+ * three and a count — the trace carries every one.
+ */
+function batchClauses(r: BatchOutcome, total: number): { base: string; setback: string } {
+  const setbacks: string[] = [];
+  if (!total) setbacks.push(t("The JSON box holds an empty list."));
+  if (r.crowded)
+    setbacks.push(
+      t("{n} chart(s) went on the current slide because PowerPoint would not add a slide for them.", { n: r.crowded }),
+    );
+  if (r.skipped.length) {
+    const named = r.skipped.slice(0, 3).map((s) => `chart ${s.n}${s.title ? ` "${s.title}"` : ""}: ${s.why}`);
+    const more = r.skipped.length - named.length;
+    setbacks.push(
+      t("Skipped {n} — {which}.", {
+        n: r.skipped.length,
+        which: named.join("; ") + (more > 0 ? t("; and {more} more", { more }) : ""),
+      }),
+    );
+  }
+  if (r.stranded)
+    setbacks.push(
+      t("{n} slide(s) added for a skipped chart may be empty or half-drawn — delete them if so.", { n: r.stranded }),
+    );
+  const base = !r.landed
+    ? t("Nothing inserted.")
+    : r.skipped.length || r.crowded
+      ? t("Inserted {n} of {total} chart(s).", { n: r.landed, total })
+      : t("Inserted {n} chart(s), one per slide.", { n: r.landed });
+  return { base, setback: setbacks.join(" ") };
+}
+
 /**
  * What Same Scale did, then what it cost — one sentence for one slot.
  *
@@ -2530,15 +2867,17 @@ async function runInsert(asNew: boolean) {
  * same reason `elapsedLabel` is: so what it says can be asserted directly.
  *
  * A RESCUE IS NOT A FAILURE — the comment at the call site is emphatic that it
- * is the guard working — so only `degraded` makes this red.
+ * is the guard working — so only `degraded` makes this red. So does `setback`,
+ * which Insert batch uses for what it skipped or could not give a slide: work the
+ * user asked for that did not happen.
  */
-export function sameScaleNote(parts: { base: string; rescued?: string; degraded?: string }): {
+export function sameScaleNote(parts: { base: string; rescued?: string; degraded?: string; setback?: string }): {
   text: string;
   status: "ok" | "err";
 } {
   return {
-    text: [parts.base, parts.rescued, parts.degraded].filter(Boolean).join(" "),
-    status: parts.degraded ? "err" : "ok",
+    text: [parts.base, parts.rescued, parts.degraded, parts.setback].filter(Boolean).join(" "),
+    status: parts.degraded || parts.setback ? "err" : "ok",
   };
 }
 
@@ -3856,20 +4195,13 @@ async function wireInsert() {
       guard(async () => {
         const parsed = JSON.parse(($("json-io") as HTMLTextAreaElement).value);
         const configs: ChartConfig[] = Array.isArray(parsed) ? parsed : [parsed];
-        let degraded = 0;
-        let rescued = 0;
-        for (const c of configs) {
-          const cfg = { ...DEFAULT_SIZE, ...c };
-          const scene = buildChart(cfg);
-          // Batch insert honours render:"image" per config — without this a
-          // pasted image-mode array silently drew native shapes.
-          const { png, warn } = await chartPicture(cfg, scene);
-          // A warn WITH a png is the rescue succeeding, not failing — see the
-          // same distinction in doSameScale.
-          if (warn && !png) degraded++;
-          else if (warn) rescued++;
-          await insertSceneIntoSlide(scene, { tagData: JSON.stringify(cfg), pictureBase64: png });
-        }
+        // A write like any other: it adds slides, and `addSlideForChart` names
+        // the one it added by diffing the deck, which another write adding one
+        // at the same moment makes unattributable.
+        const ran = await inWriteTurn(() => insertChartBatch(configs));
+        // Stopped between charts: `guard` posts the stop, and a count here would
+        // read as a verdict on a batch that was cut short.
+        if (ran.stopped) return;
         /**
          * ONE NOTE, COMPOSED — the fourth instance of this class.
          *
@@ -3884,19 +4216,19 @@ async function wireInsert() {
          *
          * `sameScaleNote` is the composer the insert, update and same-scale
          * sites already share — outcome first, one clause per non-zero
-         * qualifier, `err` only when something actually degraded. The clause
-         * keys are prefix-free, so composing them does not say "Inserted"
-         * twice.
+         * qualifier, `err` only when something actually degraded or was
+         * skipped. The clause keys are prefix-free, so composing them does not
+         * say "Inserted" twice.
          */
         const said = sameScaleNote({
-          base: t("Inserted {n} chart(s) on the current slide.", { n: configs.length }),
-          rescued: rescued
+          ...batchClauses(ran, configs.length),
+          rescued: ran.rescued
             ? t(
                 '{n} chart(s) were too dense for this host and went in as pictures — "Explode to native shapes" turns them back.',
-                { n: rescued },
+                { n: ran.rescued },
               )
             : "",
-          degraded: degraded ? t("{n} image chart(s) fell back to native shapes.", { n: degraded }) : "",
+          degraded: ran.degraded ? t("{n} image chart(s) fell back to native shapes.", { n: ran.degraded }) : "",
         });
         note(said.text, said.status);
       }),
@@ -3909,7 +4241,7 @@ async function wireInsert() {
       ["kpi-insert", kpiScene],
       [
         "table-insert",
-        () => buildTableScene(state.sheet.cells, 480, { totalRow: ($("table-total") as HTMLInputElement).checked }),
+        () => buildTableScene(tableCells(), 480, { totalRow: ($("table-total") as HTMLInputElement).checked }),
       ],
     ] as const) {
       const btn = $(id) as HTMLButtonElement;
