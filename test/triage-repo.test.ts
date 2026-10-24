@@ -17,8 +17,9 @@
  * cwd-relative at all. Four blocks were flagged; two of them were fine.
  *
  * **The stale-detector sweep genuinely cannot run.** It reads EVERY file under
- * `src/` and matches the trace messages `triage.mjs` looks for against the
- * source that emits them. Stryker rewrites `src/core/**` by design — the
+ * `src/` and matches the trace messages the triage tool looks for (in every
+ * module the gate's unread-signal detector reads, not only `triage.mjs`) against
+ * the source that emits them. Stryker rewrites `src/core/**` by design — the
  * instrumented file opens `// @ts-nocheck\nfunction stryNS_9fa48…` — so this is
  * the same incompatibility `vitest.mutation.config.ts` records for
  * `secondary-axis-ticks.test.ts`: a source-grepping assertion and a
@@ -103,7 +104,68 @@ describe("triage's two invocations", () => {
   }, 120_000);
 });
 
+/**
+ * THE FILES `rounds-gate.mjs` READS TO DECIDE A MESSAGE IS "READ BY SOMETHING".
+ *
+ * That array is the one place the repo already says what the triage tool is made
+ * of, and the sibling guard below keeps it complete — so the stale-detector sweep
+ * borrows it rather than keeping a list of its own. Its own list was the single
+ * file `triage.mjs`, and when the pooled readers moved to `round-pools.mjs` the
+ * sweep kept reading the file they had left: 13 literals became 4, and the
+ * non-vacuity floor still passed on the five `FALLBACK_SIGNALS` keys. Nothing
+ * went red for seven messages (five of them checked by nothing else) whose
+ * detectors would now have reported zero for good.
+ *
+ * Undefined when the array stops being a literal this can read.
+ */
+function toolModulesTheGateReads(gate: string): string[] | undefined {
+  const list = /const src = \[([^\]]*)\]/.exec(gate)?.[1];
+  return list === undefined ? undefined : [...list.matchAll(/"\.\/([a-z-]+\.mjs)"/g)].map((m) => m[1]);
+}
+
+/**
+ * The trace messages one tool module compares against a string literal.
+ *
+ * Deliberately backslash-free: a regex written through a heredoc has been
+ * corrupted here before, and a mangled one matches nothing while looking fine.
+ */
+function messageLiterals(source: string): Set<string> {
+  const found = new Set<string>();
+  for (const m of source.matchAll(/(?:e[.])?message *=== *"([^"]+)"/g)) found.add(m[1]);
+  for (const m of source.matchAll(/[^A-Za-z]m === "([^"]+)"/g)) found.add(m[1]);
+  return found;
+}
+
+/** What each module of the tool compares a message to, by file name. */
+function literalsByToolModule(): Map<string, Set<string>> {
+  const gate = readFileSync(new URL("../scripts/rounds-gate.mjs", import.meta.url), "utf8");
+  const files = toolModulesTheGateReads(gate);
+  expect(files, "the unread-signal source list is no longer an array literal this can read").toBeDefined();
+  return new Map(
+    (files ?? []).map((f) => [f, messageLiterals(readFileSync(new URL(`../scripts/${f}`, import.meta.url), "utf8"))]),
+  );
+}
+
+/** The messages the sweep holds the source to: every literal the tool matches on, plus the fallback table's keys. */
+function sweptMessages(): Set<string> {
+  const matched = new Set<string>(Object.keys(FALLBACK_SIGNALS));
+  for (const literals of literalsByToolModule().values()) for (const m of literals) matched.add(m);
+  return matched;
+}
+
+/** The ones `app` no longer contains: each is a detector now reporting zero. */
+function deadMessages(messages: Iterable<string>, app: string): string[] {
+  return [...messages].filter((message) => !app.includes(message));
+}
+
 describe("a detector keyed to a message that no longer exists", () => {
+  const app = () =>
+    readdirSync("src", { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith(".ts"))
+      .map((f) => readFileSync(`src/${f}`, "utf8"))
+      .join("\n");
+
   it("matches only trace messages the source still emits", () => {
     // THE FAILURE MODE THIS PREVENTS IS SILENCE. Every one of these tools finds
     // its evidence by comparing a trace message to a string literal. Rename the
@@ -113,28 +175,60 @@ describe("a detector keyed to a message that no longer exists", () => {
     // Nothing in the repo checked this. All the current literals happen to be
     // live, which is the point: the guard is for the rename that has not
     // happened yet, and the archive would carry months of false calm first.
-    const tool = readFileSync("scripts/triage.mjs", "utf8");
-    const app = readdirSync("src", { recursive: true })
-      .map(String)
-      .filter((f) => f.endsWith(".ts"))
-      .map((f) => readFileSync(`src/${f}`, "utf8"))
-      .join("\n");
-
-    const matched = new Set<string>(Object.keys(FALLBACK_SIGNALS));
-    // Deliberately backslash-free: a regex written through a heredoc has been
-    // corrupted here before, and a mangled one matches nothing while looking fine.
-    for (const m of tool.matchAll(/(?:e[.])?message *=== *"([^"]+)"/g)) matched.add(m[1]);
-    for (const m of tool.matchAll(/[^A-Za-z]m === "([^"]+)"/g)) matched.add(m[1]);
+    const byModule = literalsByToolModule();
 
     // THE REGEXES THEMSELVES ARE INSTRUMENTS. If one stops matching, the loop
     // below passes vacuously and this test becomes decoration — the exact shape
     // it exists to catch. Claim a positive count, not the absence of failures.
-    expect(matched.size, "the extractors matched almost nothing — they have stopped working").toBeGreaterThanOrEqual(8);
+    //
+    // OF THE SOURCE, NOT OF THE SWEEP. The floor used to count the set that also
+    // held the `FALLBACK_SIGNALS` keys, so five of its eight were there whatever
+    // the extractors read; the day they read one file instead of two it still
+    // passed. The tool's own literals have to clear it on their own.
+    const fromSource = new Set([...byModule.values()].flatMap((s) => [...s]));
+    expect(
+      fromSource.size,
+      `the extractors matched almost nothing — they have stopped working (per file: ${[...byModule]
+        .map(([f, s]) => `${f} ${s.size}`)
+        .join(", ")})`,
+    ).toBeGreaterThanOrEqual(8);
 
-    for (const message of matched)
-      expect(app, `no source file emits "${message}" any more — its detector now reports zero forever`).toContain(
+    const live = app();
+    for (const message of sweptMessages())
+      expect(live, `no source file emits "${message}" any more — its detector now reports zero forever`).toContain(
         message,
       );
+  });
+
+  it("would notice a message only the pooled readers key on being reworded", () => {
+    // THE SWEEP HAS TO BE ABLE TO FAIL ON THE FILE THE READERS NOW LIVE IN. The
+    // loop above is green because every message is emitted, which would be just
+    // as true of a sweep that read the wrong file; so reword each message that
+    // `round-pools.mjs` matches on and `triage.mjs` does not, in a copy of the
+    // source, and require the sweep to flag it. The two files are read here
+    // directly and not through the sweep's own file list: a victim list taken
+    // from the list under test shrinks with it, and the test would then pass for
+    // the very narrowing it exists to catch. The messages are derived, not named,
+    // so the next move of a reader changes what is checked.
+    const literalsOf = (f: string) =>
+      messageLiterals(readFileSync(new URL(`../scripts/${f}`, import.meta.url), "utf8"));
+    const inTriage = literalsOf("triage.mjs");
+    const pooledOnly = [...literalsOf("round-pools.mjs")].filter((m) => !inTriage.has(m));
+    expect(
+      pooledOnly.length,
+      "round-pools.mjs matches on no message of its own — the extractors have stopped working",
+    ).toBeGreaterThan(0);
+
+    const swept = sweptMessages();
+    const live = app();
+    for (const victim of pooledOnly) {
+      expect(deadMessages([victim], live), `"${victim}" is not emitted, so rewording it proves nothing`).toEqual([]);
+      const reworded = live.split(victim).join("a reworded message");
+      expect(
+        deadMessages(swept, reworded),
+        `the sweep did not notice "${victim}" being reworded — it is not reading the file whose reader keys on it`,
+      ).toContain(victim);
+    }
   });
 });
 
@@ -169,9 +263,9 @@ describe("the unread-signal detector knows every file the tool is made of", () =
      * green. Proven by deleting it and watching nothing happen. What has to be
      * read is the expression the detector actually passes.
      */
-    const list = /const src = \[([^\]]*)\]/.exec(gate)?.[1];
+    const list = toolModulesTheGateReads(gate);
     expect(list, "the unread-signal source list is no longer an array literal this can read").toBeDefined();
-    const reads = new Set([...(list ?? "").matchAll(/"\.\/([a-z-]+\.mjs)"/g)].map((m) => m[1]));
+    const reads = new Set(list);
 
     /**
      * Modules that hold no trace-message literal and are deliberately left out.
