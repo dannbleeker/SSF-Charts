@@ -114,7 +114,7 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
 | 100% | share of total | `100%=` row lets columns fall short of 100% |
 | Waterfall | bridges (EBITDA, headcount) | values are deltas; type `e` in a cell for a computed total; multiple series stack |
 | Mekko | two-dimensional composition | width ∝ column total; `X extent` row for explicit widths |
-| Line | trends | date categories ("2025-01", "Jan 2025", Excel's "Jan-25") space proportionally to time; forecast periods draw dashed with hollow markers; `decorations.slope: true` turns two-period data into a slope chart (end rails, "Name value" labels both ends, no axis) |
+| Line | trends | date categories ("2025-01", "Jan 2025", Excel's "Jan-25") space proportionally to time while they run oldest to newest (a list that does not — newest first, out of order, a year-less "28 Dec" then "4 Jan" — is spaced evenly in the order given); forecast periods draw dashed with hollow markers; `decorations.slope: true` turns two-period data into a slope chart (end rails, "Name value" labels both ends, no axis) |
 | Area | stacked trends | |
 | Butterfly | two-sided comparison (pyramids) | first two series, back to back, one scale |
 | Scatter | correlation | `X`/`Y` rows; `Group` colors points; `X line`/`Y line` partitions; `Trend` fits an OLS line labelled with R² and p, or a **polynomial** curve (`scatter.trendDegree` 2–4, quadratic/cubic/quartic); quadrants shade a 2×2 matrix |
@@ -390,8 +390,10 @@ count of how many of its options are currently on.
   centre line at the mean and whiskers to mean ± 2 SD (raw-sample mode) — the
   scientific summary rather than the quartile one.
 - **Sparklines** (`decorations.sparkline` on line/area): compact, axis-less
-  word-sized trend lines with min/max/last dots; pair with small multiples for
-  a KPI dashboard table, one row per series.
+  word-sized trend lines with min/max/last dots; pair with small multiples
+  (`columns: 1`) for a KPI dashboard table, one row per series. Each row scales
+  to its own values, so rows of unlike units read side by side; pin `scale` to
+  put them all on one.
 - **Radial bar chart** (`radar.bars`): a circular bar chart / Nightingale rose —
   each category is an equal-angle wedge whose radius encodes its value; multiple
   series stack outward.
@@ -427,7 +429,8 @@ count of how many of its options are currently on.
   server log). Good for support or sharing a config without a file.
 - **Small multiples** (`multiples: {columns?}`, JSON): splits a multi-series
   chart into a grid of single-series panels titled by series name, on one
-  shared value scale (column family, line/area, waterfall, radar).
+  shared value scale (column family, line/area, waterfall, radar; a table of
+  sparklines is the exception — each row scales to itself).
 - **IBCS scenario notation** (`series.scenario`, JSON, column family): encodes
   the data's nature in the fill so actual vs plan vs forecast reads without a
   legend — **AC** solid, **PY** lighter, **PL** / **BU** outlined/hollow, **FC**

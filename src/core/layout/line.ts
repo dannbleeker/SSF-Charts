@@ -13,8 +13,10 @@ import {
   computeFrame,
   computeFrameHorizontal,
   fitPlot,
+  labelBesidePoint,
   markInFrame,
   footnoteH,
+  pointLabelText,
   logFloor,
   titleHeight,
   titleNode,
@@ -158,6 +160,46 @@ const measuredAnchors = (data: ChartData, area: boolean, seriesLevels: number[][
   seriesLevels,
 });
 
+/**
+ * Where date categories sit along the axis, as a 0..1 fraction of its span — or
+ * null, which means "evenly spaced, in the order given".
+ *
+ * Date spacing is only a time axis while the dates RUN FORWARD. Every other
+ * thing a line chart does with its categories is indexed in the order they were
+ * written — the line joins point `c` to point `c + 1`, the forecast divider sits
+ * between `forecastFrom - 1` and `forecastFrom`, a ribbon slab marches from one
+ * centre to the next — so a list whose days do not strictly increase drew its
+ * line backwards across the plot and gave the ribbons a negative width.
+ *
+ * Measured 2026-10-24 on `Oct 23, Nov 23, Dec 23, Jan 24, Feb 24`: the parser
+ * reads "Jan 24" as 24 January in V8's default year, so the new year's two
+ * months landed at x 45 and 79 and the three before them at 343 to 410 — the
+ * line ran 413 -> 48 across the whole plot between December and January.
+ * `format.ts` fixed that for "Jan-24" only, and its comment is explicit that the
+ * space form is left to `Date.parse` because it is ambiguous with a day. Labels
+ * with no year at all are not ambiguous and break the same way: Excel's own
+ * d-mmm display ("28-Dec", "4-Jan") and "28 Dec" / "4 Jan" put the December
+ * points of a weekly series into 14pt at the right edge. Out-of-order dates
+ * zigzag, and a duplicate date puts two points on one x.
+ *
+ * So the test is on the PARSED DAYS rather than on the spelling: this layout
+ * cannot tell a wrapped year from a mistyped one, and does not need to. Where the
+ * days do not strictly increase it falls back to the even spacing every other
+ * category list gets, which keeps the categories in the order the author gave
+ * them. A newest-first list is in that group on purpose — it used to be laid out
+ * oldest-first with its line drawn right to left, a reordering nothing else in
+ * the chart agreed with.
+ */
+function dateSpacing(categories: string[]): number[] | null {
+  if (categories.length < 2) return null;
+  const days = categories.map((c) => parseDateToken(c));
+  if (!days.every((d): d is number => d != null)) return null;
+  for (let c = 1; c < days.length; c++) if ((days[c] as number) <= (days[c - 1] as number)) return null;
+  const d0 = days[0] as number;
+  const d1 = days[days.length - 1] as number;
+  return days.map((d) => ((d as number) - d0) / (d1 - d0));
+}
+
 /** Line and area charts over categories. Lines are 2pt with ≥3pt markers. */
 export function layoutLine(cfg: ChartConfig, style: ChartStyle, decor: Decorations): LayoutResult {
   if ((cfg.kind === "line" || cfg.kind === "area") && decor.sparkline) {
@@ -196,15 +238,12 @@ export function layoutLine(cfg: ChartConfig, style: ChartStyle, decor: Decoratio
 
   const { frame } = computeFrame(cfg, style, decor, decor.seriesLabels ? data.series.map((s) => s.name) : []);
   const slots = categorySlots(frame, n, 0);
-  // Date categories ("2024-03", "Jan 2025", …) space x proportionally to time.
-  const days = data.categories.map((c) => parseDateToken(c));
-  if (!area && n > 1 && days.every((d): d is number => d != null)) {
-    const d0 = Math.min(...(days as number[]));
-    const d1 = Math.max(...(days as number[]));
+  // Date categories ("2024-03", "Jan 2025", …) space x proportionally to time —
+  // while they run forward; see `dateSpacing`.
+  const dateAt = area ? null : dateSpacing(data.categories);
+  if (dateAt) {
     const inset = slots.slotWidth / 2;
-    for (let c = 0; c < n; c++) {
-      slots.centers[c] = frame.x + inset + (((days[c] as number) - d0) / (d1 - d0 || 1)) * (frame.w - inset * 2);
-    }
+    for (let c = 0; c < n; c++) slots.centers[c] = frame.x + inset + dateAt[c] * (frame.w - inset * 2);
   }
   const logOn = !area && !!cfg.logScale;
   const scale = valueScale(frame, logOn ? logFloor(all, dataMin) : dataMin, dataMax, cfg.scale, undefined, logOn);
@@ -486,7 +525,12 @@ export function layoutLine(cfg: ChartConfig, style: ChartStyle, decor: Decoratio
           });
         }
         prev = pt;
-        if (c === n - 1) lastSegMid[si] = pt.y;
+        // The LAST DRAWN point, which is the last category only when the line
+        // reaches it. Taken from the last category alone, a line that stopped one
+        // period early (a blank last cell) was named nowhere — upright there is no
+        // legend — see `namesWithoutMark`. A gap is not a value a stand-in could
+        // be drawn at, so the name is level with where the line ended.
+        lastSegMid[si] = pt.y;
       }
     });
   }
@@ -517,6 +561,31 @@ export function layoutLine(cfg: ChartConfig, style: ChartStyle, decor: Decoratio
 }
 
 /**
+ * The value range a chart with no value axis maps onto its plot: the scale it
+ * was handed where it was handed one, otherwise the range of its own data.
+ *
+ * The sparkline and the slope chart each took `min` and `max` from their own
+ * values and never looked at `cfg.scale`, so a scale the author pinned — what
+ * the pane's "Same scale" writes — drew exactly as no scale at all: a sparkline
+ * of `[10, 12, 11, 14]` spanned 40.8pt with `scale: { min: 0, max: 100 }` and
+ * with none. It is also how `buildMultiples` hands a panel the shared scale
+ * ("so panels compare honestly"), which the slope chart now takes like any other
+ * line panel; a table of sparklines is deliberately not given it there, because
+ * its rows are KPIs of unlike units.
+ *
+ * A pinned range the data cannot live in — `min` at or above the data's top, or
+ * an empty span — falls back to the data's own, as `valueScale` does for the
+ * charts that have an axis. Unpinned, the answer is the data's range exactly.
+ */
+function valueRange(cfg: ChartConfig, all: number[]): { lo: number; hi: number } {
+  const ownLo = all.length ? minOf(all) : 0;
+  const ownHi = all.length ? maxOf(all) : 1;
+  const lo = cfg.scale?.min ?? ownLo;
+  const hi = cfg.scale?.max ?? ownHi;
+  return hi > lo ? { lo, hi } : { lo: ownLo, hi: ownHi };
+}
+
+/**
  * Sparkline: a compact, chrome-less trend line sized to sit inline (think
  * Tufte's "word-sized graphic"). No axes, gridlines or category labels — just
  * a thin line, an optional leading label (the title / series name) and a
@@ -531,8 +600,7 @@ function layoutSparkline(cfg: ChartConfig, style: ChartStyle, _decor: Decoration
   const single = data.series.length === 1;
   const all = data.series.flatMap((s) => s.values.filter((v): v is number => v != null));
   const fmt = resolveFormat(all, cfg.numberFormat);
-  const lo = all.length ? minOf(all) : 0;
-  const hi = all.length ? maxOf(all) : 1;
+  const { lo, hi } = valueRange(cfg, all);
   const span = hi - lo || 1;
 
   // Leading label (title/series name) and trailing last value reserve gutters.
@@ -549,7 +617,11 @@ function layoutSparkline(cfg: ChartConfig, style: ChartStyle, _decor: Decoration
     h: Math.max(4, cfg.height - padY * 2),
   };
   const xs = data.categories.map((_, c) => plot.x + (n === 1 ? plot.w / 2 : (c / (n - 1)) * plot.w));
-  const toY = (v: number) => plot.y + (1 - (v - lo) / span) * plot.h;
+  // Clipped to the range, as `valueScale`'s `toY` clips to the plot: a scale
+  // narrower than the data is a scale the data runs off the end of. The value is
+  // clipped rather than the result so that a value inside the range maps through
+  // exactly the arithmetic it always did.
+  const toY = (v: number) => plot.y + (1 - (Math.max(lo, Math.min(hi, v)) - lo) / span) * plot.h;
 
   const nodes: SceneNode[] = [];
   if (label) {
@@ -673,8 +745,7 @@ function layoutSlope(cfg: ChartConfig, style: ChartStyle, decor: Decorations): L
   const last = n - 1;
   const all = data.series.flatMap((s) => s.values.filter((v): v is number => v != null));
   const fmt = resolveFormat(all, cfg.numberFormat);
-  const lo = all.length ? minOf(all) : 0;
-  const hi = all.length ? maxOf(all) : 1;
+  const { lo, hi } = valueRange(cfg, all);
   const span = hi - lo || 1;
 
   const endLabel = (s: (typeof data.series)[number], c: number) =>
@@ -724,7 +795,8 @@ function layoutSlope(cfg: ChartConfig, style: ChartStyle, decor: Decorations): L
     h: cfg.height - titleH - headerH - 4 - footnoteH(cfg, style, decor) - 6,
   });
   const pad = plot.h * 0.08;
-  const toY = (v: number) => plot.y + pad + (1 - (v - lo) / span) * (plot.h - pad * 2);
+  // Clipped to the range, for the reason the sparkline's is.
+  const toY = (v: number) => plot.y + pad + (1 - (Math.max(lo, Math.min(hi, v)) - lo) / span) * (plot.h - pad * 2);
   const xs = data.categories.map((_, c) => plot.x + (n === 1 ? plot.w / 2 : (c / (n - 1)) * plot.w));
 
   const nodes: SceneNode[] = [];
@@ -896,10 +968,27 @@ function layoutBump(cfg: ChartConfig, style: ChartStyle, _decor: Decorations): L
   const n = data.categories.length;
   const titleH = titleHeight(cfg, style);
   const headerH = fs * 1.6;
-  const maxRank = maxOf(
-    data.series.flatMap((s) => s.values.filter((v): v is number => v != null)),
-    1,
-  );
+  const ranks = data.series.flatMap((s) => s.values.filter((v): v is number => v != null));
+  const maxRank = maxOf(ranks, 1);
+  /**
+   * The top row is rank 1 — unless the data holds something lower.
+   *
+   * `toY` below measured every rank from 1, so a rank below it went ABOVE the
+   * plot by a whole row pitch or more: a 0-based ranking, a typo'd 0 among five
+   * 1-based ranks, a negative, or bump switched on over ordinary line data with
+   * negatives in it. The markers were dropped by `markInFrame` and the line
+   * segments were kept at the raw y. Measured 2026-10-24 at 480x300: a 0-based
+   * ranking of three drew lines from y = -252, a -3 to y = -1056, and one 0 among
+   * five ranks to y = -51 — ink on the slide above the chart, which
+   * `frame-fit.test.ts` says nothing a chart draws may be.
+   *
+   * Not clamped to 1, which would put 0 and 1 on the same row and call two
+   * different ranks the same. The range simply starts at the lowest value there
+   * is, so a 0-based ranking reads top-down from 0 and every rank stays on the
+   * chart in its own row. Seeded with 1, so for every ranking that starts at 1
+   * — the documented one — `minRank` is 1 and nothing moves.
+   */
+  const minRank = minOf(ranks, 1);
   /**
    * The two name gutters, and the size the names in them are drawn at.
    *
@@ -925,7 +1014,8 @@ function layoutBump(cfg: ChartConfig, style: ChartStyle, _decor: Decorations): L
     h: cfg.height - titleH - headerH - fs * 1.6,
   });
   const xs = data.categories.map((_, c) => plot.x + (n === 1 ? 0 : (c / (n - 1)) * plot.w));
-  const toY = (rank: number) => plot.y + (maxRank === 1 ? plot.h / 2 : ((rank - 1) / (maxRank - 1)) * plot.h);
+  const toY = (rank: number) =>
+    plot.y + (maxRank === minRank ? plot.h / 2 : ((rank - minRank) / (maxRank - minRank)) * plot.h);
 
   const nodes: SceneNode[] = [];
   const titleN = titleNode(cfg, style);
@@ -1088,6 +1178,34 @@ export function splineSegments(
   if (cur.length) runs.push(cur);
   const out: { x1: number; y1: number; x2: number; y2: number; c: number; k: number }[] = [];
   for (const run of runs) {
+    /**
+     * THE CURVE MAY NOT LEAVE THE BOX ITS OWN POINTS SPAN.
+     *
+     * A uniform Catmull-Rom spline is not monotone: next to a spike it swings
+     * past the neighbouring knot, so `[0, 0, 100, 0, 0]` dipped 7.4 value units
+     * BELOW the zero it was drawn from and `[100, 100, 0, 100, 100]` rose above
+     * the 100. Measured 2026-10-24 at 480x300: the curve reached y = 302.2 on a
+     * 300pt canvas, through the category names and off the chart; sideways it
+     * reached x = -20.3, 20pt off the left edge, with zero at x = 13.4. Launch-
+     * shaped data (`[0, 0, 0, 120, 15, 10, 8, 8]`) dipped 16pt below the baseline
+     * into the category labels. Each of those is a value the data never held,
+     * drawn where a reader reads values — and a mark off the chart, which
+     * `frame-fit.test.ts` says nothing a chart draws may be.
+     *
+     * Clamped to the extent of the run's own knots, in whichever axis: the knots
+     * are already inside the plot (`toY` and `toX` clip them), so the curve is
+     * too, and a curve that stays within its points never shows a value outside
+     * the range of the ones supplied. Where the spline already stays inside, as it
+     * does for most data, nothing moves; at a spike it runs flat along the
+     * neighbour's level for the part of the swing that went past it, which reads
+     * as the curve levelling off rather than as a negative number.
+     */
+    const span = {
+      x0: minOf(run.map((p) => p.x)),
+      x1: maxOf(run.map((p) => p.x)),
+      y0: minOf(run.map((p) => p.y)),
+      y1: maxOf(run.map((p) => p.y)),
+    };
     for (let i = 0; i < run.length - 1; i++) {
       const p0 = run[Math.max(0, i - 1)];
       const p1 = run[i];
@@ -1098,18 +1216,20 @@ export function splineSegments(
         const t = k / steps;
         const t2 = t * t;
         const t3 = t2 * t;
-        const cx =
+        const sx =
           0.5 *
           (2 * p1.x +
             (-p0.x + p2.x) * t +
             (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
             (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3);
-        const cy =
+        const sy =
           0.5 *
           (2 * p1.y +
             (-p0.y + p2.y) * t +
             (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
             (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3);
+        const cx = Math.max(span.x0, Math.min(span.x1, sx));
+        const cy = Math.max(span.y0, Math.min(span.y1, sy));
         out.push({ x1: pp.x, y1: pp.y, x2: cx, y2: cy, c: p2.c, k });
         pp = { x: cx, y: cy };
       }
@@ -1152,14 +1272,11 @@ function layoutLineHorizontal(cfg: ChartConfig, style: ChartStyle, decor: Decora
   // arithmetic the vertical path runs along x. Sideways it was simply absent,
   // so "2024-01, 2024-02, 2024-12" sat in three equal rows and a reader saw a
   // steady march where the data has a ten-month gap.
-  const days = data.categories.map((c) => parseDateToken(c));
-  if (!area && n > 1 && days.every((d): d is number => d != null)) {
-    const d0 = Math.min(...days);
-    const d1 = Math.max(...days);
+  // …and only while the dates run forward, for the reason `dateSpacing` gives.
+  const dateAt = area ? null : dateSpacing(data.categories);
+  if (dateAt) {
     const inset = slotH / 2;
-    for (let c = 0; c < n; c++) {
-      centers[c] = frame.y + inset + ((days[c] - d0) / (d1 - d0 || 1)) * (frame.h - inset * 2);
-    }
+    for (let c = 0; c < n; c++) centers[c] = frame.y + inset + dateAt[c] * (frame.h - inset * 2);
   }
   const x0 = toX(0);
 
@@ -1406,16 +1523,18 @@ function layoutLineHorizontal(cfg: ChartConfig, style: ChartStyle, decor: Decora
             name: `marker-${si}-${c}`,
           });
         if (decor.segmentLabels) {
+          // `labelContent` is read here as it is upright: this emitter printed
+          // `formatNumber(v)` whatever the pane's "Label content" said, so
+          // rotating a chart silently discarded the setting.
+          const text = pointLabelText(decor, v, s.name, data.categories[c], fmt);
           nodes.push({
             kind: "text",
-            x: pt.x + 4,
+            ...labelBesidePoint(pt.x, text, fs, 4, cfg.width, fs * 3),
             y: pt.y - fs * 0.75,
-            w: fs * 3,
             h: fs * 1.5,
-            text: formatNumber(v, fmt),
+            text,
             fontSize: fs,
             color: style.text,
-            align: "left",
             valign: "middle",
             name: `label-${si}-${c}`,
           });

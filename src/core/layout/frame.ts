@@ -1,7 +1,7 @@
-import type { ChartConfig, ChartStyle, Decorations } from "../types";
+import type { ChartConfig, ChartStyle, Decorations, NumberFormat } from "../types";
 import { textWidth, type SceneNode } from "../scene";
 import { clipToWidth } from "../elements";
-import { niceTicks, axisTickLabel } from "../format";
+import { niceTicks, axisTickLabel, segmentLabel } from "../format";
 
 export interface Frame {
   /** Plot rectangle in chart coordinates. */
@@ -163,6 +163,60 @@ export function markInFrame(cfg: ChartConfig, cx: number, cy: number, r: number)
   return fit >= 1 ? fit : 0;
 }
 
+/**
+ * The text of a point label: the pane's "Label content" parts applied to one
+ * value, as the upright line and the stacked column already apply them. A point
+ * has no share of anything, so a `percent` part has nothing to print.
+ */
+export function pointLabelText(
+  decor: Decorations,
+  v: number,
+  seriesName: string,
+  category: string,
+  fmt: Partial<NumberFormat>,
+): string {
+  return segmentLabel(decor.labelContent ?? ["value"], { value: v, fraction: null, series: seriesName, category, fmt });
+}
+
+/**
+ * The box of a point label drawn BESIDE its point along x: to the right of it —
+ * and to the LEFT when the right has not the room for the whole of it. `gap` is
+ * the clearance from the point and `minW` the width the box has on the right
+ * (the ink and a little, unless the caller says otherwise).
+ *
+ * It was always to the right, with no gutter reserved there
+ * (`computeFrameHorizontal` reserves one only for totals). So the point at the
+ * scale maximum — which is the plot's right edge, and is a round number whenever
+ * the data's largest value is on a nice tick (30, 40, 100, 3000, 30000) — had 6pt
+ * of canvas for its label, and `clipTextToFrame` dropped it outright. A value
+ * just under the maximum fared worse: it was cut to a fragment that reads as
+ * another number, 29,500 as "2…" and 0.97 as "0.…". Measured 2026-10-24 at
+ * 480x300 on `[12, 30]`: the 30 was not drawn at all, on the sideways line chart
+ * and on the sideways dot, lollipop and range plots alike.
+ *
+ * Flipped rather than reserved for, because a gutter is paid by every sideways
+ * chart and the problem is the one point at the edge: the label of an upright
+ * point is also kept on the canvas, and "an overlapping label still reads where
+ * an off-canvas one is lost" is the rule `layoutLine` already applies. Only a
+ * point near the right edge ever flips; when neither side has the room the right
+ * is kept, and the clip does what it has always done.
+ */
+export function labelBesidePoint(
+  ptX: number,
+  text: string,
+  fs: number,
+  gap: number,
+  canvasW: number,
+  minW?: number,
+): { x: number; w: number; align: "left" | "right" } {
+  const ink = textWidth(text, fs);
+  const right = canvasW - (ptX + gap);
+  const onRight = minW ?? ink + 4;
+  if (ink <= right || ptX - gap <= right) return { x: ptX + gap, w: onRight, align: "left" };
+  const w = Math.max(onRight, ink + 4);
+  return { x: ptX - gap - w, w, align: "right" };
+}
+
 export function fitPlot<T extends Frame>(cfg: ChartConfig, plot: T): T {
   const w = Math.max(MIN_PLOT_SIDE, Math.min(plot.w, cfg.width));
   const h = Math.max(MIN_PLOT_SIDE, Math.min(plot.h, cfg.height));
@@ -187,6 +241,35 @@ export function categorySlots(frame: Frame, n: number, gapRatio = 1 / 3): Catego
   const colWidth = slotWidth * (1 - gapRatio);
   const centers = Array.from({ length: n }, (_, i) => frame.x + slotWidth * (i + 0.5));
   return { centers, slotWidth, colWidth };
+}
+
+/**
+ * The room each category name has along its axis: the narrower of the two gaps
+ * either side of its centre, so two neighbouring names that each take their own
+ * room can never meet, and no more than reaches the nearer end of the plot
+ * (`lo`..`hi`), so the box of a name at the end of the axis stays on the chart.
+ * `whole` is the answer for a lone category.
+ *
+ * THE AXIS USED TO ASSUME EVERY SLOT IS THE SAME WIDTH and read the first gap,
+ * `centers[1] - centers[0]`, as the width of all of them. That holds for every
+ * chart but a date-spaced line, whose centres are proportional to time. Measured
+ * 2026-10-24 at 960x540: a first gap of one day (`2024-01-01, 2024-01-02,
+ * 2024-06-01, 2024-12-01`) gave every name 1pt and `clipTextToFrame` dropped the
+ * whole axis, with 110pt free for each of the others; and `2023-01` followed by
+ * twelve months of 2024 sized every name for the year-long first gap, so 11 of
+ * the 12 adjacent pairs overlapped, on an axis `collide.ts` leaves fixed.
+ *
+ * Evenly spaced centres — every chart that is not date-spaced — answer with the
+ * one width they always had, to the last bit: the gaps of a fixed pitch differ in
+ * their last digits, and the minimum of them is not the first one.
+ */
+export function categoryRooms(centers: number[], whole: number, lo: number, hi: number): number[] {
+  if (centers.length < 2) return centers.map(() => whole);
+  const gaps = centers.slice(1).map((c, i) => Math.abs(c - centers[i]));
+  if (gaps.every((g) => Math.abs(g - gaps[0]) < 1e-6)) return centers.map(() => gaps[0]);
+  return centers.map((c, i) =>
+    Math.min(i > 0 ? gaps[i - 1] : Infinity, i < gaps.length ? gaps[i] : Infinity, 2 * (c - lo), 2 * (hi - c)),
+  );
 }
 
 export interface ValueScale {
@@ -1072,11 +1155,15 @@ export function chromeNodes(
   // on the chart, which is the same reason it may not be printed on the title.
   const catInk = catY + fs * 1.21;
   if (decor.categoryAxis && !printsOnTitle(cfg, style, catY) && catInk <= cfg.height) {
-    const slotW = centers.length > 1 ? centers[1] - centers[0] : frame.w;
+    // Each name's own slot — the same width for all of them unless the centres
+    // are uneven (a date-spaced line); see `categoryRooms`.
+    const slots = categoryRooms(centers, frame.w, frame.x, frame.x + frame.w);
+    const names = cfg.data.categories.map((c) => String(c ?? ""));
+    const rooms = slots.map((s) => Math.max(1, s - 2));
     /**
      * One size for the whole axis, small enough that each name fits its slot.
      *
-     * Every label is CENTRED in a slot `slotW` wide and none was ever fitted to
+     * Every label is CENTRED in a slot `slots[i]` wide and none was ever fitted to
      * it, so a name wider than its slot runs into its neighbours on both sides.
      * That is the commonest text collision in this engine — 30 of the 73
      * kind/font/frame combinations a sweep turned up — and it is one defect
@@ -1086,21 +1173,28 @@ export function chromeNodes(
      * note, then clipped for the name no floor can fit. Last resort as
      * everywhere else: where the names already fit their slots this is `fs` and
      * nothing moves.
+     *
+     * A name whose slot is narrower than an ellipsis at the floor is gone at
+     * every size, so it has no say in which size that is. With one slot width for
+     * the whole axis that excuses all of the names or none of them, and changes
+     * nothing; with a date-spaced line two points a day apart each get a slot of
+     * a few points, and letting them choose took every other name on the axis
+     * down to the 5pt floor with them.
      */
     const catFs = (() => {
-      const room = Math.max(1, slotW - 2);
+      const counts = rooms.map((room) => room >= textWidth("…", 5));
       let f = fs;
-      while (f > 5 && cfg.data.categories.some((c) => textWidth(String(c ?? ""), f) > room)) f -= 0.5;
+      while (f > 5 && names.some((c, i) => counts[i] && textWidth(c, f) > rooms[i])) f -= 0.5;
       return f;
     })();
-    cfg.data.categories.forEach((cat, i) => {
+    names.forEach((name, i) => {
       nodes.push({
         kind: "text",
-        x: centers[i] - slotW / 2,
+        x: centers[i] - slots[i] / 2,
         y: catY,
-        w: slotW,
+        w: slots[i],
         h: catFs * 1.4,
-        text: clipToWidth(String(cat ?? ""), catFs, Math.max(1, slotW - 2)),
+        text: clipToWidth(name, catFs, rooms[i]),
         fontSize: catFs,
         color: style.text,
         align: "center",

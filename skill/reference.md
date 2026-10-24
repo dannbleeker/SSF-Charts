@@ -301,8 +301,10 @@ the finish date". No-op without `After` rows.
 **Sparklines** (`decorations.sparkline`, line/area): a compact, axis-less,
 word-sized trend line with no chrome — a thin line, an optional leading label
 (the title / series name), a trailing value, and dots on the min (red), max
-(green) and last points. Pair with `multiples: {}` for a table of sparklines,
-one row per series (KPI dashboards).
+(green) and last points. Pair with `multiples: { columns: 1 }` for a table of
+sparklines, one row per series (KPI dashboards) — `multiples: {}` lays three
+series side by side and four as a 2x2. Each row scales to its own values, so
+rows of unlike units read side by side; pin `scale` to put them all on one.
 
 **Radar min–max band** (`decorations.radarBand`): shades the per-spoke min–max
 envelope of the peer series (all series except the last) as a band and draws
@@ -395,8 +397,9 @@ the (first non-line) series descending and overlays a computed "Cumulative %"
 line on a secondary axis — the 80/20 view. Rewrites the chart into a combo.
 
 **Bump chart** (`kind: "line"` + `decorations.bump: true`): values are ranks
-(1 = best) drawn on an inverted integer axis (rank 1 at the top) with thick
-lines, round markers and a "Name" label at both ends — rank-over-time.
+(1 = best) drawn on an inverted integer axis (rank 1 at the top; a ranking that
+starts lower, such as 0-based, puts its lowest rank there) with thick lines,
+round markers and a "Name" label at both ends — rank-over-time.
 
 **Horizontal profile chart** (`kind: "line" | "area"` + `horizontal: true`):
 rotates the line/area 90° — categories run down the left axis and values
@@ -434,7 +437,8 @@ share of the grand total.
 
 **Small multiples** (`multiples`): a multi-series chart becomes a grid of
 single-series panels titled by series name, pinned to one shared value
-scale so panels compare honestly. Special rows (Error, Target, Band
+scale so panels compare honestly (a table of sparklines is the exception: each
+row scales to itself unless `scale` is pinned). Special rows (Error, Target, Band
 low/high) are carried into every panel. `columns` overrides the grid
 (default: one row up to 3 panels, else a near-square).
 

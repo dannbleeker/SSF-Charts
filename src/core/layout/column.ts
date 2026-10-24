@@ -18,13 +18,16 @@ import {
   aboveMarkFontSize,
   baselineNode,
   breakMarkerNodes,
+  categoryRooms,
   chromeNodes,
   computeFrame,
   computeFrameHorizontal,
+  labelBesidePoint,
   legendWrapWalk,
   seriesLegendLabels,
   legendLabelsFor,
   logFloor,
+  pointLabelText,
   titleHeight,
   valueScale,
   bandFontSize,
@@ -521,7 +524,11 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
       // it 0 for every series (ups/downs only advance in the stacked branch), so
       // the arrow silently collapsed onto the axis instead of the bar top.
       levels[si] = stacked ? ups[sp] + downs[sp] : v;
-      if (!r) return;
+      if (!r) {
+        // No mark in the last column does not mean no name — see `unmarkedAnchor`.
+        if (c === n - 1) lastSegMid[si] = unmarkedAnchor(s, fill, H, frame, qOf, stacked ? ups[sp] : 0);
+        return;
+      }
 
       if (barStyle !== "bar") {
         // Lollipop / dot / dumbbell-range rendering for clustered charts:
@@ -573,7 +580,9 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
         });
         if (c === n - 1) lastSegMid[si] = H ? cross : val;
         if (decor.segmentLabels) {
-          const label = formatNumber(raw!, fmt);
+          // The label-content dropdown reaches a dot as it reaches a bar; this
+          // printed `formatNumber` whatever it said, like the sideways line did.
+          const label = pointLabelText(decor, raw!, s.name, data.categories[c], fmt);
           /**
            * BOUND BY THE ROW, sideways — the bound every other horizontal label
            * in this file got and this one did not.
@@ -594,15 +603,15 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
           if (dotFs > 0)
             nodes.push({
               kind: "text",
-              // Clear of the dot along the value axis, centred on it across.
-              x: (H ? val : cross) + dotR + 2,
+              // Clear of the dot along the value axis, centred on it across — and
+              // on the other side of it when the canvas ends first, which a dot
+              // at the scale maximum always meets.
+              ...labelBesidePoint(H ? val : cross, label, dotFs, dotR + 2, cfg.width),
               y: (H ? cross : val) - dotFs * 0.7,
-              w: textWidth(label, dotFs) + 4,
               h: dotFs * 1.4,
               text: label,
               fontSize: dotFs,
               color: style.text,
-              align: "left",
               valign: "middle",
               name: `label-${si}-${c}`,
             });
@@ -1731,14 +1740,26 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
        * once.
        */
       /**
-       * UPRIGHT, THIS NAME IS NOT DRAWN HERE AT ALL — it is handed to the gutter
-       * layout below and spread with the column names, in one pass over every
-       * name in the strip. See `gutterExtras`.
+       * UPRIGHT, WHERE THE GUTTER IS MERGED, THIS NAME IS NOT DRAWN HERE AT ALL —
+       * it is handed to the gutter layout below and spread with the column names,
+       * in one pass over every name in the strip. See `gutterExtras`.
        *
        * Sideways it stays: there the name sits ON the plot beside the line's last
        * point, in a row of its own, and shares nothing with the column names.
+       *
+       * AND IT STAYS WHERE THE MERGE DOES NOT RUN. The merge needs an upright
+       * chart whose base published where its names were anchored — only
+       * `layoutColumns` does, so a waterfall, mekko or area base has nothing to
+       * merge with — and one that does not carry the secondary axis in the same
+       * strip, for the reason given at the spread below. This test was `if (!H)`,
+       * which handed the name of every upright combo to a spread that then
+       * refused those, so a secondary axis, a pareto, and a 100%, mekko,
+       * waterfall or area base never drew the line's name at all: six slides of
+       * the shipped deck. The loop that collects the names and the gate that
+       * emits them have to be one test, and now the gate is "something was
+       * collected".
        */
-      if (!H) {
+      if (!H && !secondary && result.anchors.seriesLabelAnchors) {
         gutterExtras.push({
           name: s.scenario ? `${s.name} (${s.scenario})` : s.name,
           color,
@@ -1807,14 +1828,19 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
   // fixed, 335 tick numbers lost, and a comfortable 480x300 pareto left with
   // two. That is the wrong way round, so those charts keep the old arrangement
   // and their 30 pairs; the gutter there holds three families and wants a
-  // design, not a third pass.
-  if (gutterExtras.length && result.anchors.seriesLabelAnchors && !secondary) {
+  // design, not a third pass. THE OLD ARRANGEMENT IS THE LINE DRAWING ITS OWN
+  // NAME ABOVE ITS LAST POINT, in the loop above, which it was not doing: the
+  // loop handed every upright name to this spread and returned, so "keep the old
+  // arrangement" kept nothing.
+  if (gutterExtras.length) {
     for (let i = nodes.length - 1; i >= 0; i--) if (/^series-label-\d+$/.test(nodes[i].name ?? "")) nodes.splice(i, 1);
+    // The anchors are there: the loop above collected a name only for a base that
+    // published them.
     const gutter = seriesLabelNodes(
       colCfg,
       style,
       result.anchors.plot,
-      result.anchors.seriesLabelAnchors,
+      result.anchors.seriesLabelAnchors!,
       gutterExtras,
     );
     nodes.push(...gutter);
@@ -1945,10 +1971,17 @@ export function horizontalChrome(
      * names already fit their row and their gutter this is `fs` and nothing
      * moves.
      */
-    const slotH = centers.length > 1 ? Math.abs(centers[1] - centers[0]) : frame.h;
+    // Each row's own height, not the first gap's: the rows are unequal on a
+    // date-spaced line, and a first gap of one day or of one year was taken for
+    // all of them — see `categoryRooms`.
+    const rowFs = categoryRooms(centers, frame.h, frame.y, frame.y + frame.h).map((h) => bandFontSize(fs, h, 1.5));
     const gutter = Math.max(1, frame.x - 4);
     const catFs = (() => {
-      let f = bandFontSize(fs, slotH, 1.5);
+      // The largest size every row that can carry a name can carry. A row too
+      // tight for one at any size is dropped by itself below; it does not take
+      // the rest of the axis with it.
+      const carried = rowFs.filter((f) => f > 0);
+      let f = carried.length ? minOf(carried) : 0;
       while (f > MIN_LABEL_FS && cfg.data.categories.some((c) => textWidth(String(c ?? ""), f) > gutter)) f -= 0.5;
       return f;
     })();
@@ -1956,6 +1989,7 @@ export function horizontalChrome(
     // is dropped whole rather than drawn at a size OOXML will not accept.
     if (catFs > 0)
       cfg.data.categories.forEach((cat, i) => {
+        if (!(rowFs[i] > 0)) return;
         nodes.push({
           kind: "text",
           x: 0,
@@ -2179,6 +2213,48 @@ export function uprightNameY(pointY: number, fs: number, canvasH: number, titleI
   // than the old clamp: the clamp's destination on a frame this short is the
   // title, and a name that reads as part of the chart's title names nothing.
   return null;
+}
+
+/**
+ * Does a series that drew NO mark in the last column still get its name in the
+ * right-hand gutter? Yes when it carries data anywhere and is not a spacer.
+ *
+ * The gutter is where an upright chart names its series — there is no legend
+ * upright — and each name is anchored to the series' mark in the LAST category.
+ * A series whose last cell is blank (a product discontinued before the final
+ * period, a period not yet reported), or a measured 0 on a bar kind, has no mark
+ * there, so its anchor stayed null, `seriesLabelNodes` filtered it out, and a
+ * series that was drawn in every earlier column was named NOWHERE. Measured
+ * 2026-10-24 on `Legacy [30, 20, blank]` at 480x300 and 960x540: stacked,
+ * clustered, stacked100, line, mekko and the columns of a combo all drew its two
+ * marks and no name. `test/combo.test.ts` is plain that this is not cosmetic: "A
+ * series with no name anywhere on the chart is not a cosmetic problem".
+ *
+ * A series with no data at all stays unnamed, as it was — it draws nothing for
+ * the name to point at — and so does a transparent spacer, which is a gap in the
+ * stack and not a series anybody reads.
+ */
+export function namesWithoutMark(s: Series, fill: string): boolean {
+  return fill !== "transparent" && s.values.some((v) => v != null);
+}
+
+/**
+ * Where a stacked or clustered series with no mark in the last column is named:
+ * at the level it would have stood on there, which is the answer the area kind
+ * has always given for a blank last cell (`lastSegMid` from a zero-height band)
+ * and keeps the gutter in stack order. A stack's level is the running top of the
+ * stack below it; every clustered bar stands on the baseline.
+ */
+function unmarkedAnchor(
+  s: Series,
+  fill: string,
+  H: boolean,
+  frame: Frame,
+  qOf: (v: number) => number,
+  level: number,
+): number | null {
+  if (!namesWithoutMark(s, fill)) return null;
+  return H ? frame.x + qOf(level) : frame.y + frame.h - qOf(level);
 }
 
 /** One name in the right-hand gutter, before it is spread. */

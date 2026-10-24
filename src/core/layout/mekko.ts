@@ -16,7 +16,7 @@ import {
   horizontalLegendFits,
   titleHeight,
 } from "./frame";
-import { legendRow, seriesLabelNodes, type LayoutResult } from "./column";
+import { legendRow, namesWithoutMark, seriesLabelNodes, type LayoutResult } from "./column";
 import { columnPositiveTotal } from "./totals";
 
 /**
@@ -118,7 +118,12 @@ export function layoutMekko(cfg: ChartConfig, style: ChartStyle, decor: Decorati
     let acc = H ? frame.x : frame.y + frame.h;
     data.series.forEach((s, si) => {
       const v = Math.max(0, s.values[c] ?? 0);
-      if (v === 0 || totals[c] === 0) return;
+      if (v === 0 || totals[c] === 0) {
+        // No segment in the last column, and still a name — see `namesWithoutMark`.
+        // At the running level, which is where the stacked column puts it too.
+        if (c === n - 1 && namesWithoutMark(s, seriesColor(style, si, s.color))) lastSegMid[si] = acc;
+        return;
+      }
       const segLen = (v / totals[c]) * colLen;
       const r = H ? { x: acc, y: pos, w: segLen, h: ext } : { x: pos, y: acc - segLen, w: ext, h: segLen };
       acc = H ? acc + segLen : acc - segLen;

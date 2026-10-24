@@ -867,8 +867,15 @@ function buildMultiples(rawCfg: ChartConfig): Scene | null {
   };
 
   // Shared scale across panels; radar (no valueExtent) pins 0..global max.
+  //
+  // NOT FOR A TABLE OF SPARKLINES, where each row is one KPI and the rows are
+  // routinely unlike units — the shipped "KPI sparklines" slide sets signups in
+  // the tens beside churn in single digits, and on one scale the churn row is
+  // all but a flat line. A sparkline scales to its own values, as it always has,
+  // and only a scale the author pinned reaches it (`layoutSparkline` used to
+  // ignore even that). A pinned `scale` still puts every row on one.
   let scale = cfg.scale;
-  if (scale?.min == null || scale?.max == null) {
+  if (!cfg.decorations?.sparkline && (scale?.min == null || scale?.max == null)) {
     const exts = dataSeries.map((s, si) => panelExtent(s, si));
     const global = exts.every((e) => e != null)
       ? { min: Math.min(...exts.map((e) => e!.min)), max: Math.max(...exts.map((e) => e!.max)) }
