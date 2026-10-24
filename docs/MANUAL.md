@@ -977,6 +977,21 @@ Sideload `manifest-excel.xml` in Excel, select a range, and **Generate**
 turns it into SSF Charts JSON to paste into the pane's Automation box — the
 practical substitute for live data links.
 
+It reads the range the way pasting it into the datasheet would, not the raw
+numbers Excel stores:
+
+- **Labels** (the first row and first column) come through as Excel shows
+  them — `Jan-26`, `10%`, `2024`.
+- **Percent-formatted cells** arrive as percentage points: a cell showing
+  `3.5%` is `3.5`, not `0.035`, so a `%` number-format suffix labels it `3.5%`.
+- **Dates** in the data become calendar days, which is what a Gantt needs, and
+  follow the workbook's date system (1900 or 1904).
+- **Hidden and filtered-out rows and columns** are left out, as in Excel's own
+  charts, and the note under the JSON says how many. (Excel builds that predate
+  ExcelApi 1.2 cannot report them; the note says so and every row is kept.)
+- **Whole-column or whole-row selections** such as `A:D` chart the cells in them
+  that hold data, and blank rows and columns around a table are ignored.
+
 ## Troubleshooting
 
 - **Charts insert ungrouped** — host below PowerPointApi 1.8; everything

@@ -86,6 +86,54 @@ const AUDITED: Record<string, string | null> = {
    * member is 1.3). So it does NOT raise the companion's floor.
    */
   "Range.numberFormat": "1.1",
+  /**
+   * Added 2026-10-24 with the Excel bridge fixes (labels, unbounded ranges,
+   * hidden rows). All four are quoted from `@remarks [Api set: ...]`:
+   *
+   *   Range.text           1.1   what a cell SHOWS, as the clipboard carries it
+   *   Range.getUsedRange   1.1   the method; its `valuesOnly` ARGUMENT is 1.2,
+   *                              which is why the source passes it only behind
+   *                              the 1.2 check below
+   *   Range.getRow         1.1   the i-th row of the range, to ask if it is hidden
+   *   Range.getColumn      1.1   likewise for a column
+   *
+   * `Excel.RequestContext` is a TYPE (the parameter of `readSelection`) and is
+   * erased at build, so it is in no set.
+   */
+  "Range.text": "1.1",
+  "Range.getUsedRange": "1.1",
+  "Range.getRow": "1.1",
+  "Range.getColumn": "1.1",
+  "Excel.RequestContext": null,
+};
+
+/**
+ * MEMBERS THE COMPANION REACHES ONLY ON A HOST THAT SAYS IT HAS THEM, with the
+ * set that introduced each. They are swept like everything else — a member that
+ * is neither here nor in `AUDITED` fails the surface test — but they do NOT
+ * raise the floor, because the source asks `Office.context.requirements`
+ * before touching them and a 1.1 host never runs the code that names them.
+ *
+ * That is the whole reason the manifest still says 1.1 with these in the file.
+ * Raising it would shrink the hosts the pane runs on (and move what Partner
+ * Center certifies) for the sake of three conveniences, and
+ * `manifest-excel.xml` is explicit that the number has two ways to be wrong.
+ * What keeps this honest is the test below that reads the source for the check.
+ *
+ *   Range.rowHidden / columnHidden   1.2   true for all, false for none, null
+ *                                          for some — which is what lets a
+ *                                          selection with nothing hidden skip
+ *                                          the request per row
+ *   Workbook.functions               1.2   \
+ *   Functions.date                   1.2    } DATE(2000,1,1), the one value that
+ *   FunctionResult.value             1.2   /  differs between date systems
+ */
+const FEATURE_DETECTED: Record<string, string> = {
+  "Range.rowHidden": "1.2",
+  "Range.columnHidden": "1.2",
+  "Workbook.functions": "1.2",
+  "Functions.date": "1.2",
+  "FunctionResult.value": "1.2",
 };
 
 /**
@@ -105,13 +153,20 @@ function excelSurface(src: string): Set<string> {
     for (const m of src.matchAll(re)) found.add(`${owner}.${m[1]}`);
   };
   sweep(/\bExcel\.(\w+)\b/g, "Excel");
-  sweep(/\bcontext\.(\w+)\b/g, "RequestContext");
+  // `Office.context` is the Common API (`host`, `requirements`), not the
+  // `context` Excel.run hands the callback: the lookbehind keeps it out.
+  sweep(/(?<!Office\.)\bcontext\.(\w+)\b/g, "RequestContext");
   sweep(/\bcontext\.workbook\.(\w+)\b/g, "Workbook");
   sweep(/\brange\.(\w+)\b/g, "Range");
+  sweep(/\bcontext\.workbook\.functions\.(\w+)\b/g, "Functions");
   // `load("values,address")` names properties fetched from the host that the
   // code may never mention again — they are part of the surface either way.
-  for (const m of src.matchAll(/\.load\("([^"]*)"\)/g)) {
-    for (const prop of m[1].split(",")) found.add(`Range.${prop.trim()}`);
+  // The owner is the object `load` is called on: the DATE() probe is a
+  // `FunctionResult`, everything else loaded in this file is a `Range` (the
+  // selection, its used range, a row or a column of it).
+  for (const m of src.matchAll(/(\w+)\??\.load\("([^"]*)"\)/g)) {
+    const owner = m[1] === "jan2000" ? "FunctionResult" : "Range";
+    for (const prop of m[2].split(",")) found.add(`${owner}.${prop.trim()}`);
   }
   return found;
 }
@@ -121,8 +176,13 @@ describe("the Excel companion's ExcelApi floor", () => {
     // Guard the guard. If these names change, `excelSurface` goes blind and
     // every assertion below passes vacuously.
     expect(SRC, "`Excel.run` no longer takes a parameter named `context`").toContain("Excel.run(async (context)");
-    expect(SRC, "the selected range is no longer bound to a const named `range`").toMatch(
+    expect(SRC, "the selected range is no longer bound to a variable named `range`").toMatch(
       /\brange = context\.workbook\.getSelectedRange\(\)/,
+    );
+    // The DATE() probe is the one loaded object that is not a Range, and the
+    // sweep attributes its `load` by this name (see `excelSurface`).
+    expect(SRC, "the date-system probe is no longer a variable named `jan2000`").toMatch(
+      /\bjan2000 = [^;]*context\.workbook\.functions\.date\(/,
     );
   });
 
@@ -134,14 +194,46 @@ describe("the Excel companion's ExcelApi floor", () => {
       EXCEL_TS,
       "src/excel changed shape. The surface sweep covers every file here, so this is a prompt to look, " +
         "not a failure in itself — update the list once you have.",
-    ).toEqual(["excel.ts", "serial-dates.ts"]);
+    ).toEqual(["cell-text.ts", "excel.ts", "serial-dates.ts"]);
 
     expect(
       [...excelSurface(SRC)].sort(),
       "the Excel API surface changed. The manifest's floor is derived from exactly this list — add the new " +
         "member to AUDITED with the `[Api set: ...]` line from @types/office-js, and raise the manifest if it " +
-        "is higher than 1.1.",
-    ).toEqual(Object.keys(AUDITED).sort());
+        "is higher than 1.1. (Or to FEATURE_DETECTED, if the source only reaches it after asking the host.)",
+    ).toEqual([...Object.keys(AUDITED), ...Object.keys(FEATURE_DETECTED)].sort());
+  });
+
+  /** The sets the source asks the host about, via `Office.context.requirements`. */
+  const askedSets = (src: string): string[] => [
+    ...new Set([...src.matchAll(/isSetSupported\("ExcelApi", "([\d.]+)"\)/g)].map((m) => m[1])),
+  ];
+  /** Feature-detected sets the source uses but never asks about. */
+  const unaskedSets = (src: string): string[] => {
+    const asked = askedSets(src);
+    return [...new Set(Object.values(FEATURE_DETECTED))].filter((set) => !asked.includes(set));
+  };
+
+  it("reaches every feature-detected member only after asking the host for its set", () => {
+    // WHAT MAKES A MEMBER ABOVE THE FLOOR NOT RAISE IT. If the source named one
+    // without asking, a 1.1 host would hit a call that does not exist and the
+    // manifest would be understating what the code needs.
+    expect(
+      unaskedSets(SRC),
+      `FEATURE_DETECTED names an ExcelApi set the source never calls isSetSupported("ExcelApi", ...) for — ` +
+        `either gate the member or move it to AUDITED and raise the manifest.`,
+    ).toEqual([]);
+    // And the converse: a gate with nothing behind it is a stale comment.
+    expect(
+      askedSets(SRC).filter((set) => !Object.values(FEATURE_DETECTED).includes(set)),
+      "the source asks the host for an ExcelApi set that no FEATURE_DETECTED member needs",
+    ).toEqual([]);
+  });
+
+  it("would notice a 1.2 member that was not asked about", () => {
+    // The check above is only worth having if dropping the ask makes it fire.
+    const ungated = SRC.split('isSetSupported("ExcelApi", "1.2")').join('isSetSupported("ExcelApi", "1.1")');
+    expect(unaskedSets(ungated)).toEqual(["1.2"]);
   });
 
   it("pins the manifest floor to the highest set that surface needs", () => {
