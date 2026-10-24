@@ -3978,23 +3978,26 @@ export function outcomeReceipt({
   //
   // ONLY when nothing ran. A round that finished, crashed, or wedged has worked
   // the host and owns its place in the session.
-  // `not-ready` ALONE decides it. A readiness refusal never carries a round
-  // file, so pairing the two reads as caution and is in fact unkillable — no
-  // input can tell the two forms apart. `crashed` has no round file either and
-  // must NOT hold, which is why the reason is the condition and the file is not.
-  const ranNothing = reason === "not-ready";
-  if (ranNothing && prev) {
-    return {
-      ...outcomeReceipt({ reason, codes, roundFile, build, size, threw, at, sessionIndex, sessionStartedAt }),
-      at: prev.at ?? at ?? new Date().toISOString(),
-      sessionIndex: prev.sessionIndex ?? null,
-      sessionStartedAt: prev.sessionStartedAt ?? null,
-      // Said in the file, because a receipt whose timestamp is older than the
-      // process that wrote it is otherwise indistinguishable from a stale file.
-      heldSessionFrom: "the previous round — this attempt ran none",
-    };
-  }
-  return {
+  // `not-ready` ALONE decided it, and that was one name short. A readiness
+  // refusal never carries a round file, so pairing the two reads as caution and
+  // is in fact unkillable — no input can tell the two forms apart. `crashed` has
+  // no round file either and must NOT hold, which is why the reason is the
+  // condition and the file is not.
+  //
+  // `checked` AND `no-run-button` RAN NOTHING TOO, and were never asked. A
+  // `--check` that passes returns before any battery, so it is the same work as
+  // a refusal — readiness probes and a verdict — yet took a place like a round
+  // that finished. The documented loop is check, then round (ROUND-LOOP-BRIEF
+  // "Each cycle"), so every manual cycle spent two places: indices 1-4 over two
+  // rounds, the third `--check` refused as `deep-session` at index 5, and a
+  // loop meant to allow four rounds before the stop allowed two. The archive
+  // shows it: round 302 is `sessionIndex: 3` seventeen minutes after round 301
+  // at 1, with `sincePrevRoundMs: 4808` — something stamped the chain 4.8s
+  // before it began, and a held `not-ready` cannot, because it keeps the older
+  // timestamp. `no-run-button` stops after readiness and before the click, the
+  // same way.
+  const ranNothing = reason === "not-ready" || reason === "checked" || reason === "no-run-button";
+  const receipt = {
     reason: reason ?? null,
     // Always an array. A reader doing `codes.includes(...)` on a `finished`
     // round should get `false`, not a crash on undefined.
@@ -4031,6 +4034,30 @@ export function outcomeReceipt({
     // The SESSION start, chained so every later round can say how many minutes
     // into the session it ran — the variable the drift is indexed by.
     sessionStartedAt: sessionStartedAt ?? null,
+  };
+  if (!ranNothing) return receipt;
+  if (prev) {
+    return {
+      ...receipt,
+      at: prev.at ?? receipt.at,
+      sessionIndex: prev.sessionIndex ?? null,
+      sessionStartedAt: prev.sessionStartedAt ?? null,
+      // Said in the file, because a receipt whose timestamp is older than the
+      // process that wrote it is otherwise indistinguishable from a stale file.
+      heldSessionFrom: "the previous round — this attempt ran none",
+    };
+  }
+  // NO PREVIOUS ROUND TO HOLD, AND NONE TO FOUND EITHER. This used to stamp
+  // `sessionIndex: 1` here ("stamps normally"), which is the same fault from the
+  // other side: the first check on a machine with no chain file — every fresh
+  // clone, since `.round-session.json` is gitignored — founded a session, and
+  // the first real round was recorded as 2. Holding nothing is an absent place,
+  // not a place at 1; `main` leaves the chain alone for it.
+  return {
+    ...receipt,
+    sessionIndex: null,
+    sessionStartedAt: null,
+    heldSessionFrom: "nothing — this attempt ran no round and there was no session to hold",
   };
 }
 
@@ -4077,7 +4104,7 @@ export async function waitForDeploy(
   return false;
 }
 
-async function main(argv, deps = {}) {
+export async function main(argv, deps = {}) {
   const run = deps.run ?? spawnSync;
   const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   const dirArg = argv.indexOf("--dir");
@@ -4140,6 +4167,10 @@ async function main(argv, deps = {}) {
     // chance a crash dialog does.
     let outcome;
     try {
+      // `deps.attempt` is the seam for the part of `main` that follows an
+      // attempt — the receipt and the session chain — which nothing could reach
+      // without a browser. It is how the `--check` fault was reproduced at all.
+      //
       // WHAT THE DRIVER HAD TO DO TO GET A ROUND AT ALL. See `driverRun`.
       //
       // AND HOW THE ROUND WAS LAUNCHED, which the archive could not say. On
@@ -4158,7 +4189,7 @@ async function main(argv, deps = {}) {
       //
       // The house defect wearing its plainest costume: an experiment whose ARM
       // was not recorded. Everything else about those rounds was.
-      outcome = await attempt(
+      outcome = await (deps.attempt ?? attempt)(
         argv,
         {
           ...deps,
@@ -4244,17 +4275,25 @@ async function main(argv, deps = {}) {
       // second lifetime — which is the whole reason it exists apart from the
       // receipt. Written from the receipt so the "ran nothing holds its place"
       // rule has exactly one implementation.
-      try {
-        write(
-          SESSION_PATH,
-          JSON.stringify(
-            { at: receipt.at, sessionIndex: receipt.sessionIndex, sessionStartedAt: receipt.sessionStartedAt },
-            null,
-            2,
-          ),
-        );
-      } catch (err) {
-        console.error(`  (could not write ${SESSION_PATH}: ${err?.message ?? err})`);
+      //
+      // NOT AT ALL when the receipt holds no place. An attempt that ran nothing
+      // with no chain to hold has `sessionIndex: null`, and a chain file written
+      // from it would carry a fresh `at` and no index, which `sessionPosition`
+      // reads as round 1 and so counts the next round as 2. Leaving the chain
+      // alone is also exactly what holding it means when there is one.
+      if (receipt.sessionIndex !== null) {
+        try {
+          write(
+            SESSION_PATH,
+            JSON.stringify(
+              { at: receipt.at, sessionIndex: receipt.sessionIndex, sessionStartedAt: receipt.sessionStartedAt },
+              null,
+              2,
+            ),
+          );
+        } catch (err) {
+          console.error(`  (could not write ${SESSION_PATH}: ${err?.message ?? err})`);
+        }
       }
       return code;
     }
@@ -4318,6 +4357,37 @@ async function defaultFetchBuild() {
   } catch {
     return "";
   }
+}
+
+/**
+ * THE FIELDS `archive` PUTS ON A ROUND THAT THE PANE'S DOWNLOAD NEVER CARRIES.
+ *
+ * The driver's own readings, written after the twin check has looked: what it
+ * measured the slide size to be, which document was in front, and what it had
+ * to do to get the round at all. Each arrived in its own commit (d146feb,
+ * 51b5312, b5c534a) and every one was added BELOW the comparison, so the
+ * comparison went on testing a string that no file the driver writes can equal.
+ *
+ * The twin check was written first (2c5a81b), when `archive` wrote exactly the
+ * body it compared and the check worked. From the first stamp onward it could
+ * only match a file somebody had archived by hand with `--archive`: 378 of the
+ * 473 rounds on file carry the stamps, and none of them could be recognised as
+ * the twin of the log they were made from. So a stale log at the landing path —
+ * the 039/038 shape this check exists for — was filed as a new round whenever
+ * its predecessor had been filed by the driver, which is every cycle leg.
+ *
+ * Named once so the comparison and the writes cannot drift apart again: a
+ * fourth stamp added to `archive` and missed here is the same defect, and
+ * `fix-h1-driver-and-gate.test.ts` derives the list from what `archive` really
+ * writes rather than trusting this one.
+ */
+export const DRIVER_STAMPS = ["driverSlideSize", "driverDeck", "driverRun"];
+
+/** A round as `archive` would file it, less what the driver itself stamped on. */
+function bareBody(round) {
+  const bare = { ...round };
+  for (const key of DRIVER_STAMPS) delete bare[key];
+  return `${JSON.stringify(bare, null, 2)}\n`;
 }
 
 /** Archive a downloaded round under the next number. See `rounds/README.md`. */
@@ -4421,7 +4491,14 @@ export function archive(
   // downstream pools these files — verdict histories, the rasterise arms, the
   // scenario flip detector — so one duplicate quietly doubles the weight of
   // whatever the real round happened to say.
-  const body = `${JSON.stringify(round, null, 2)}\n`;
+  //
+  // BOTH SIDES WITHOUT THE DRIVER'S STAMPS — see `DRIVER_STAMPS`. This compared
+  // the raw download with files that `collectRound` had already stamped, so it
+  // matched only a round somebody filed by hand and was blind to every one the
+  // driver filed: the exact case it exists for. Measured on rounds/497, with
+  // its three stamps taken off, which is the bytes the download held: not
+  // refused, and the file it would have written was byte-identical to 497.
+  const body = bareBody(round);
   const twin = list(dir)
     .filter((f) => /^\d{3,}-.*\.json$/.test(f))
     .find((f) => {
@@ -4440,16 +4517,17 @@ export function archive(
       // reporting a finished round with nothing written to rounds/ and the next
       // leg's download then overwrote the evidence.
       //
-      // A file that cannot be opened is not a twin of anything.
+      // A file that cannot be opened is not a twin of anything — and neither is
+      // one that will not parse, now that it is read as a round and not a string.
       try {
-        return read(`${dir}/${f}`, "utf8") === body;
+        return bareBody(JSON.parse(read(`${dir}/${f}`, "utf8"))) === body;
       } catch {
         return false;
       }
     });
   if (twin)
     throw new Error(
-      `that log is byte-identical to ${twin} — the pane never wrote a new one, ` +
+      `that log is byte-identical to ${twin} (the driver's own stamps aside) — the pane never wrote a new one, ` +
         "which is what happens when the round did not finish. Nothing archived.",
     );
   // THE NUMBER COMES FROM WHAT `list` CAN SEE, and on 2026-08-16 that was not

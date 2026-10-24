@@ -52,16 +52,41 @@ export function checkManifest(xml, name, opts = {}) {
     return problems;
   }
 
-  const version = /<Version>([^<]+)<\/Version>/.exec(xml)?.[1];
+  // Trimmed, because the element's text is whatever sits between the tags and a
+  // hand-edited manifest can carry a stray newline or space there; Office reads
+  // the number, not the padding, so padding alone is not a finding.
+  const version = /<Version>([^<]+)<\/Version>/.exec(xml)?.[1]?.trim();
   if (!version) {
     problems.push(`${name}: has no <Version>`);
   } else {
-    const parts = version.split(".").map((p) => Number(p));
-    if (!parts.every((p) => Number.isInteger(p) && p >= 0)) {
+    // MICROSOFT'S FORMAT, NOT JAVASCRIPT'S NUMBER PARSER: "1, 2, 3, or 4 parts
+    // (i.e., n, n.n, n.n.n, or n.n.n.n)" and "each part of the version number can
+    // be a maximum of 5 digits" (learn.microsoft.com/javascript/api/manifest/
+    // version). This mapped every part through `Number()` and asked only for a
+    // non-negative integer, and `Number("")` is 0, `Number("1e3")` is 1000 and
+    // `Number("0x1")` is 1 — so "1..0", "1.0.", "1e3.0" and "0x1.0" were
+    // accepted as dotted numbers, and nothing at all limited the part count or
+    // the width: "1.0.0.0.0" and "1.0.123456.0" passed both the committed-manifest
+    // test and the published-install sweep.
+    //
+    // That is the gap these rules exist to fill. The authority is Microsoft's own
+    // validator in CI, which is not a required check and cannot run when its
+    // service is unreachable; this is the subset that must hold without it. The
+    // version is bumped by hand, and `test/manifest.test.ts` records two slips
+    // already (a 1.0.0.0 left unbumped across three releases, a bump that landed
+    // on half the files) — a stray dot in the next one is the same kind of typo.
+    const parts = version.split(".");
+    if (!parts.every((p) => /^\d+$/.test(p))) {
       problems.push(`${name}: version "${version}" is not a dotted number`);
+    } else if (parts.length > 4) {
+      problems.push(
+        `${name}: version "${version}" has ${parts.length} parts, and Office allows at most four (n.n.n.n)`,
+      );
+    } else if (parts.some((p) => p.length > 5)) {
+      problems.push(`${name}: version "${version}" has a part of more than five digits, which Office rejects`);
     } else if (parts.length < 2) {
       problems.push(`${name}: version "${version}" needs at least major.minor`);
-    } else if (parts[0] < 1) {
+    } else if (Number(parts[0]) < 1) {
       // The rule verbatim, and the one this repo has actually shipped wrong:
       // "unsupported version number less than 1.0".
       problems.push(`${name}: version "${version}" is below 1.0, which Office rejects outright`);

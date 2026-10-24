@@ -3452,9 +3452,16 @@ describe("an attempt that ran no round keeps out of the session", () => {
     expect(r.sessionIndex).toBe(5);
   });
 
-  it("stamps normally when there is no previous receipt to hold", () => {
-    // First round on a fresh machine. Holding nothing would write nulls and
-    // make the next round think the session had never started.
+  it("founds no session when there is no previous receipt to hold", () => {
+    // First attempt on a fresh machine. This used to stamp `sessionIndex: 1`
+    // ("stamps normally"), on the worry that holding nothing would make the next
+    // round think the session had never started. That is TRUE of a refusal: it
+    // ran no battery, so no session has started — and stamping one made the
+    // first real round after it round 2. The same went for a `--check`, which
+    // is the case `fix-h1-driver-and-gate.test.ts` drives through `main`.
+    //
+    // The receipt keeps its own timestamp; what it declines to do is hand the
+    // CHAIN a place, and `main` writes nothing to the chain for a null index.
     const r = outcomeReceipt({
       reason: "not-ready",
       codes: [],
@@ -3464,7 +3471,8 @@ describe("an attempt that ran no round keeps out of the session", () => {
       sessionStartedAt: "2026-08-25T18:24:00.000Z",
     });
     expect(r.at).toBe("2026-08-25T18:24:00.000Z");
-    expect(r.sessionIndex).toBe(1);
+    expect(r.sessionIndex).toBeNull();
+    expect(r.sessionStartedAt).toBeNull();
   });
 
   it("does not let a held receipt look like a session that never ends", () => {

@@ -26,7 +26,9 @@
  *
  * Exit 0 when the published install path is sound, 3 when it is not (the same
  * "there is something to report" code the other sweeps use), 2 when the check
- * itself could not run — a network failure must never read as a clean bill.
+ * itself could not run — a network failure must never read as a clean bill, and
+ * must never read as a finding either: that goes for the URL sweep at the end as
+ * much as for the release fetch at the start.
  */
 import { readFileSync } from "node:fs";
 import { checkManifest, urlsIn } from "./manifest-rules.mjs";
@@ -81,13 +83,62 @@ export function reportBody(problems, tag) {
   );
 }
 
-async function main() {
-  const argRepo = process.argv.indexOf("--repo");
-  const repo = argRepo > -1 ? process.argv[argRepo + 1] : REPO;
+/**
+ * HEAD every URL the published manifests ask a host to fetch.
+ *
+ * TWO KINDS OF NOT-OK, AND ONLY ONE IS A FINDING. A URL that ANSWERS 404 is a
+ * reading about the manifest: it goes in `problems`. A fetch that REJECTS — a
+ * DNS blip, a reset, a timeout — is not an answer about the URL at all; it is
+ * this run failing to look, so it goes in `unreachable` and never in `problems`.
+ *
+ * It used to be one list. The rejection was caught and turned into
+ * `{ ok: false, status: e.message }`, so a single dropped connection among the
+ * ~23 requests of a weekly run read as "<url> answers fetch failed", exited 3,
+ * and `quality-sweep.yml` filed or reopened the "install watch" issue — whose
+ * body ends "Cut a release", which cannot fix a network failure. The same
+ * failure on the release fetch above already exited 2, as the header promises.
+ *
+ * @param {{name: string, published: string}[]} pairs  manifests that are present — a missing one is `judgePublished`'s finding
+ * @param {(url: string) => Promise<{ok: boolean, status: number}>} head  injectable so a test can fail it
+ * @returns {Promise<{problems: string[], unreachable: string[]}>}
+ */
+export async function sweepUrls(pairs, head = (url) => fetch(url, { method: "HEAD", redirect: "follow" })) {
+  const problems = [];
+  const unreachable = [];
+  for (const { name, published } of pairs) {
+    for (const url of urlsIn(published)) {
+      let res;
+      try {
+        res = await head(url);
+      } catch (err) {
+        unreachable.push(`${name} → ${url}: ${err?.message ?? err}`);
+        continue;
+      }
+      if (!res.ok) problems.push(`${name} points at ${url}, which answers ${res.status}`);
+    }
+  }
+  return { problems, unreachable };
+}
+
+/**
+ * The whole check, returning the exit code instead of setting it — so a test can
+ * hand it a `fetch` that fails and read what the workflow would have seen.
+ *
+ * @param {{ repo?: string, get?: typeof fetch, read?: (p: string, enc: string) => string,
+ *           out?: (s: string) => void, warn?: (s: string) => void }} [deps]
+ * @returns {Promise<0 | 2 | 3>}
+ */
+export async function main({
+  repo = REPO,
+  get = fetch,
+  read = readFileSync,
+  out = (s) => process.stdout.write(s),
+  warn = (s) => console.error(s),
+} = {}) {
   let tag;
   const pairs = [];
   try {
-    const rel = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+    const rel = await get(`https://api.github.com/repos/${repo}/releases/latest`, {
       headers: { accept: "application/vnd.github+json" },
     });
     if (!rel.ok) throw new Error(`the releases API answered ${rel.status}`);
@@ -97,36 +148,48 @@ async function main() {
       const asset = (latest.assets ?? []).find((a) => a.name === name);
       let published = null;
       if (asset) {
-        const got = await fetch(asset.browser_download_url, { redirect: "follow" });
+        const got = await get(asset.browser_download_url, { redirect: "follow" });
         if (!got.ok) throw new Error(`${name} answered ${got.status}`);
         published = await got.text();
       }
-      pairs.push({ name, published, committed: readFileSync(name, "utf8") });
+      pairs.push({ name, published, committed: read(name, "utf8") });
     }
   } catch (err) {
     // Exit 2, never 0. A check that cannot reach the network and says nothing is
     // indistinguishable from a check that looked and found nothing wrong.
-    console.error(`could not read the published install path: ${err.message}`);
-    process.exit(2);
+    warn(`could not read the published install path: ${err.message}`);
+    return 2;
   }
 
   const problems = judgePublished(pairs);
+  let unreachable = [];
   // Only worth reporting when the manifests themselves are sound — a URL sweep
   // on a manifest nobody can install is noise on top of the real finding.
   if (!problems.length) {
-    for (const { name, published } of pairs) {
-      for (const url of urlsIn(published)) {
-        const res = await fetch(url, { method: "HEAD", redirect: "follow" }).catch((e) => ({
-          ok: false,
-          status: e.message,
-        }));
-        if (!res.ok) problems.push(`${name} points at ${url}, which answers ${res.status}`);
-      }
-    }
+    const swept = await sweepUrls(pairs, (url) => get(url, { method: "HEAD", redirect: "follow" }));
+    problems.push(...swept.problems);
+    unreachable = swept.unreachable;
   }
 
-  process.stdout.write(reportBody(problems, tag));
-  if (problems.length) process.exitCode = 3;
+  // A SWEEP THAT COULD NOT FINISH IS NOT A CLEAN ONE, AND NOT A FINDING EITHER.
+  // With nothing else wrong it is exit 2, the same "the check itself could not
+  // run" the release fetch gives: the job fails visibly and files nothing.
+  // With a real finding already in hand the finding still stands — a URL that
+  // answered 404 is broken whatever the others did — and the ones that could not
+  // be checked are said on stderr, which the issue body (stdout) does not carry.
+  if (unreachable.length) {
+    warn(
+      `could not check ${unreachable.length} URL(s) — the request failed rather than being answered:\n` +
+        unreachable.map((u) => `  ${u}`).join("\n"),
+    );
+    if (!problems.length) return 2;
+  }
+
+  out(reportBody(problems, tag));
+  return problems.length ? 3 : 0;
 }
 
-if (isMain(import.meta.url, process.argv[1])) await main();
+if (isMain(import.meta.url, process.argv[1])) {
+  const argRepo = process.argv.indexOf("--repo");
+  process.exitCode = await main({ repo: argRepo > -1 ? process.argv[argRepo + 1] : REPO });
+}

@@ -33,7 +33,9 @@ chart is a group or a degraded picture, how many shapes are INSIDE that chart
 object (a 40-shape chart and a 1-shape degraded picture both have one shape at
 the slide's top level, so the inner count is usually the one wanted), whether
 it carries a `POWERCHART_CONFIG`, and whether it wears a `NOT COMPLETE` banner. Exit 0 when
-the file is structurally sound, 1 on a fault, 2 when it cannot be read.
+the file is structurally sound, 1 on a fault, 2 when it cannot be read. A slide holding
+several charts is audited chart by chart: every config tag is checked, and the `chart
+objects` total counts objects, not slides (the table's `2/3` is re-editable out of objects).
 
 **Run this before believing the run report.** Every hard diagnosis in this
 project was settled by the bytes rather than by the add-in's own summary —

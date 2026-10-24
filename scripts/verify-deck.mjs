@@ -105,10 +105,18 @@ export async function readDeckBytes(bytes) {
     }));
 
     let slot = null;
-    let config = null;
-    let configRaw = null;
-    let configRid = null;
-    let origin = false;
+    let slotMalformed = false;
+    // ONE ENTRY PER CONFIG TAG ON THE SLIDE, not one for the slide. This kept a
+    // single `config`, `configRaw` and `configRid` and overwrote them on every
+    // tag part the relationships listed, so the audit judged whichever config
+    // happened to be listed LAST and never looked at the others. A slide holds
+    // several charts as a matter of course — the self-test draws two onto one
+    // slide on purpose, and round 497's inventory has slides carrying 3, 2, 5
+    // and 8 objects named PowerChart — and on those a corrupt or unreachable
+    // config was cleared whenever a later chart's was healthy: "no structural
+    // faults", exit 0, on a deck with a dead chart in it.
+    const configs = [];
+    let originSeen = false;
     const missingParts = [];
     for (const { rid, part: t } of tagRefs) {
       const file = zip.file(`ppt/tags/${t}`);
@@ -125,18 +133,25 @@ export async function readDeckBytes(bytes) {
         } catch {
           slot = { malformed: s[1] };
         }
+        // Any one malformed slot, not whichever was read last: a healthy slot
+        // listed after a corrupt one must not clear it.
+        if (typeof slot?.malformed === "string") slotMalformed = true;
       }
       const c = new RegExp(`name="${CONFIG_TAG}" val="([^"]*)"`).exec(tx);
       if (c) {
-        configRid = rid;
-        configRaw = unescapeAttr(c[1]);
+        const raw = unescapeAttr(c[1]);
+        let parsed;
         try {
-          config = JSON.parse(configRaw);
+          parsed = JSON.parse(raw);
         } catch {
-          config = { malformed: true };
+          parsed = { malformed: true };
         }
+        // `origin` is whether THIS chart's own tag part names an origin: one
+        // shape references one tags part and the writer puts config and origin
+        // together in it, so another chart's origin says nothing about this one.
+        configs.push({ rid, raw, malformed: parsed?.malformed === true, origin: tx.includes(ORIGIN_TAG) });
       }
-      if (tx.includes(ORIGIN_TAG)) origin = true;
+      if (tx.includes(ORIGIN_TAG)) originSeen = true;
     }
 
     const shapes = topLevel(xml);
@@ -166,8 +181,18 @@ export async function readDeckBytes(bytes) {
     // inside that object, so "does this object's markup reference the rid" IS
     // the question. Relationship ids are unique within a slide part, so a match
     // cannot belong to anything else.
-    const configOnChart = !!configRid && named.some((e) => e.includes(`<p:tags r:id="${configRid}"/>`));
-    const configOnSlide = !!config && !configOnChart;
+    const anchoredOn = (e, rid) => e.includes(`<p:tags r:id="${rid}"/>`);
+    // EVERY config tag has to be anchored for the slide to count as re-editable,
+    // and ONE that is not makes it an orphan. Judging only the last tag listed
+    // is how a dead chart beside a healthy one read as sound.
+    const configOnChart = configs.length > 0 && configs.every((c) => named.some((e) => anchoredOn(e, c.rid)));
+    const configOnSlide = configs.length > 0 && !configOnChart;
+    // PER OBJECT, for the report's count. The rows are one per SLIDE and a slide
+    // can hold several objects named PowerChart, so counting rows undercounted
+    // them — and a chart that kept its group but lost its tag, the recurring
+    // "1 of 2 new charts are re-editable" round failure (BACKLOG; rounds 102,
+    // 467, 497), printed as "chart objects: 1 (1 re-editable, 0 NOT)".
+    const chartsReEditable = named.filter((e) => configs.some((c) => anchoredOn(e, c.rid))).length;
     // How many shapes are INSIDE the chart object. `shapes` above counts the
     // slide's top-level children, where a 40-shape chart and a 1-shape
     // degraded picture both read as 1 — which is the number a reader most
@@ -189,22 +214,30 @@ export async function readDeckBytes(bytes) {
       // slot tag was certified "no structural faults" and exited 0; triage then
       // counted the slide as carrying no slot tag and reported its item LOST,
       // blaming the host for dropping a slide sitting right there.
-      slotMalformed: typeof slot?.malformed === "string",
+      slotMalformed,
       title: slot?.title ?? null,
       run: slot?.run ?? null,
       shapes: shapes.length,
       chartShapes,
       groups: groups.length,
       chartObject: named.length > 0,
+      /**
+       * How many objects named PowerChart the slide holds, and how many of them
+       * a config tag is anchored on. The two booleans around them say whether
+       * the slide has ANY; these are what the report's totals are summed from.
+       */
+      chartObjects: named.length,
+      chartsReEditable,
       picture: named.length > 0 && groups.length === 0,
-      config: !!config,
+      config: configs.length > 0,
       /**
        * The config tag is anchored on the chart object, so the pane can find it.
        *
        * `config` above only says the tag part EXISTS and the slide's
        * relationship part mentions it — which is equally true of a tag nothing
        * in the shape tree points at. Every "re-editable" count this tool prints
-       * comes from here now.
+       * comes from here now. With several config tags on the slide it means ALL
+       * of them are anchored.
        */
       configOnChart,
       /** The tag exists and hangs off nothing the pane reads — a dead config. */
@@ -214,9 +247,13 @@ export async function readDeckBytes(bytes) {
       // slides from this, so it cannot decode a generated deck differently
       // from the tool that checks one. Stripped from `--json`, which is a
       // report and would otherwise carry a full ChartConfig per slide.
-      configJson: configRaw,
-      configMalformed: config?.malformed === true,
-      origin,
+      //
+      // The LAST config listed, as it always was: a reproduction needs one
+      // payload per slide and every consumer builds one chart per slide. The
+      // AUDIT fields around it cover all of them.
+      configJson: configs.at(-1)?.raw ?? null,
+      configMalformed: configs.some((c) => c.malformed),
+      origin: configs.length ? configs.every((c) => c.origin) : originSeen,
       stamped: xml.includes(NOT_COMPLETE),
       missingTagParts: missingParts,
       duplicateShapeIds: duplicateShapeIds(xml),
@@ -296,6 +333,20 @@ export function faultsIn({ rows, allTagParts, referencedTagParts, types }) {
   return faults;
 }
 
+/**
+ * The report's chart-object totals, summed over OBJECTS and not over slides.
+ *
+ * The rows are one per slide, and counting them reported "chart objects: 1" for
+ * a slide holding two. Exported because the totals are what a real-host deck is
+ * cleared on (`docs/REGRESSION.md` section 0), so they are worth testing without
+ * spawning the CLI.
+ */
+export function chartTotals(rows) {
+  const objects = rows.reduce((n, r) => n + r.chartObjects, 0);
+  const reEditable = rows.reduce((n, r) => n + r.chartsReEditable, 0);
+  return { objects, reEditable };
+}
+
 function report(deck, faults) {
   const { rows } = deck;
   const w = (s, n) =>
@@ -315,15 +366,16 @@ function report(deck, faults) {
     console.log(
       `  ${w(r.index + 1, 4)}${w(r.title, 26)}${w(r.slot, 6)}${w(r.shapes, 7)}` +
         `${w(r.picture ? "picture" : r.groups ? "group" : r.chartObject ? "shape" : "loose", 9)}` +
-        `${w(r.configOnChart ? "yes" : r.config ? "orphan" : "—", 7)}${flags}`,
+        // `2/3` on a slide holding three objects of which two are re-editable:
+        // a single yes/no cannot say which of several charts lost its tag.
+        `${w(r.chartObjects > 1 ? `${r.chartsReEditable}/${r.chartObjects}` : r.configOnChart ? "yes" : r.config ? "orphan" : "—", 7)}${flags}`,
     );
   }
   const runs = [...new Set(rows.map((r) => r.run).filter(Boolean))];
-  const charts = rows.filter((r) => r.chartObject);
+  const { objects, reEditable } = chartTotals(rows);
   console.log(
     `\n  runs in deck: ${runs.length ? runs.join(", ") : "none"}` +
-      `\n  chart objects: ${charts.length} (${charts.filter((r) => r.configOnChart).length} re-editable, ` +
-      `${charts.filter((r) => !r.configOnChart).length} NOT re-editable)` +
+      `\n  chart objects: ${objects} (${reEditable} re-editable, ${objects - reEditable} NOT re-editable)` +
       `\n  pictures: ${rows.filter((r) => r.picture).length}` +
       `\n  stamped NOT COMPLETE: ${rows.filter((r) => r.stamped).length}`,
   );
