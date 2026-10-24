@@ -140,6 +140,29 @@ function weekendNodes(
 }
 
 /**
+ * A "% Complete" row as the share of each bar it fills, 0..1, null where blank.
+ *
+ * THE UNIT IS DECIDED PER ROW, NOT PER CELL. The row may be written 0-100 or
+ * 0-1, and this used to ask each cell on its own (`v > 1 ? v / 100 : v`) — so in
+ * a row written in percent the one value that is not above 1 changed meaning.
+ * The datasheet strips a trailing "%" without dividing (`rawCellValue`), so a
+ * task typed as "1%" arrived as 1 and drew a FULL bar beside "100%" and "40%";
+ * "0.5%" drew half a bar; and "0%, 1%, 2%" drew nothing, everything and a sliver,
+ * so 1% looked finished while 2% looked barely started.
+ *
+ * A row is in percent when any of its values passes 1, and in fractions
+ * otherwise. The one thing that cannot be settled is a row whose values are ALL
+ * within 0..1 and were typed with a "%": the sign is gone before layout, so "1%"
+ * alone is indistinguishable from the fraction 1 and reads as complete. That is
+ * the documented reading (docs/MANUAL.md, Gantt); a row that needs it to mean
+ * 1% only has to hold one value above 1, which any real plan does.
+ */
+function progressShares(values: (number | null)[]): (number | null)[] {
+  const percent = values.some((v) => v != null && v > 1);
+  return values.map((v) => (v == null ? null : Math.max(0, Math.min(1, percent ? v / 100 : v))));
+}
+
+/**
  * Simplified Gantt / timeline: categories are activities; rows named
  * Start and End give each activity's span on a numeric timeline (week,
  * month index, year — any number). A row named Milestone adds a diamond
@@ -159,8 +182,8 @@ export function layoutGantt(cfg: ChartConfig, style: ChartStyle, decor: Decorati
   const today = (find(/^today$/i)?.values ?? []).find((v): v is number => v != null);
   /** "Holiday(s)" row: dates shaded like weekends. */
   const holidays = (find(/^holidays?$/i)?.values ?? []).filter((v): v is number => v != null);
-  // Progress (0-100 or 0-1) and plan-vs-actual baseline rows.
-  const completes = find(/^%?\s*complete$/i)?.values ?? [];
+  // Progress (0-100 or 0-1, one unit per row) and plan-vs-actual baseline rows.
+  const completes = progressShares(find(/^%?\s*complete$/i)?.values ?? []);
   const baseStarts = find(/^baseline\s*start$/i)?.values ?? [];
   const baseEnds = find(/^baseline\s*end$/i)?.values ?? [];
   /** "Bracket <label>" rows: first/last non-null values span an annotation. */
@@ -748,20 +771,17 @@ export function layoutGantt(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       // dark canvas it was BRIGHTER than the bar it sat in — the opposite of
       // what it promises. Blending toward the text ink darkens it on a light
       // canvas and brightens it on a dark one, always in the bar's own hue.
-      const rawPct = completes[c];
-      if (rawPct != null) {
-        const pct = Math.max(0, Math.min(1, rawPct > 1 ? rawPct / 100 : rawPct));
-        if (pct > 0) {
-          nodes.push({
-            kind: "rect",
-            x: bx,
-            y: cy - barH / 2,
-            w: bw * pct,
-            h: barH,
-            fill: lerpColor(barFill, style.text, 0.35),
-            name: `progress-${c}`,
-          });
-        }
+      const pct = completes[c];
+      if (pct != null && pct > 0) {
+        nodes.push({
+          kind: "rect",
+          x: bx,
+          y: cy - barH / 2,
+          w: bw * pct,
+          h: barH,
+          fill: lerpColor(barFill, style.text, 0.35),
+          name: `progress-${c}`,
+        });
       }
       if (decor.segmentLabels) {
         const label = spanLabel(s, e);

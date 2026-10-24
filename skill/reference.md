@@ -183,7 +183,7 @@ Everything the SSF Charts engine accepts. All lengths in points (1pt = 1/72").
 | `X line`, `Y line` | scatter partition lines at those values |
 | `Trend` | any value present → OLS trend line, labelled with its R² and p-value |
 | `Start`, `End`, `Milestone` | Gantt bars & milestone markers (numbers or day values) |
-| `% Complete` | Gantt: darker progress fill inside the bar (0-100 or 0-1) |
+| `% Complete` | Gantt: darker progress fill inside the bar (0-100, or 0-1 when no value in the row exceeds 1 — one unit per row) |
 | `Baseline start`, `Baseline end` | Gantt: thin ghost bars showing the original plan vs actual |
 | `After` | Gantt dependency: 1-based predecessor index → elbow arrow |
 | `Today` | Gantt today line at the (single) value |

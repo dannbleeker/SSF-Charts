@@ -68,19 +68,36 @@ describe("gantt progress and baselines", () => {
     expect(s.nodes.some((n) => n.name === "progress-2")).toBe(false);
   });
 
-  it("accepts 0–1 fractions too, clamped", () => {
+  it("accepts 0–1 fractions too, when the whole row is within 0–1", () => {
     const frac = buildChart({
+      ...cfg,
+      data: {
+        ...cfg.data,
+        series: [cfg.data.series[0], cfg.data.series[1], { name: "% Complete", values: [0.5, 0.25, null] }],
+      },
+    });
+    const bar0 = frac.nodes.find((n) => n.name === "bar-0") as RectNode;
+    expect((frac.nodes.find((n) => n.name === "progress-0") as RectNode).w / bar0.w).toBeCloseTo(0.5, 5);
+    const bar1 = frac.nodes.find((n) => n.name === "bar-1") as RectNode;
+    expect((frac.nodes.find((n) => n.name === "progress-1") as RectNode).w / bar1.w).toBeCloseTo(0.25, 5);
+  });
+
+  it("reads the whole row as percent once any value passes 1, clamped", () => {
+    // The unit is the ROW's. [0.5, 150] used to draw 50% and then a clamped
+    // full bar -- each cell choosing its own unit, so a typed 1% (or 0.5%) in a
+    // row written in percent drew as complete (or half done).
+    const pct = buildChart({
       ...cfg,
       data: {
         ...cfg.data,
         series: [cfg.data.series[0], cfg.data.series[1], { name: "% Complete", values: [0.5, 150, null] }],
       },
     });
-    const bar0 = frac.nodes.find((n) => n.name === "bar-0") as RectNode;
-    expect((frac.nodes.find((n) => n.name === "progress-0") as RectNode).w / bar0.w).toBeCloseTo(0.5, 5);
+    const bar0 = pct.nodes.find((n) => n.name === "bar-0") as RectNode;
+    expect((pct.nodes.find((n) => n.name === "progress-0") as RectNode).w / bar0.w).toBeCloseTo(0.005, 5);
     // 150% clamps to full.
-    const bar1 = frac.nodes.find((n) => n.name === "bar-1") as RectNode;
-    expect((frac.nodes.find((n) => n.name === "progress-1") as RectNode).w / bar1.w).toBeCloseTo(1, 2);
+    const bar1 = pct.nodes.find((n) => n.name === "bar-1") as RectNode;
+    expect((pct.nodes.find((n) => n.name === "progress-1") as RectNode).w / bar1.w).toBeCloseTo(1, 2);
   });
 
   it("draws thin baseline ghost bars beneath the actual bars", () => {

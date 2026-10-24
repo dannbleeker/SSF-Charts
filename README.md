@@ -334,7 +334,9 @@ lower floor _enlarges_ rather than narrows what Microsoft certifies, is in
 
 - Row 1 = category names, column A = series names — the same mental model as
   think-cell's internal datasheet. **⇄ Transpose** swaps the two.
-- Paste a range straight from Excel (TSV) into any cell.
+- Paste a range straight from Excel (TSV) into any cell. Numbers read the way
+  Excel shows them: `(1,234)` is negative, a currency sign or a space-grouped
+  thousand (`1 234`) is fine, and a European block (`1.234,50`) is converted.
 - **Waterfall**: one series of deltas; type `e` (or `=`) in a cell to draw a
   computed running total at that category, exactly like think-cell's `e` cells.
 - **`100%=` row**: name a row `100%=` to set per-category denominators for

@@ -44,6 +44,15 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
    previews.
 2. **Type or paste your data** into the datasheet — row 1 is categories,
    column A is series names. Pasting a range from Excel (Ctrl+V) works.
+
+   Numbers are read the way Excel shows them: `(1,234)` is minus 1,234, a
+   currency sign (`$`, `€`, `£`, `kr.`) on either side of the number is
+   ignored, `−20` with a true minus sign is minus 20, and a space or no-break
+   space can group thousands (`1 234`). A paste written the European way
+   (`1.234,50`, `987,5`) is converted when the whole block says so, and the pane
+   tells you how many cells it rewrote. A cell that is not a number stays a
+   gap. A line break inside a pasted cell (Alt+Enter in Excel) shows as `↵` in
+   the grid and stays a line break in the label; delete the `↵` to remove it.
 3. Adjust options; the preview updates live.
 4. **Insert into slide.** If a placeholder or shape is selected, the chart
    fills its bounds. Otherwise it is placed clear of whatever is already on the
@@ -112,7 +121,10 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
    scale** and **Explode** never run on the same chart at once — the later one
    waits for the earlier to finish. A write always goes to the chart it started
    from, even if you open another chart in the pane while it runs.
-7. Ctrl+Z / Ctrl+Y undo and redo pane edits.
+7. Ctrl+Z / Ctrl+Y undo and redo datasheet edits, including the rows, columns
+   and series colours that go with them. Inside any other text box — the chart
+   title, the Agenda box, the Automation JSON box — they undo that box's own
+   typing and leave the datasheet alone.
 
 ## Chart types
 
@@ -203,6 +215,13 @@ line; `Holiday` shades dates; `Bracket <label>` spans an annotation.
 Category cells support `Activity | Owner | Remark` columns, a leading `>`
 for indenting, and section-header rows (no Start/End). Calendar timelines
 pick weeks (with weekend shading), months, or quarters automatically.
+
+`% Complete` is read in one unit per row. If any value in the row is above 1
+the whole row is percent, so a typed `1%` fills 1% of its bar. If every value
+is between 0 and 1 the row is fractions (0.4 is 40%). The `%` sign is dropped
+when the cell is read, so a row that holds only `1%` — or only values at or
+below 1 — cannot be told from fractions and reads 1 as complete; put one value
+above 1 in the row, or write it as fractions, if that is not what you mean.
 
 **Waterfall "of which" columns** (`waterfall.detailGroups: [{ of, indices }]`):
 break one step of a bridge into its parts, in line with the rest. The detail

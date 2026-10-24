@@ -78,6 +78,14 @@ interface AppState {
   kind: ChartKind;
   sheet: SheetModel;
   decorations: Partial<Decorations>;
+  /**
+   * Whether `decorations.valueAxis` was a plain `true` before "Datamark axis"
+   * replaced it. Two boxes write one three-valued field (false, true, "datamarks"),
+   * and unticking the datamark box wrote `false` whatever it had been, so the
+   * built-in Line and Area samples lost their axis to a tick and an untick. Not
+   * part of a chart: it is per loaded chart and starts false with each one.
+   */
+  axisUnderDatamarks: boolean;
   horizontal: boolean;
   title: string;
   /**
@@ -252,6 +260,7 @@ function stateFromConfig(cfg: ChartConfig): Omit<AppState, "editTarget"> {
     kind: cfg.kind,
     sheet,
     decorations: { ...cfg.decorations },
+    axisUnderDatamarks: false,
     horizontal: !!cfg.horizontal,
     title: cfg.title ?? "",
     // Same clamp as the engine — the state these fields hold is written back
@@ -1256,6 +1265,22 @@ export function layOutValueLines(
   return { lines, anchor: landed >= 0 ? landed : undefined };
 }
 
+/**
+ * Tick or untick "Datamark axis (ticks only)", which shares `valueAxis` with the
+ * "Value axis" box: the field is false, true or "datamarks", and the datamark
+ * style REPLACES a plain axis rather than adding to it.
+ *
+ * Unticking wrote `false` whatever the field had been, so a chart that arrived
+ * with a value axis (the built-in Line and Area samples both do) lost it to a
+ * tick and an untick, and the "Value axis" box read unticked afterwards. The axis
+ * the chart had is remembered when the datamark style takes it and given back
+ * when the style is dropped.
+ */
+function setDatamarkAxis(d: Partial<Decorations>, on: boolean): void {
+  if (on) state.axisUnderDatamarks = d.valueAxis === true;
+  d.valueAxis = on ? "datamarks" : state.axisUnderDatamarks;
+}
+
 function renderOptions() {
   optionsHost.innerHTML = "";
   const d = state.decorations;
@@ -1282,6 +1307,10 @@ function renderOptions() {
     { key: "connectors", label: "Connector lines", group: G.layout },
     { key: "hundredPercentNote", label: "100% = note", group: G.labels },
   ];
+  // Made ahead of the toggles, appended after them: "Value axis" and "Datamark
+  // axis" are two boxes over ONE field, so the first has to be able to keep the
+  // second honest (see `setDatamarkAxis`).
+  const dmCb = document.createElement("input");
   for (const t of toggles) {
     const label = document.createElement("label");
     const cb = document.createElement("input");
@@ -1303,6 +1332,9 @@ function renderOptions() {
     cb.checked = !!(d[t.key] ?? DEFAULT_DECOR[t.key]);
     cb.addEventListener("change", () => {
       (d as Record<string, unknown>)[t.key] = cb.checked;
+      // Unticking "Value axis" over a datamark axis writes `false`, and the
+      // datamark box next to it used to stay ticked over a chart with no axis.
+      dmCb.checked = d.valueAxis === "datamarks";
       renderPreview();
     });
     label.append(cb, t.label);
@@ -1311,11 +1343,10 @@ function renderOptions() {
 
   // Tufte-style datamark axis: tick dashes + labels, no axis line.
   const dm = document.createElement("label");
-  const dmCb = document.createElement("input");
   dmCb.type = "checkbox";
   dmCb.checked = d.valueAxis === "datamarks";
   dmCb.addEventListener("change", () => {
-    d.valueAxis = dmCb.checked ? "datamarks" : false;
+    setDatamarkAxis(d, dmCb.checked);
     renderOptions();
     renderPreview();
   });
@@ -1782,7 +1813,8 @@ function renderActionState() {
 
 // --- boot ------------------------------------------------------------------
 
-// Datasheet undo/redo (Ctrl+Z / Ctrl+Y while the pane has focus).
+// Datasheet undo/redo (Ctrl+Z / Ctrl+Y while the pane has focus — except inside
+// a text box other than the grid, which keeps its own; see `ownsTextUndo`).
 const history: string[] = [];
 const redoStack: string[] = [];
 /**
@@ -1840,8 +1872,35 @@ function restore(snap: string) {
   sheetApi.setSheet(state.sheet);
   renderPreview();
 }
+/** Input types with no text of their own to undo — Ctrl+Z over them means the pane's undo. */
+const NON_TEXT_INPUTS = new Set([
+  ...["checkbox", "radio", "range", "button", "submit", "reset", "color", "file", "image", "hidden"],
+  ...["date", "datetime-local", "month", "time", "week"],
+]);
+
+/**
+ * Whether Ctrl+Z / Ctrl+Y landed in a text box that has an undo of its own.
+ *
+ * The listener below sits on `document` and answered every Ctrl+Z in the pane: in
+ * the Agenda box, the JSON box, the chart title, the template name, a KPI or flow
+ * field it reverted the DATASHEET by a step and cancelled the keystroke, so the
+ * text the user was typing was not undone and their data changed on a tab they
+ * were not looking at. With "Auto-update chart" on, `restore` ends in
+ * `renderPreview` and the reverted data reached the slide too. Redo did the same.
+ *
+ * Only a text box is exempt. The grid's own cells are not: their edits ARE the
+ * pane's history (`snapshot` runs on every `input`), so the grid keeps the pane's
+ * undo and a native one there would fight it. And everywhere the page has no text
+ * to undo — a checkbox, a select, a button, the page itself — the shortcut still
+ * means "undo the last datasheet edit", which is what the README promises.
+ */
+function ownsTextUndo(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement) || target.closest("#datasheet")) return false;
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement) return true;
+  return target instanceof HTMLInputElement && !NON_TEXT_INPUTS.has(target.type);
+}
 document.addEventListener("keydown", (e) => {
-  if (!(e.ctrlKey || e.metaKey)) return;
+  if (!(e.ctrlKey || e.metaKey) || ownsTextUndo(e.target)) return;
   if (e.key === "z" && history.length > 1) {
     e.preventDefault();
     redoStack.push(history.pop()!);

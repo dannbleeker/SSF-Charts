@@ -1,4 +1,5 @@
 import type { ChartData } from "../core/types";
+import { maxOf, minOf } from "../core/agg";
 import { isTotalToken } from "../core/layout/waterfall";
 import { GANTT_DATE_ROW, parseDateToken } from "../core/format";
 
@@ -64,12 +65,23 @@ function refCell(letters: string, digits: string): { row: number; col: number } 
 }
 
 /**
- * A cell's number, accepting the US thousands grouping Excel copies ("1,234").
+ * A cell's number, accepting the US thousands grouping Excel copies ("1,234")
+ * and the dressing Excel puts around a number it DISPLAYS — see `readNumberText`.
  * A comma ANYWHERE ELSE is not a separator we can read: stripping every comma
  * turned a European "1.234,5" into 1.2345 (a silent 1000× error) and "1,5" into
  * 15. Refuse those instead — a visible gap beats a wrong number.
  */
 function numericValue(text: string): number {
+  const d = readNumberText(text);
+  // The trailing "%" is taken off HERE and not by the caller, so that a percent
+  // sign inside accounting parentheses ("(20%)") and one beside a currency sign
+  // ("$5%", which is no number) are judged by the same reader that judges the
+  // rest of the dressing.
+  return d ? d.sign * plainNumber(d.core) : plainNumber(text.replace(/\s*%$/, ""));
+}
+
+/** The number in text that carries nothing but digits and separators. */
+function plainNumber(text: string): number {
   if (US_GROUPED.test(text)) return Number(text.replace(/,/g, ""));
   return text.includes(",") ? NaN : Number(text);
 }
@@ -84,26 +96,85 @@ const EU_GROUPED = /^[+-]?\d{1,3}(\.\d{3})+(,\d+)?$/;
 const EU_DECIMAL = /^[+-]?\d+,\d+$/;
 
 /**
- * A TRAILING PERCENT SIGN, SPLIT OFF SO THE NUMBER UNDERNEATH CAN BE READ.
- *
- * All three patterns above are anchored, so `"12,5%"` matches none of them —
- * and a share table is the single most likely thing to be pasted in here. The
- * consequence, measured 2026-09-28 on a sheet whose every number carried a
- * percent sign: `looksEuropean` returned FALSE where the identical sheet
- * without the signs returned true, and `fromEuropeanNumber("12,5%")` handed
- * back `"12,5%"` untouched. The block was then read as American, so the decimal
- * comma was never converted.
- *
- * `rawCellValue` already strips a trailing "%" before parsing — the two places
- * that care about percent cells disagreed about whether they exist. This is the
- * same shape as the CHAR(11)/CHAR(10) lesson: a rule written for one spelling
- * of a cell silently skips the others.
- *
- * Applied to BOTH sides of the evidence, not just the European one. Counting
- * "12,5%" as European while ignoring "1,234%" as American would bias the vote
- * rather than fix it.
+ * ONE CURRENCY SIGN, as Excel prints it: any Unicode currency symbol, or the
+ * Nordic "kr" / "kr." that Danish, Swedish and Norwegian Excel put on a currency
+ * format. A three-letter ISO code ("USD 1,234") is deliberately not here — it
+ * is a word, and a rule that reads "ABC 5" as 5 reads text as data.
  */
-const percentBody = (t: string): string => t.replace(/\s*%$/, "");
+const CURRENCY = String.raw`(?:\p{Sc}|kr\.?)`;
+const CURRENCY_ALL = new RegExp(CURRENCY, "giu");
+/** The space a thousands group may be separated by: plain, no-break, narrow no-break (fr-FR), thin. */
+const GROUP_GAP = String.raw`[ \u{a0}\u{202f}\u{2009}]`;
+const GROUP_GAP_ALL = new RegExp(GROUP_GAP, "gu");
+
+/**
+ * A NUMBER AS EXCEL DISPLAYS IT: the digits, and the dressing round them.
+ *
+ *     [ sign | ( ] [ currency ]  digits-and-separators  [ currency | % | ) ]
+ *
+ * Excel's text/plain clipboard carries the DISPLAYED text, and this file already
+ * leaned on that for "35%" and "1,234" — then stopped. The standard finance
+ * displays all came through as gaps, with nothing said: the accounting negative
+ * `(20)`, a currency sign `$1,234` / `1.234,50 €` / `kr. 1.234`, the true minus
+ * sign (U+2212) some locales print, and a space or no-break space as the
+ * thousands group `1 234`. On a waterfall whose last column is an `e` total the missing
+ * step simply left the running sum, so the total PRINTED WRONG (100 for 100 and
+ * (20)), and a stacked chart's column total with it. None of these is ambiguous
+ * the way a comma is — nobody writes `(20)` for anything but minus twenty.
+ *
+ * What it will NOT do is guess. A comma that is not a US group still reads as a
+ * gap here (`plainNumber`), and the dressing must be coherent or the cell is not
+ * a number: one sign, one currency, balanced parentheses, and never a parenthesis
+ * AND a minus ("(-5)"), a percent AND a currency ("$5%"), or two currencies.
+ * "Genuinely not a number" stays a gap, as before.
+ *
+ * `pre` and `post` are handed back VERBATIM so `fromEuropeanNumber` can rewrite
+ * the digits inside them and put the cell's own dressing back — a share table
+ * must still read as a share in the grid, and `(1.234,50)` must still be a
+ * negative after it has become `(1234.50)`. That is also how the European vote
+ * learned to see through percent signs (found 2026-09-28: every pattern is
+ * anchored, so "12,5%" matched none of them and a share table's decimal comma was
+ * never converted). The same shape as the CHAR(11)/CHAR(10) lesson: a rule
+ * written for one spelling of a cell silently skips the others — and so this is
+ * the one place a cell's dressing is understood, for the reader AND the vote.
+ */
+const DRESSED_NUMBER = new RegExp(
+  String.raw`^([\s(+\u{2212}-]*(?:${CURRENCY}[\s(+\u{2212}-]*)?)` +
+    String.raw`(\d{1,3}(?:${GROUP_GAP}\d{3})+(?:[.,]\d+)?|\d[\d.,]*|\.\d+)` +
+    String.raw`([\s)%]*(?:${CURRENCY}[\s)%]*)?)$`,
+  "iu",
+);
+
+interface ReadNumber {
+  /** -1 for a minus sign or an accounting parenthesis, else 1. */
+  sign: 1 | -1;
+  /** The digits and separators alone: unsigned, and with a space grouping closed up. */
+  core: string;
+  /** Whatever stood before and after the digits, as it was written. */
+  pre: string;
+  post: string;
+}
+
+function readNumberText(text: string): ReadNumber | null {
+  const m = DRESSED_NUMBER.exec(String(text ?? "").trim());
+  if (!m) return null;
+  const [, pre, spaced, post] = m;
+  const count = (s: string, re: RegExp) => (s.match(re) ?? []).length;
+  const signs = count(pre, /[-+\u{2212}]/gu);
+  const open = count(pre, /\(/g);
+  const percents = count(post, /%/g);
+  const currencies = count(pre + post, CURRENCY_ALL);
+  if (signs > 1 || open > 1 || open !== count(post, /\)/g) || (open && signs)) return null;
+  if (currencies > 1 || percents > 1 || (percents && currencies)) return null;
+  const negative = open > 0 || count(pre, /[-\u{2212}]/gu) > 0;
+  return { sign: negative ? -1 : 1, core: spaced.replace(GROUP_GAP_ALL, ""), pre, post };
+}
+
+/** The digits-and-separators of a cell for the European vote, or the cell itself when it is no number. */
+const bareNumber = (cell: unknown): string => {
+  const t = String(cell ?? "").trim();
+  return readNumberText(t)?.core ?? t;
+};
 
 /**
  * A CLIPBOARD BLOCK READ AS QUOTED TSV, which is what Excel actually writes.
@@ -169,6 +240,32 @@ export function parseClipboardGrid(text: string): string[][] {
 }
 
 /**
+ * IS THIS CLIPBOARD TEXT ONE PLAIN CELL — one the browser can paste into the
+ * focused input exactly as it stands?
+ *
+ * That is the paste gate's stated rule ("a single cell goes to the browser's
+ * default"), and it used to be tested as "contains a tab or a newline". Both
+ * halves of that were wrong for real clipboards:
+ *
+ *  - Excel appends a row terminator to EVERYTHING it copies, so a single copied
+ *    cell arrives as `value\r\n`. It contains "\n", was taken over, and replaced
+ *    the cell's whole content even with the caret in the middle of text the user
+ *    was typing — while the identical text copied from anywhere else (no
+ *    terminator) was inserted at the caret. Where the text came from decided it.
+ *  - A column written with lone carriage returns (older Mac Excel) has neither
+ *    "\t" nor "\n", so it skipped `parseClipboardGrid`, which reads a lone CR as
+ *    a row break on purpose. The browser joined it into one cell, "10 20 30".
+ *
+ * So the question is put to the PARSED block: one row, one cell, and a cell that
+ * is the clipboard text itself less its single terminator. A cell the parser had
+ * to interpret — quotes round an Alt+Enter break — is not plain, because the
+ * browser would paste the quotes and turn the break into a space.
+ */
+function isPlainCell(text: string, grid: string[][]): boolean {
+  return grid.length === 1 && grid[0].length === 1 && grid[0][0] === text.replace(/\r\n$|[\r\n]$/, "");
+}
+
+/**
  * IS THIS PASTE WRITTEN IN THE EUROPEAN CONVENTION — dot for thousands, comma
  * for the decimal?
  *
@@ -200,10 +297,11 @@ export function looksEuropean(cells: string[][]): boolean {
   let american = false;
   for (const row of cells) {
     for (const cell of row) {
-      // A trailing "%" is stripped before ANY of these are asked, because every
+      // A cell's dressing (a percent sign, a currency sign, accounting
+      // parentheses) is taken off before ANY of these are asked, because every
       // pattern here is anchored and a share table is the likeliest paste of
-      // all. See `percentBody`.
-      const t = percentBody(String(cell ?? "").trim());
+      // all. See `readNumberText`.
+      const t = bareNumber(cell);
       if (!t) continue;
       if (EU_GROUPED.test(t) && t.includes(",")) european = true;
       else if (EU_DECIMAL.test(t) && !US_GROUPED.test(t)) european = true;
@@ -233,15 +331,15 @@ export function looksEuropean(cells: string[][]): boolean {
  * comes back untouched.
  */
 export function fromEuropeanNumber(text: string): string {
-  const raw = String(text ?? "").trim();
-  // The percent sign is carried through rather than dropped: `rawCellValue`
-  // strips it later, and a share table must still READ as a share in the grid.
-  // Without this split "12,5%" matched nothing and came back unconverted, so
-  // the comma survived into a cell the rest of the sheet reads as a number.
-  const t = percentBody(raw);
-  const pct = raw.slice(t.length);
-  if (EU_GROUPED.test(t)) return t.replace(/\./g, "").replace(",", ".") + pct;
-  if (EU_DECIMAL.test(t)) return t.replace(",", ".") + pct;
+  // The dressing is carried through rather than dropped: `rawCellValue` strips
+  // it later, and a share table must still READ as a share in the grid (and
+  // "(1.234,50)" as a negative). Without the split "12,5%" matched nothing and
+  // came back unconverted, so the comma survived into a cell the rest of the
+  // sheet reads as a number — and "1.234,50 €" did the same.
+  const d = readNumberText(text);
+  if (!d) return text;
+  if (EU_GROUPED.test(d.core)) return d.pre + d.core.replace(/\./g, "").replace(",", ".") + d.post;
+  if (EU_DECIMAL.test(d.core)) return d.pre + d.core.replace(",", ".") + d.post;
   return text;
 }
 
@@ -256,7 +354,7 @@ export function fromEuropeanNumber(text: string): string {
  * back blank.
  */
 function rawCellValue(raw: string): { n: number; date: boolean } {
-  const num = numericValue(raw.replace(/\s*%$/, ""));
+  const num = numericValue(raw);
   if (Number.isFinite(num)) return { n: num, date: false };
   const day = parseDateToken(raw);
   return day != null ? { n: day, date: true } : { n: NaN, date: false };
@@ -418,10 +516,16 @@ export function evaluateFormula(
       const nums = args.filter((v): v is number => v != null);
       if (!nums.length) return NaN;
       if (name === "AVG") return nums.reduce((a, b) => a + b, 0) / nums.length;
-      // Reduced, not spread, for the same reason as the append above: a big
-      // enough range makes `Math.min(...nums)` an argument list.
-      if (name === "MIN") return nums.reduce((a, b) => (b < a ? b : a), nums[0]);
-      return nums.reduce((a, b) => (b > a ? b : a), nums[0]);
+      // Folded, not spread, for the same reason as the append above: a big
+      // enough range makes `Math.min(...nums)` an argument list. Folded with the
+      // two-argument `Math.min`/`Math.max` (`minOf`/`maxOf`) and not a hand-written
+      // comparison, because only those carry a NaN through. `b < a ? b : a` is
+      // false whenever either side is NaN, so a text cell ("n/a" is NaN to
+      // `cellNumeric`) survived only as the FIRST argument and was dropped in any
+      // other position — and a cycle, which also arrives as NaN, came back as the
+      // other argument: `MIN(5,B2)` in B2 was 5 while `MIN(B2,5)` was a cycle.
+      // SUM and AVG have always failed on the same cells.
+      return name === "MIN" ? minOf(nums) : maxOf(nums);
     }
     const num = /^[0-9]*\.?[0-9]+/.exec(s.slice(i));
     if (num) {
@@ -731,6 +835,128 @@ function isSeriesRow(cells: string[][], row: number): boolean {
   return !HUNDRED_ROW.test(name) && !XEXTENT_ROW.test(name);
 }
 
+/** Which sheet rows are series rows right now, by sheet row. */
+const seriesRows = (cells: string[][]): boolean[] => cells.map((_, r) => isSeriesRow(cells, r));
+
+/**
+ * TELL THE OWNER ABOUT EVERY ROW AN EDIT TURNED INTO A SERIES, OR OUT OF ONE.
+ *
+ * `onStructure` was fired by the +/- Row, +/- Column and Transpose buttons and by
+ * nothing else — but a plain keystroke and a paste can change how many series the
+ * sheet has just as well. A fully blank row is `sheetToData`'s stack separator,
+ * so typing one character into the separator `dataToSheet` writes between two
+ * stacks makes it a series, and clearing a series row's last cell makes it a
+ * separator. The pane's `seriesColors` / `seriesMeta` are indexed by SERIES, and
+ * nobody had told them: every series below the edit took its neighbour's colour,
+ * combo type, pattern and scenario (a line overlay drew as a column). Pasting a
+ * block whose blank row lands on a series row did the same.
+ *
+ * The same event the buttons raise, for the same reason — and raised in sheet
+ * order, because each splice shifts the series index of every row below it. The
+ * `index` is therefore counted in the sheet AS IT NOW STANDS above the row, which
+ * is where the owner's arrays are by the time it applies this one.
+ *
+ * A row the edit appended is a row that "was" not a series. Rows never go away
+ * under an edit (only the buttons delete them, and they report for themselves).
+ */
+function reportRowFlips(was: boolean[], cells: string[][], onStructure: (change: SheetStructureChange) => void): void {
+  let index = 0;
+  for (let r = 1; r < cells.length; r++) {
+    const is = isSeriesRow(cells, r);
+    if (was[r] && !is) onStructure({ kind: "series-remove", index });
+    else if (!was[r] && is) onStructure({ kind: "series-insert", index });
+    if (is) index++;
+  }
+}
+
+/**
+ * WHAT STANDS FOR A LINE BREAK INSIDE A CELL, in the grid's inputs.
+ *
+ * `parseClipboardGrid` keeps the break in a quoted cell — Alt+Enter in a header
+ * is the most ordinary thing in a finance table — and the model holds
+ * "Revenue\n(EURm)". But each grid cell is an `<input type=text>`, and a text
+ * input's value sanitisation strips line breaks. So the grid SHOWED
+ * "Revenue(EURm)", the words run together over a label that the chart draws on
+ * two lines, and the input listener wrote that stripped text back into the model
+ * on the first keystroke: the break was gone for good with the words glued, in
+ * the cell the user had only meant to add a character to. A label loaded from a
+ * config ("Q1\n2024") failed the same way, since `dataToSheet` hands the grid
+ * whatever the config holds.
+ *
+ * The model keeps the break — taking it out on the way in would alter the chart
+ * of anyone who merely opened it — and the input shows a visible stand-in that
+ * `readBreaks` turns back on the way out. Deleting the glyph deletes the break,
+ * which is the only edit that should.
+ */
+const BREAK_GLYPH = "\u{21b5}";
+const showBreaks = (cell: string): string => String(cell ?? "").replace(/\r\n|[\r\n]/g, BREAK_GLYPH);
+const readBreaks = (shown: string): string => shown.split(BREAK_GLYPH).join("\n");
+
+/** One cell edited by hand, reporting any row it turned into (or out of) a series. */
+function editCell(
+  cells: string[][],
+  ri: number,
+  ci: number,
+  text: string,
+  onStructure: (change: SheetStructureChange) => void,
+): void {
+  const was = seriesRows(cells);
+  cells[ri][ci] = text;
+  reportRowFlips(was, cells, onStructure);
+}
+
+/**
+ * Write a pasted block into the sheet at (`ri`, `ci`), growing it to fit, and
+ * return how many cells were rewritten out of the European convention.
+ */
+function pasteGrid(cells: string[][], grid: string[][], ri: number, ci: number): number {
+  /**
+   * DECIDED ONCE, FOR THE WHOLE BLOCK, because that is the only place the
+   * evidence exists. A single cell cannot say whether "1.234" is a thousand
+   * or a fraction; a paste that also carries "987,5" can. See `looksEuropean`.
+   */
+  const european = looksEuropean(grid);
+  let converted = 0;
+  const grewFrom = cells.length;
+  grid.forEach((row, dr) => {
+    row.forEach((val, dc) => {
+      const r = ri + dr;
+      const c = ci + dc;
+      while (cells.length <= r) cells.push(cells[0].map(() => ""));
+      cells.forEach((mr) => {
+        while (mr.length <= c) mr.push("");
+      });
+      // Rewritten into the GRID, so the reading is visible and correctable —
+      // see `fromEuropeanNumber`. A cell that is not a European number in the
+      // first place comes back identical, so `converted` counts only what
+      // actually moved.
+      const stored = european ? fromEuropeanNumber(val) : val;
+      if (stored !== val) converted++;
+      cells[r][c] = stored;
+    });
+  });
+  // A row this paste APPENDED and left FULLY blank is `sheetToData`'s stack
+  // separator, so pasting a column that runs past the end of the sheet with a
+  // gap in it — an ordinary Excel spacer row — split one stacked column into
+  // two side-by-side sub-stacks. No error, no cue. "+ Row" is guarded against
+  // creating exactly this row and says so in its own comment; paste grows
+  // rows too and never was.
+  //
+  // Seeded rather than dropped: the blank row is what keeps every later value
+  // on the category it was pasted against, which is a separate bug this file
+  // already fixed once. A row with a name and no numbers is an empty series,
+  // which is what the user pasted.
+  const used = new Set(cells.map((r) => (r[0] ?? "").trim()));
+  for (let r = grewFrom; r < cells.length; r++) {
+    if (cells[r].some((v) => v.trim() !== "")) continue;
+    let n = r;
+    while (used.has(`Series ${n}`)) n++;
+    used.add(`Series ${n}`);
+    cells[r][0] = `Series ${n}`;
+  }
+  return converted;
+}
+
 /**
  * Editable datasheet grid: an HTML table of inputs with Excel-style TSV paste.
  * Calls onChange with the raw sheet on every edit.
@@ -795,7 +1021,7 @@ export function mountDatasheet(
       row.forEach((cell, ci) => {
         const td = document.createElement("td");
         const input = document.createElement("input");
-        input.value = cell;
+        input.value = showBreaks(cell);
         input.dataset.row = String(ri);
         input.dataset.col = String(ci);
         if (ri === 0 || ci === 0) input.classList.add("header");
@@ -828,7 +1054,7 @@ export function mountDatasheet(
                 : `${rowName || `Row ${ri}`}, ${colName || `column ${ci}`}`,
         );
         input.addEventListener("input", () => {
-          model.cells[ri][ci] = input.value;
+          editCell(model.cells, ri, ci, readBreaks(input.value), onStructure);
           onChange(model);
         });
         input.addEventListener("focus", () => {
@@ -905,58 +1131,25 @@ export function mountDatasheet(
 
   function handlePaste(e: ClipboardEvent, ri: number, ci: number) {
     const text = e.clipboardData?.getData("text/plain") ?? "";
-    if (!text.includes("\t") && !text.includes("\n")) return; // single cell — default behavior
-    e.preventDefault();
     // Quoted TSV, and exactly one trailing terminator — see `parseClipboardGrid`.
     // Interior blanks are kept, because in a single-column copy a blank cell IS
     // an empty line and dropping it pulls every later value onto the wrong
     // category. (A multi-column blank row arrives as "\t\t", which is why that
     // only ever bit single-column pastes.)
     const grid = parseClipboardGrid(text);
-    /**
-     * DECIDED ONCE, FOR THE WHOLE BLOCK, because that is the only place the
-     * evidence exists. A single cell cannot say whether "1.234" is a thousand
-     * or a fraction; a paste that also carries "987,5" can. See `looksEuropean`.
-     */
-    const european = looksEuropean(grid);
-    let converted = 0;
-    const grewFrom = model.cells.length;
-    grid.forEach((row, dr) => {
-      row.forEach((val, dc) => {
-        const r = ri + dr;
-        const c = ci + dc;
-        while (model.cells.length <= r) model.cells.push(model.cells[0].map(() => ""));
-        model.cells.forEach((mr) => {
-          while (mr.length <= c) mr.push("");
-        });
-        // Rewritten into the GRID, so the reading is visible and correctable —
-        // see `fromEuropeanNumber`. A cell that is not a European number in the
-        // first place comes back identical, so `converted` counts only what
-        // actually moved.
-        const stored = european ? fromEuropeanNumber(val) : val;
-        if (stored !== val) converted++;
-        model.cells[r][c] = stored;
-      });
-    });
-    // A row this paste APPENDED and left FULLY blank is `sheetToData`'s stack
-    // separator, so pasting a column that runs past the end of the sheet with a
-    // gap in it — an ordinary Excel spacer row — split one stacked column into
-    // two side-by-side sub-stacks. No error, no cue. "+ Row" is guarded against
-    // creating exactly this row and says so in its own comment; paste grows
-    // rows too and never was.
-    //
-    // Seeded rather than dropped: the blank row is what keeps every later value
-    // on the category it was pasted against, which is a separate bug this file
-    // already fixed once. A row with a name and no numbers is an empty series,
-    // which is what the user pasted.
-    const used = new Set(model.cells.map((r) => (r[0] ?? "").trim()));
-    for (let r = grewFrom; r < model.cells.length; r++) {
-      if (model.cells[r].some((v) => v.trim() !== "")) continue;
-      let n = r;
-      while (used.has(`Series ${n}`)) n++;
-      used.add(`Series ${n}`);
-      model.cells[r][0] = `Series ${n}`;
-    }
+    // Single cell — default behavior, unless it is a number the pane has to
+    // rewrite out of the European convention. A Danish Excel's "1.234,5" copied
+    // as one cell was taken over (it carries a terminator) and converted, and
+    // the browser's default would leave it as a gap; `looksEuropean` is as sure
+    // of one cell as of a column when the cell is "987,5".
+    if (isPlainCell(text, grid) && !looksEuropean(grid)) return;
+    e.preventDefault();
+    // A block can blank a series row, fill a separator or append rows, and the
+    // owner's per-series colours and types follow the series BY POSITION — so the
+    // rows that changed hands are reported, exactly as the buttons report theirs.
+    const was = seriesRows(model.cells);
+    const converted = pasteGrid(model.cells, grid, ri, ci);
+    reportRowFlips(was, model.cells, onStructure);
     render();
     onChange(model);
     // SAID, not just done. The pane read the user's numbers in a convention it
