@@ -44,6 +44,62 @@ const LEGEND_MARGIN = 2;
 const GLYPH_MIN_TILE = 2;
 
 /**
+ * The glyph-mode series key: one colour chip and one name per series, laid out
+ * by `legendWrapWalk` — the walk that already reserved its rows, so the drawer
+ * and the reserver count the same ones. Its own function, not a block in
+ * `layoutTilemap`, because that function is held to its recorded size
+ * (`test/function-size.test.ts`) and a legend that wraps is a self-contained
+ * thing to draw: it needs only the series, where it starts and where it stops.
+ */
+function glyphLegendNodes(
+  series: { name: string; color?: string }[],
+  style: ChartStyle,
+  fs: number,
+  startX: number,
+  maxX: number,
+  top: number,
+  rowPitch: number,
+): SceneNode[] {
+  const chip = fs * 0.7;
+  const slots = legendWrapWalk(
+    series.map((s) => s.name),
+    fs,
+    startX,
+    maxX,
+  );
+  const out: SceneNode[] = [];
+  series.forEach((s, si) => {
+    const { x: lx, row } = slots[si];
+    const y = top + row * rowPitch;
+    out.push(
+      {
+        kind: "rect",
+        x: lx,
+        y: y + fs * 0.6,
+        w: chip,
+        h: chip,
+        fill: seriesColor(style, si, s.color),
+        name: `legend-chip-${si}`,
+      },
+      {
+        kind: "text",
+        x: lx + chip + 3,
+        y: y + fs * 0.3,
+        w: textWidth(s.name, fs) + 6,
+        h: fs * 1.4,
+        text: s.name,
+        fontSize: fs * 0.85,
+        color: style.text,
+        align: "left",
+        valign: "middle",
+        name: `legend-${si}`,
+      },
+    );
+  });
+  return out;
+}
+
+/**
  * A hex tile's width and height as a fraction of its grid cell.
  *
  * √3/2, and it is inherited rather than chosen: the tile used to be a pointy-top
@@ -383,39 +439,12 @@ export function layoutTilemap(cfg: ChartConfig, style: ChartStyle, decor: Decora
 
   // Glyph mode: a series legend instead of the value gradient.
   if (glyph && glyphLegendRows > 0 && legendClearOfTitle) {
-    const chip = fs * 0.7;
     // Hung from the grid's left edge, where it has always been, whenever that
     // costs no more rows than were reserved; from the margin otherwise.
     const fromGrid = legendRowCount(legendNames, fs, x0, cfg.width - 4) <= glyphLegendRows;
-    const slots = legendWrapWalk(legendNames, fs, fromGrid ? x0 : LEGEND_MARGIN, cfg.width - 4);
-    data.series.forEach((s, si) => {
-      const { x: lx, row } = slots[si];
-      const top = legendTop + row * rowPitch;
-      nodes.push(
-        {
-          kind: "rect",
-          x: lx,
-          y: top + fs * 0.6,
-          w: chip,
-          h: chip,
-          fill: seriesColor(style, si, s.color),
-          name: `legend-chip-${si}`,
-        },
-        {
-          kind: "text",
-          x: lx + chip + 3,
-          y: top + fs * 0.3,
-          w: textWidth(s.name, fs) + 6,
-          h: fs * 1.4,
-          text: s.name,
-          fontSize: fs * 0.85,
-          color: style.text,
-          align: "left",
-          valign: "middle",
-          name: `legend-${si}`,
-        },
-      );
-    });
+    nodes.push(
+      ...glyphLegendNodes(data.series, style, fs, fromGrid ? x0 : LEGEND_MARGIN, cfg.width - 4, legendTop, rowPitch),
+    );
   }
   // Gradient legend + "no data" swatch.
   if (!glyph && vals.length && min !== max && legendClearOfTitle) {
