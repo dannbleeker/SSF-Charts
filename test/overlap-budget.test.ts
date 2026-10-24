@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildChart } from "../src/core/chart";
 import { CHART_KINDS, sampleConfig } from "../src/core/samples";
 import { textWidth, type SceneNode, type TextNode } from "../src/core/scene";
+import { SCENE_NEUTRAL_OPTIONS, optionsThatChangeNothing, withOptionData } from "./helpers/sweep-options";
 
 /**
  * EVERY TEXT OVERLAP THIS ENGINE STILL HAS, counted, named, and capped.
@@ -161,6 +162,32 @@ const OPTIONS: Record<string, Record<string, unknown>> = {
   numberFormat: { numberFormat: { locale: "de-DE", currency: "EUR", decimals: 2 } },
   title: { title: "A rather long chart title that names the measure and the period" },
 };
+
+/**
+ * OPTIONS THIS SWEEP DOES NOT GIVE THE DATA THEY NEED, and the price of doing so.
+ *
+ * `withOptionData` gives an option the data it means something on (a second
+ * series for `tilemap.glyph`, raw observations for `boxplot`): without it six
+ * of the entries above were measured with the option ON and the scene
+ * byte-identical to the one with it off, which counted nothing and said so
+ * nowhere. Five of them take their data here. The sixth is the boxplot, and it
+ * is left bare on purpose: with raw observations its `showMean` labels collide
+ * with each other and with the axes, 53 overlaps in four shapes
+ * (`mean# / mean#` 26, `category# / mean#` 12, `title / mean#` 8,
+ * `value-axis / mean#` 7) that `BUDGET` has no row for, and by this file's own
+ * rule a shape absent from the table is a regression. Measured 2026-10-24
+ * against the unprepared table, the other four add nothing at all.
+ *
+ * So it is declared, not forgotten. Taking it on is a decision for the table's
+ * owner — fix the labels, or budget the four rows — and the check at the end of
+ * this file keeps the declaration true.
+ */
+const UNPREPARED: Record<string, string> = {
+  boxplot: "raw observations make the mean labels collide, 53 overlaps in shapes BUDGET has no row for",
+};
+
+/** `cfg` with the data its option needs, except for the options declared `UNPREPARED`. */
+const prepared = (key: string, cfg: Record<string, any>) => (key in UNPREPARED ? cfg : withOptionData(key, cfg));
 
 /**
  * THE DECORATIONS, WHICH THIS SWEEP HAS NEVER ONCE VARIED.
@@ -424,7 +451,8 @@ function measure(): { total: number; byShape: Map<string, number> } {
   const variants: [string, (c: unknown) => unknown][] = [
     ...Object.entries(DATA_SHAPES),
     ...Object.entries(OPTIONS).map(
-      ([k, o]) => [k, (c: unknown) => ({ ...(c as object), ...o })] as [string, (c: unknown) => unknown],
+      ([k, o]) =>
+        [k, (c: unknown) => ({ ...prepared(k, c as Record<string, any>), ...o })] as [string, (c: unknown) => unknown],
     ),
     // MERGED onto whatever the kind already sets — see `DECOR`. A shallow spread
     // here would replace each kind's defaults and narrow the sweep while looking
@@ -553,5 +581,37 @@ describe("the text this engine still draws over other text", () => {
     // total — no slack anywhere, by construction.
     const cap = Object.values(BUDGET).reduce((a, b) => a + b, 0);
     expect(total, "the total overlap count grew").toBe(cap);
+  });
+});
+
+/**
+ * AN OPTION THAT CHANGES NOTHING IS MEASURED AS CLEAN, so every entry in
+ * `OPTIONS` has to be doing something to the chart it is swept over — see
+ * `UNPREPARED` for the one that is declared not to be, and why.
+ */
+describe("every option in the sweep takes effect", () => {
+  it("changes the scene of at least one kind, or is declared not to", () => {
+    const inert = optionsThatChangeNothing(OPTIONS, prepared).filter(
+      (key) => !(key in SCENE_NEUTRAL_OPTIONS) && !(key in UNPREPARED),
+    );
+    expect(
+      inert,
+      "these options are measured over a sample they do nothing to — see `OPTION_DATA` in test/helpers/sweep-options.ts",
+    ).toEqual([]);
+  });
+
+  it("declares only options that would take effect if prepared, so the declaration stays true", () => {
+    const wouldStillBeInert = optionsThatChangeNothing(
+      Object.fromEntries(Object.keys(UNPREPARED).map((key) => [key, OPTIONS[key]])),
+      withOptionData,
+    );
+    expect(
+      wouldStillBeInert,
+      "an UNPREPARED option does nothing even with its data: it is not unprepared, it is inert",
+    ).toEqual([]);
+    expect(
+      Object.keys(UNPREPARED).filter((key) => !optionsThatChangeNothing({ [key]: OPTIONS[key] }, prepared).length),
+      "an UNPREPARED option takes effect without its data: delete the declaration",
+    ).toEqual([]);
   });
 });

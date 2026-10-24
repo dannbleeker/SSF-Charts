@@ -6,6 +6,7 @@ import { polar } from "../src/core/geometry";
 import { textWidth } from "../src/core/scene";
 import type { SceneNode, TextNode } from "../src/core/scene";
 import type { ChartConfig } from "../src/core/types";
+import { SCENE_NEUTRAL_OPTIONS, optionsThatChangeNothing, withOptionData } from "./helpers/sweep-options";
 
 /**
  * A chart is a box on a slide, and nothing it draws may leave that box.
@@ -123,13 +124,22 @@ function inkBox(n: SceneNode): { x0: number; y0: number; x1: number; y1: number 
   return null;
 }
 
-/** The worst distance any node's ink reaches past an edge of the chart, and which node. */
-function worstOverflow(cfg: ChartConfig): { pt: number; node: string; side: string } {
+/**
+ * The worst distance any node's ink reaches past an edge of the chart, and which
+ * node. `only` restricts it to the nodes it accepts by name, which is how an
+ * overflow recorded as open (see `KNOWN_OPEN`) is kept out of a sweep without
+ * keeping the rest of that chart out with it.
+ */
+function worstOverflow(
+  cfg: ChartConfig,
+  only: (name: string) => boolean = () => true,
+): { pt: number; node: string; side: string } {
   const scene = buildChart(cfg);
   let pt = 0;
   let node = "";
   let side = "";
   for (const n of scene.nodes) {
+    if (!only(n.name ?? n.kind)) continue;
     const b = inkBox(n);
     if (!b) continue;
     const sides: [string, number][] = [
@@ -307,6 +317,71 @@ const OPTIONS: Record<string, Record<string, unknown>> = {
 };
 
 /**
+ * EVERY ENTRY ABOVE HAS TO DO SOMETHING TO THE CHART IT IS SWEPT OVER.
+ *
+ * It is laid over `sampleConfig(kind)` by a shallow spread, so an option that
+ * needs data the sample does not have changed nothing: six of the entries did
+ * not (`withOptionData` gives five of them the data they need), and the one
+ * this was found through, `tilemap.glyph`, was green over 32 cells that drew no
+ * glyph at all — it passed with the glyph bars thrown a chart-width off the
+ * frame. The check below is that none of them is inert, so a table entry cannot
+ * go back to meaning nothing without a test naming it.
+ */
+describe("every option in the sweep takes effect", () => {
+  it("changes the scene of at least one kind", () => {
+    const inert = optionsThatChangeNothing(OPTIONS).filter((key) => !(key in SCENE_NEUTRAL_OPTIONS));
+    expect(
+      inert,
+      "these options are swept over a sample they do nothing to, so the sweep passes them for free — see `OPTION_DATA` in test/helpers/sweep-options.ts",
+    ).toEqual([]);
+  });
+
+  it("leaves only the scene-neutral ones alone, so the exemption cannot go stale", () => {
+    const inert = optionsThatChangeNothing(OPTIONS);
+    expect(
+      Object.keys(SCENE_NEUTRAL_OPTIONS).filter((key) => !inert.includes(key)),
+      "an option declared scene-neutral now changes a scene: sweep it like the others",
+    ).toEqual([]);
+  });
+});
+
+/**
+ * OVERFLOWS THE SWEEP FOUND WHEN TWO OF ITS OPTIONS BEGAN TO TAKE EFFECT, which no
+ * layout has been fixed for yet — kept out of the sweep by NODE, never by option,
+ * so the rest of those charts is still measured, and kept honest by the test
+ * after this one, which fails the day each stops overflowing.
+ *
+ * Both are the series legend of a mode the sweep had never drawn, and both are
+ * the same mistake the sweep exists to catch:
+ *
+ *   - `tilemap.glyph`: `layoutTilemap` hangs the glyph legend from the grid's
+ *     left edge and advances a chip, a gap and a measured name per series, never
+ *     asking whether the next one fits. A third series puts its chip 157pt past
+ *     the right edge of an 80x60 chart at 18pt; 18 of the 32 cells overflow.
+ *   - `butterfly.split`: with the flanks stacked, `layoutButterfly` reserves
+ *     header rows for the legend by `legendRowCount(…, valueW, width - 4)` and
+ *     then draws it from `plot.x`, so the legend wraps onto more rows than it
+ *     reserved and the last is drawn up to 55pt below the chart; 6 of 32.
+ *
+ * Neither shows at 480x300 or 960x540, the sizes a chart is normally placed at,
+ * which is why this is recorded and not blocking. Fix the layout, delete the
+ * entry, and the sweep covers it.
+ */
+const KNOWN_OPEN: Record<string, { nodes: RegExp; what: string }> = {
+  "tilemap.glyph": {
+    nodes: /^legend(-chip)?-\d+$/,
+    what: "the glyph legend runs off the right edge",
+  },
+  "butterfly.split": {
+    nodes: /^legend(-chip)?-\d+$/,
+    what: "the stacked legend wraps below the chart",
+  },
+};
+
+/** The nodes of `key`'s sweep that are held to the frame: everything but its recorded open overflow. */
+const outsideKnownOpen = (key: string) => (name: string) => !KNOWN_OPEN[key]?.nodes.test(name);
+
+/**
  * And the third axis: the DATA, which every sweep here holds at whatever
  * `sampleConfig` ships — four to six short category names, one to three series,
  * two-digit values.
@@ -445,14 +520,14 @@ describe("no top-level option draws outside the chart's frame", () => {
           for (const horizontal of [false, true]) {
             for (const { kind } of CHART_KINDS) {
               const cfg = {
-                ...sampleConfig(kind),
+                ...withOptionData(key, sampleConfig(kind)),
                 width: w,
                 height: h,
                 horizontal,
                 style: { fontSize },
                 ...value,
               } as ChartConfig;
-              const o = worstOverflow(cfg);
+              const o = worstOverflow(cfg, outsideKnownOpen(key));
               if (o.pt > SLACK)
                 bad.push(
                   `${kind} ${w}x${h}@${fontSize}${horizontal ? " rotated" : ""}: ${o.node} ${o.pt.toFixed(1)}pt past the ${o.side}`,
@@ -462,6 +537,32 @@ describe("no top-level option draws outside the chart's frame", () => {
         }
       }
       expect(bad).toEqual([]);
+    });
+  }
+});
+
+describe("the overflows recorded as open are still open", () => {
+  for (const [key, open] of Object.entries(KNOWN_OPEN)) {
+    it(`${key}: ${open.what}`, () => {
+      let worst = 0;
+      for (const [w, h] of FRAMES)
+        for (const fontSize of [10, 18])
+          for (const horizontal of [false, true])
+            for (const { kind } of CHART_KINDS) {
+              const cfg = {
+                ...withOptionData(key, sampleConfig(kind)),
+                width: w,
+                height: h,
+                horizontal,
+                style: { fontSize },
+                ...OPTIONS[key],
+              } as ChartConfig;
+              worst = Math.max(worst, worstOverflow(cfg, (name) => open.nodes.test(name)).pt);
+            }
+      expect(
+        worst,
+        `${key} no longer overflows through ${open.nodes}: delete its KNOWN_OPEN entry so the sweep holds it to the frame`,
+      ).toBeGreaterThan(SLACK);
     });
   }
 });
