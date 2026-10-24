@@ -43,11 +43,41 @@ const FIX = "6dfaa4b";
  * Fixed at the source: `ci.yml` checks out with `fetch-depth: 0`. Translated
  * here as well, because the next environment without history should be told
  * what this needs rather than what git said.
+ *
+ * ── SEVEN CHARACTERS, CUT HERE AND NOT BY GIT ──────────────────────────────
+ * Every lookup below takes `.slice(0, 7)` of a build stamp, because that is the
+ * width the project stamps (`rounds.test.ts` pins `^[0-9a-f]{7}$`; `round.mjs`
+ * pins `--short=7`). This used to ask git for `%h`, which is git's AUTO length:
+ * seven characters until the packed-object count reaches 2^14 = 16,384, eight
+ * after that, and eight sooner for any one commit whose seven-character prefix
+ * is shared with another object. This repo had 12,940 packed objects when this
+ * was measured (2026-10-02), growing by a round archive and some commits a day.
+ * On the day it crossed, every post-fix build would have missed a set of
+ * eight-character strings and been counted PRE-fix — `core.abbrev=8` reproduces
+ * it: two of the six tests here fail on unchanged data. `%H` cut to seven is
+ * the same set without the dependence.
+ *
+ * ── TWO SETS, BECAUSE "NOT POST-FIX" IS NOT "PRE-FIX" ──────────────────────
+ * The era used to be `post.has(sha) ? "post" : "PRE"`, so a build git could not
+ * place at all — `nogit` or `dev` (what the product stamps when it cannot ask
+ * git), an empty stamp, a sha rebased out of history — was counted PRE-fix, and
+ * the assertion whose message names that case (`pre + after === deaths`) was a
+ * tautology: its two terms filter one array with a predicate and its negation.
+ * The only thing left to go red was §0's PRE number, and whoever refreshed §0
+ * then folded the misplaced death into PRE-fix with no signal. PRE-fix is now
+ * what descends into the fix, and the rest is `undefined`.
  */
-function postFixBuilds(): Set<string> {
+interface Eras {
+  /** The fix and everything after it. */
+  post: Set<string>;
+  /** Everything the fix descends from. */
+  pre: Set<string>;
+}
+
+function fixEras(): Eras {
   let out: string;
   try {
-    out = execFileSync("git", ["log", "--format=%h", `${FIX}..HEAD`], { encoding: "utf8" });
+    out = execFileSync("git", ["log", "--format=%H", `${FIX}..HEAD`], { encoding: "utf8" });
   } catch (err) {
     let reachable = true;
     try {
@@ -70,18 +100,45 @@ function postFixBuilds(): Set<string> {
             `CI uses fetch-depth: 0 for exactly this reason. git said: ${String(err)}`,
     );
   }
-  const set = new Set(
-    out
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean),
-  );
-  set.add(FIX);
-  return set;
+  const sevens = (log: string) =>
+    new Set(
+      log
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((h) => h.slice(0, 7)),
+    );
+  const post = sevens(out);
+  post.add(FIX);
+  // FIX is reachable (the call above would have thrown), so this cannot fail on
+  // a clone that got that far. The fix's own entry is already in `post`.
+  const pre = sevens(execFileSync("git", ["log", "--format=%H", FIX], { encoding: "utf8" }));
+  for (const s of post) pre.delete(s);
+  return { post, pre };
+}
+
+type Era = "PRE" | "post";
+
+/** Which side of the fix a build is on — undefined when git history cannot place it. */
+function eraOf(build: string, eras: Eras): Era | undefined {
+  const short = build.slice(0, 7);
+  return eras.post.has(short) ? "post" : eras.pre.has(short) ? "PRE" : undefined;
+}
+
+/** Count builds by era, keeping the ones git cannot place apart from both. */
+function splitByEra(builds: string[], eras: Eras): { pre: number; post: number; unplaced: string[] } {
+  const split = { pre: 0, post: 0, unplaced: [] as string[] };
+  for (const build of builds) {
+    const era = eraOf(build, eras);
+    if (era === "PRE") split.pre++;
+    else if (era === "post") split.post++;
+    else split.unplaced.push(build);
+  }
+  return split;
 }
 
 interface Row {
-  era: "PRE" | "post";
+  era: Era;
   width: number;
   rounds: number;
   green: number;
@@ -94,7 +151,7 @@ function statedRows(md: string): { anchor: number; rows: Row[] } {
   const re = /^\s{4}(PRE|post)-fix\s+(16:9|4:3)\s+(\d+)\s+(\d+)\s+([\d.]+)%$/gm;
   for (const m of md.matchAll(re))
     rows.push({
-      era: m[1] as "PRE" | "post",
+      era: m[1] as Era,
       width: m[2] === "16:9" ? 960 : 720,
       rounds: Number(m[3]),
       green: Number(m[4]),
@@ -103,8 +160,11 @@ function statedRows(md: string): { anchor: number; rows: Row[] } {
   return { anchor, rows };
 }
 
-function derive(anchor: number, post: Set<string>) {
+function derive(anchor: number, eras: Eras) {
   const acc: Record<string, { rounds: number; green: number; ok: number; total: number }> = {};
+  // Rounds whose build git cannot place, which belong to neither row of the
+  // table and used to be counted in PRE-fix — see `fixEras`.
+  const unplaced: string[] = [];
   for (const f of readdirSync("rounds").filter((x) => /^\d+-/.test(x))) {
     if (Number(f.slice(0, 3)) > anchor) continue;
     let j;
@@ -116,7 +176,12 @@ function derive(anchor: number, post: Set<string>) {
     const st = Array.isArray(j.selftest) ? j.selftest : [];
     if (!st.length) continue;
     const short = String(j.build?.commit ?? f.split("-")[1]?.replace(".json", "")).slice(0, 7);
-    const key = `${post.has(short) ? "post" : "PRE"}:${j.slideSize?.width}`;
+    const era = eraOf(short, eras);
+    if (!era) {
+      unplaced.push(`${f} (build ${short})`);
+      continue;
+    }
+    const key = `${era}:${j.slideSize?.width}`;
     acc[key] ??= { rounds: 0, green: 0, ok: 0, total: 0 };
     const a = acc[key];
     a.rounds++;
@@ -125,7 +190,7 @@ function derive(anchor: number, post: Set<string>) {
     a.ok += ok;
     if (ok === st.length) a.green++;
   }
-  return acc;
+  return { acc, unplaced };
 }
 
 describe("§0's health table", () => {
@@ -140,7 +205,13 @@ describe("§0's health table", () => {
   });
 
   it("reproduces every row at the round it claims", () => {
-    const acc = derive(anchor, postFixBuilds());
+    const { acc, unplaced } = derive(anchor, fixEras());
+    // BEFORE THE COUNTS, because a round in neither era is the cause and a
+    // mismatched count is only what it looks like from §0.
+    expect(
+      unplaced,
+      "a round's build is in neither era — git cannot place it (rebased out of history, or a local 'dev' build)",
+    ).toEqual([]);
     for (const r of rows) {
       const a = acc[`${r.era}:${r.width}`];
       const where = `${r.era}-fix ${r.width === 960 ? "16:9" : "4:3"} at round ${anchor}`;
@@ -251,12 +322,66 @@ describe("§0's crash line", () => {
   });
 
   it("splits the deaths by ancestry of the two-master fix", () => {
-    const post = postFixBuilds();
-    const d = deaths();
-    const pre = d.filter((x) => !post.has(x.build.slice(0, 7))).length;
-    const after = d.filter((x) => post.has(x.build.slice(0, 7))).length;
+    const {
+      pre,
+      post: after,
+      unplaced,
+    } = splitByEra(
+      deaths().map((x) => x.build),
+      fixEras(),
+    );
+    // FIRST, because the others would blame §0 for it: a death git cannot place
+    // used to fall into PRE-fix, and refreshing §0 to match then made it so.
+    expect(
+      unplaced,
+      "some death's build is in neither era — 'nogit', 'dev', an empty stamp, or a sha rebased out of history",
+    ).toEqual([]);
     expect(pre, "§0's PRE-fix death count").toBe(stated!.pre);
     expect(after, "§0's post-fix death count").toBe(stated!.post);
-    expect(pre + after, "some death's build is in neither era — unresolvable sha?").toBe(d.length);
+  });
+});
+
+/**
+ * THE ERA SPLIT HAS TO BE ABLE TO FAIL, AND TO NOT DEPEND ON HOW GIT PRINTS.
+ *
+ * Both halves are properties of the helpers above rather than of today's
+ * archive, which classifies cleanly (93 + 16 deaths, 352 + 121 rounds) and so
+ * proves neither: an unplaceable build has to come back as unplaced, and the
+ * sets have to hold the same seven characters whatever width git abbreviates to.
+ */
+describe("the era split", () => {
+  const rev = (what: string) => execFileSync("git", ["rev-parse", what], { encoding: "utf8" }).trim();
+
+  it("does not count a build git cannot place as PRE-fix", () => {
+    const eras = fixEras();
+    const real = { post: rev("HEAD").slice(0, 7), pre: rev(`${FIX}^`).slice(0, 7) };
+    // What the product stamps without git (`nogit`, `dev`), a stamp with nothing
+    // in it, and a well-formed sha that is in no history.
+    const unplaceable = ["nogit", "dev", "", "deadbee"];
+    expect(unplaceable.filter((b) => eras.post.has(b) || eras.pre.has(b))).toEqual([]);
+    expect(splitByEra([real.pre, real.post, ...unplaceable], eras)).toEqual({ pre: 1, post: 1, unplaced: unplaceable });
+  });
+
+  it("is the same set at any abbreviation width git chooses", () => {
+    // `core.abbrev` stands in for the repo growing past 16,384 packed objects,
+    // where git's own default moves from seven characters to eight. Set through
+    // the environment so `fixEras` is run exactly as it is everywhere else.
+    const env = { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.abbrev", GIT_CONFIG_VALUE_0: "12" };
+    const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, env);
+    try {
+      // The override has to take effect, or this proves nothing about it: an old
+      // git ignores these variables and would pass with the dependence intact.
+      const printed = execFileSync("git", ["log", "-1", "--format=%h"], { encoding: "utf8" }).trim();
+      expect(printed.length, "this git ignores GIT_CONFIG_COUNT, so the check below would be vacuous").toBe(12);
+      const wide = fixEras();
+      expect(eraOf(rev("HEAD"), wide)).toBe("post");
+      expect(eraOf(rev(`${FIX}^`), wide)).toBe("PRE");
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
   });
 });
