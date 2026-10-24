@@ -17,7 +17,14 @@ export function layoutFunnel(cfg: ChartConfig, style: ChartStyle, decor: Decorat
   const fs = style.fontSize;
   const n = data.categories.length;
   const { plot: values, raw } = firstSeriesValues(data, n);
-  const vMax = Math.max(1, ...values);
+  // `|| 1` guards only the all-zero funnel (0 / 0). The floor that stood here —
+  // `Math.max(1, ...values)` — guarded that too, and ALSO scaled any funnel whose
+  // widest stage is below 1 to that fraction of the plot: conversion rates typed
+  // as 0.62 / 0.41 / 0.18 drew 266pt wide where 62 / 41 / 18 drew 428, and 0.05
+  // was a 21pt sliver. Below ~0.005 every band hit the 2pt minimum and the stages
+  // stopped comparing at all. The width says "proportional to the value", so the
+  // unit must not set how much of the plot it takes.
+  const vMax = Math.max(0, ...values) || 1;
   const fmt = resolveFormat(values, cfg.numberFormat);
 
   const titleH = titleHeight(cfg, style);

@@ -106,7 +106,11 @@ export function layoutButterfly(cfg: ChartConfig, style: ChartStyle, decor: Deco
 
   const all = data.series.flatMap((s) => s.values.filter((v): v is number => v != null)).map((v) => Math.abs(v));
   const sums = data.categories.flatMap((_, c) => [stackSum(leftSeries, c), stackSum(rightSeries, c)]);
-  const ticks = niceTicks(0, Math.max(1, ...sums), 4);
+  // Floored at 0, not 1. `niceTicks(0, 0)` already answers [0, 1], so an all-zero
+  // chart has its guard; a floor of 1 on top forced every chart whose data is
+  // BELOW 1 onto a 0..1 axis. Shares and rates typed as 0.08 drew their longest
+  // bar at 22pt where the same numbers as 8 drew 149 — the unit set the picture.
+  const ticks = niceTicks(0, Math.max(0, ...sums), 4);
   const max = ticks[ticks.length - 1];
   const fmt = resolveFormat(all, cfg.numberFormat);
   const qOf = (v: number) => (Math.abs(v) / max) * halfW;

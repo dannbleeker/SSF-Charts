@@ -124,24 +124,29 @@ describe("full-circle pie / doughnut (single slice)", () => {
     expect(svg).toMatch(/<path[^>]*A /);
   });
 
-  it("renders a full disc plus an overpainted hole for a 360° doughnut", () => {
+  it("renders a full ring, with a real hole, for a 360° doughnut", () => {
     const cfg: ChartConfig = {
       kind: "doughnut",
       ...DEFAULT_SIZE,
       data: { categories: ["A"], series: [{ name: "S", values: [100] }] },
     };
     const scene = buildChart(cfg);
-    // The lone slice is a full-circle wedge (the hole is faked with an
-    // overpainted background ellipse for Office.js compatibility).
+    // The lone slice is a full-circle ANNULAR wedge. The hole used to be faked
+    // with an overpainted background ellipse "for Office.js compatibility", and
+    // that stopped being true a day after it was written (4714c27 added annular
+    // sectors to all three renderers; the gauge and the sunburst use them), so
+    // the ring is drawn as a ring and the slide shows through the middle of it.
     const wedge = scene.nodes.find((n) => n.kind === "wedge") as any;
     expect(wedge.endAngle - wedge.startAngle).toBeCloseTo(360);
-    expect(scene.nodes.some((n) => n.kind === "ellipse" && (n as any).name === "hole")).toBe(true);
+    expect(wedge.innerR).toBeGreaterThan(0);
+    expect(scene.nodes.some((n) => n.kind === "ellipse")).toBe(false);
     const svg = sceneToSvg(scene);
     expect(svg).toMatch(/fill-rule="evenodd"/);
-    // A real disc, not a degenerate zero-area arc.
+    // A real ring, not a degenerate zero-area arc: the outer circle and the inner
+    // one, two arcs each, filled evenodd so the inner one is the hole.
     const path = svg.match(/<path d="([^"]*)"[^>]*fill-rule="evenodd"/)!;
     expect(path[1]).not.toMatch(/NaN/);
-    expect((path[1].match(/A /g) || []).length).toBeGreaterThanOrEqual(2);
+    expect((path[1].match(/A /g) || []).length).toBeGreaterThanOrEqual(4);
   });
 });
 
@@ -155,7 +160,10 @@ describe("pie radius never goes negative on a narrow frame", () => {
     };
     const nodes = buildChart(cfg).nodes;
     for (const n of nodes) {
-      if (n.kind === "wedge") expect((n as WedgeNode).r).toBeGreaterThanOrEqual(0);
+      if (n.kind === "wedge") {
+        expect((n as WedgeNode).r).toBeGreaterThanOrEqual(0);
+        expect((n as WedgeNode).innerR).toBeGreaterThanOrEqual(0);
+      }
       if (n.kind === "ellipse") {
         expect((n as EllipseNode).rx).toBeGreaterThanOrEqual(0);
         expect((n as EllipseNode).ry).toBeGreaterThanOrEqual(0);
@@ -178,9 +186,14 @@ describe("pie & doughnut", () => {
     expect(wedges[2].endAngle).toBeCloseTo(360, 5);
   });
 
-  it("doughnut adds a hole with the total", () => {
+  it("doughnut leaves a real hole with the total in it", () => {
     const scene = buildChart({ ...c, kind: "doughnut" });
-    expect(scene.nodes.find((n) => n.name === "hole")).toBeTruthy();
+    const wedges = scene.nodes.filter((n): n is WedgeNode => n.kind === "wedge");
+    expect(wedges).toHaveLength(3);
+    // Every slice is a ring segment with one inner radius — nothing is painted over
+    // the middle, so a slide that is not white shows through it.
+    for (const w of wedges) expect(w.innerR).toBeCloseTo(w.r * 0.55, 6);
+    expect(scene.nodes.find((n) => n.name === "hole")).toBeUndefined();
     const label = scene.nodes.find((n) => n.name === "hole-label") as TextNode;
     expect(label.text).toBe("100");
   });
@@ -196,7 +209,7 @@ describe("pie / doughnut all-zero total", () => {
     };
     const nodes = buildChart(cfg).nodes;
     const texts = nodes.filter((n): n is TextNode => n.kind === "text");
-    expect(nodes.some((n) => n.name === "hole")).toBe(true);
+    expect(nodes.some((n) => n.name === "hole-label")).toBe(true);
     // The centre shows the honest total (0, at the data's 2-decimal precision),
     // never the divisor fallback the old `|| 1` displayed as "1".
     expect(texts.some((t) => /^0(\.0+)?$/.test(t.text))).toBe(true);

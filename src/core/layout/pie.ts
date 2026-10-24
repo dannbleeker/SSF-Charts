@@ -40,7 +40,11 @@ export function layoutPie(cfg: ChartConfig, style: ChartStyle, decor: Decoration
   const radiusRow = data.series.find((s) => /^radius$/i.test(s.name.trim()))?.values;
   const radiusVals = radiusRow ?? (cfg.pie?.variableRadius ? data.series[1]?.values : undefined);
   const varR = !!radiusVals && !doughnut && !hasBreakout;
-  const maxRad = varR ? Math.max(1, ...radiusVals!.map((v) => Math.max(0, v ?? 0))) : 1;
+  // `|| 1` guards only the all-zero Radius row. The floor of 1 that stood here also
+  // scaled any pie whose radius metric is below 1 against 1, so a Radius of 0.4 /
+  // 0.8 drew its slices at 0.70r / 0.90r where 40 / 80 drew 0.75r / 1.00r — the
+  // unit decided how much of the ring the largest slice reached.
+  const maxRad = varR ? Math.max(0, ...radiusVals!.map((v) => Math.max(0, v ?? 0))) || 1 : 1;
 
   const titleH = titleHeight(cfg, style);
   const footH = footnoteH(cfg, style, decor);
@@ -115,6 +119,13 @@ export function layoutPie(cfg: ChartConfig, style: ChartStyle, decor: Decoration
    */
   const explodes = (cfg.pie?.explode?.length ?? 0) > 0;
   const r = Math.max(1, Math.min(rWidth, rHeight) / (explodes ? 1.08 : 1));
+  // A doughnut is a RING: its slices stop at the hole's edge instead of running to
+  // the centre under a disc painted over them. That disc was filled with
+  // `style.background` (white by default) — an opaque 129pt patch on the user's
+  // real slide wherever the slide is not white, which the pane's own white canvas
+  // hides and no setting reaches. All three renderers draw annular wedges (the
+  // gauge and the sunburst already use them), so the hole is simply not drawn.
+  const holeR = doughnut ? r * 0.55 : 0;
 
   const nodes: SceneNode[] = [];
   const titleN = titleNode(cfg, style);
@@ -247,7 +258,7 @@ export function layoutPie(cfg: ChartConfig, style: ChartStyle, decor: Decoration
       cx: ecx,
       cy: ecy,
       r: rr,
-      innerR: 0,
+      innerR: holeR,
       startAngle: a0,
       endAngle: a0 + span,
       fill,
@@ -416,7 +427,6 @@ export function layoutPie(cfg: ChartConfig, style: ChartStyle, decor: Decoration
   }
 
   if (doughnut) {
-    nodes.push({ kind: "ellipse", cx, cy, rx: r * 0.55, ry: r * 0.55, fill: style.background, name: "hole" });
     /**
      * The total in the middle, fitted to the HOLE it sits in.
      *
@@ -424,11 +434,11 @@ export function layoutPie(cfg: ChartConfig, style: ChartStyle, decor: Decoration
      * at a large font the number was taller than the whole chart — 22.3pt below
      * the foot of an 80x60 doughnut at 32pt — and wider than the hole it is
      * supposed to be inside at almost any cramped size. A label is fitted to the
-     * mark it sits on; here the mark is a circle of radius `r * 0.55`, so the
+     * mark it sits on; here the mark is a circle of radius `holeR`, so the
      * bound is that circle's own box, and past the floor there is no number
      * rather than one lying across the ring.
      */
-    const holeBox = r * 0.55 * 2;
+    const holeBox = holeR * 2;
     const text = formatNumber(total, fmt);
     let holeFs = Math.min(fs * 1.3, holeBox / 1.8);
     while (holeFs > MIN_LABEL_FS && textWidth(text, holeFs, true) > holeBox * 0.9) holeFs -= 0.5;

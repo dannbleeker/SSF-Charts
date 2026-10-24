@@ -178,7 +178,7 @@ Everything the SSF Charts engine accepts. All lengths in points (1pt = 1/72").
 |---|---|
 | `100%=` | per-category denominator for `stacked100` (columns can stay short of 100%) |
 | `X extent` | Mekko-with-units: explicit column widths |
-| `X`, `Y`, `Size`, `Group` | scatter/bubble coordinates, bubble area, point coloring (1..k) |
+| `X`, `Y`, `Size`, `Group` | scatter/bubble coordinates, bubble area (a negative `Size` draws as an outline at the size of its magnitude), point coloring (1..k) |
 | `Color` | scatter/bubble: numeric third variable on a sequential color ramp (with a gradient legend); supersedes `Group` coloring |
 | `X line`, `Y line` | scatter partition lines at those values |
 | `Trend` | any value present → OLS trend line, labelled with its R² and p-value |
@@ -452,7 +452,8 @@ consecutive stages sharing part 3 get one spanning header band.
 series[0] = kept counts per stage.
 
 **Radar**: categories = spokes (first at 12 o'clock, clockwise), series =
-translucent polygons; keep 5–10 spokes and ≤3 series. **Heatmap**: series =
+translucent polygons; keep 5–10 spokes and ≤3 series. With no `scale` the rings
+follow the data from zero (or from the lowest negative value) up. **Heatmap**: series =
 rows, categories = columns; one global color scale (diverging through white
 when the data spans zero). **Tilemap**: categories = region codes (US postal,
 ISO-2 for eu/europe, or NA/LATAM/EU/MEA/SSA/CIS/SA/EA/SEA/OCE for world) —

@@ -5,7 +5,7 @@ import { seriesColor } from "../style";
 import { bandFontSize, fitPlot, footnoteH, legendRowCount, titleHeight, titleNode } from "./frame";
 import { legendRow, type LayoutResult, type LegendEntry } from "./column";
 import { columnPositiveTotal } from "./totals";
-import { maxOf } from "../agg";
+import { maxOf, minOf } from "../agg";
 
 /**
  * Smallest a perimeter name may be drawn before it is dropped instead.
@@ -111,8 +111,19 @@ export function layoutRadar(cfg: ChartConfig, style: ChartStyle, decor: Decorati
   const all = data.series.flatMap((s) => s.values.filter((v): v is number => v != null));
   // `all` is cells-scaled (series x categories) so it must be FOLDED, not spread —
   // a large grid overflows the argument list. `spokeSum` is category-scaled and safe.
-  const tickMax = stacked ? Math.max(1, ...spokeSum) : maxOf(all, 1);
-  const rawTicks = niceTicks(Math.min(0, cfg.scale?.min ?? 0), Math.max(cfg.scale?.max ?? tickMax, 1), 4);
+  //
+  // The auto domain is the data's own, anchored at 0 the way every column layout's
+  // is — not floored at 1, and not pinned at 0 from below. `niceTicks(0, 0)` already
+  // answers [0, 1], so an all-zero web has its guard, and the `1` floors that stood
+  // here as well put any radar of fractions on a 0..1 web (rings 0.5 / 1.0 for data
+  // of 0.2-0.4, against 20 / 40 for the same numbers x100). The lower bound was `0`
+  // whatever the data held, so with no `scale` a NEGATIVE value was clamped by `toR`
+  // onto the centre: -20, -5 and 0 drew at one point, and an all-negative series put
+  // every vertex there under rings labelled 0.5 and 1.0. A stacked web only ever
+  // stacks the positive parts (`columnPositiveTotal`), so its floor stays 0.
+  const tickMax = stacked ? Math.max(0, ...spokeSum) : maxOf(all, 0);
+  const tickMin = stacked ? 0 : minOf(all, 0);
+  const rawTicks = niceTicks(Math.min(0, cfg.scale?.min ?? tickMin), cfg.scale?.max ?? tickMax, 4);
   const min = cfg.scale?.min ?? rawTicks[0];
   const max = cfg.scale?.max ?? rawTicks[rawTicks.length - 1];
   // Clamp to the RESOLVED domain, as valueScale does. niceTicks rounds outward
@@ -524,7 +535,8 @@ function layoutRadialBars(cfg: ChartConfig, style: ChartStyle, decor: Decoration
 
   // Scale reaches the per-category stack sums (a single series is its own sum).
   const catSum = data.categories.map((_, c) => columnPositiveTotal(data.series, c));
-  const rawTicks = niceTicks(0, Math.max(cfg.scale?.max ?? Math.max(1, ...catSum), 1), 4);
+  // No floor of 1 — see the radar web above: it only clamped data below 1.
+  const rawTicks = niceTicks(0, cfg.scale?.max ?? Math.max(0, ...catSum), 4);
   const max = cfg.scale?.max ?? rawTicks[rawTicks.length - 1];
   // Same clamp as the radar web above: a pinned scale.max must not leave rings
   // outside the outer radius.

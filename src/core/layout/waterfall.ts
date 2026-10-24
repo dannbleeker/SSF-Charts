@@ -124,6 +124,40 @@ export function waterfallExtent(cfg: ChartConfig): { min: number; max: number } 
   return { min: minOf(vals, 0), max: maxOf(vals, 0) };
 }
 
+/**
+ * The font and box of a sideways value label that does not fit inside its bar and
+ * is drawn to the RIGHT of it, given the room the row has from there to the
+ * chart's edge.
+ *
+ * The box was a fixed `fs * 4` — 40pt at 10pt text, whatever the chart's width —
+ * and the clip applied to it cut the number to that: "+125,000" drew as
+ * "+125,0…" with 115pt of empty row beside it, and a wider chart did not help
+ * because the box stayed 40pt. A truncated number reads as a different, plausible
+ * one ("+1,250…" reads as 1,250). The upright branch never did this: it shrinks
+ * the labels to the slot and clips only the number no floor can fit.
+ *
+ * So the box is as wide as the label needs and no wider than the row has, and
+ * where even that is short the label SHRINKS to the room before it is clipped —
+ * down to the 5pt floor the upright fit uses. `fs * 4` stays the floor of the
+ * box: a label that already fits it keeps its box byte for byte.
+ *
+ * A bar that ends at the frame's edge leaves the row LESS than that, and there is
+ * no wider box to give it. It keeps the box and the font it had, and the chart's
+ * own frame clip (`clipTextToFrame`) cuts the label to the edge as before —
+ * shrinking toward a box the chart cannot hold would only make the same cut
+ * smaller.
+ */
+function sideLabelFit(label: string, labelFs: number, fs: number, roomRight: number): { fs: number; w: number } {
+  if (roomRight <= fs * 4) return { fs: labelFs, w: fs * 4 };
+  // Whole points: the caller clips to `w - 2`, and `(width + 2) - 2` is not always
+  // `width` in floating point, so a box sized to the label's exact width could
+  // clip it by one ulp and cut a character.
+  const need = (f: number) => Math.ceil(textWidth(label, f)) + 2;
+  let f = labelFs;
+  while (f > 5 && need(f) > roomRight) f -= 0.5;
+  return { fs: f, w: Math.max(fs * 4, Math.min(need(f), roomRight)) };
+}
+
 export function layoutWaterfall(cfg: ChartConfig, style: ChartStyle, decor: Decorations): LayoutResult {
   const { data } = cfg;
   const n = data.categories.length;
@@ -246,17 +280,21 @@ export function layoutWaterfall(cfg: ChartConfig, style: ChartStyle, decor: Deco
       // "no room" answer the other fits give, and what keeps a zero-size font
       // (which OOXML rejects) out of the scene.
       if ((fits || !stacked || b.isTotal) && labelFs > 0) {
+        // Sideways, a label that cannot sit inside its bar sits to the right of it
+        // in the room the row has left (see `sideLabelFit`).
+        const side = H && !fits ? sideLabelFit(label, labelFs, fs, cfg.width - (r.x + r.w + 2)) : null;
         // Upright, the box is centred on the bar and capped at the slot, so
         // adjacent boxes ABUT instead of overlapping. `r.x - 6` is exactly
         // `centers[c] - (r.w + 12) / 2`, so an uncapped slot is byte-identical.
-        const boxW = H ? (fits ? r.w + 12 : fs * 4) : Math.min(r.w + 12, slotLen);
+        const boxW = side ? side.w : H ? r.w + 12 : Math.min(r.w + 12, slotLen);
         // A label that does not fit INSIDE its bar is drawn above it, and the
         // only thing above a bar that reaches the top of the plot is the edge of
         // the chart — 30pt over the top of a 300x60 chart at 32pt. Fitted to the
         // band the bar leaves, and dropped where that band cannot carry a
         // readable number: the same answer `labelFs` itself gives for a row too
         // thin to label.
-        const outsideFs = fits || H ? labelFs : aboveMarkFontSize(labelFs, r.y, titleInkBottom(cfg, style), 1.45);
+        const sideFs = side?.fs ?? labelFs;
+        const outsideFs = fits || H ? sideFs : aboveMarkFontSize(labelFs, r.y, titleInkBottom(cfg, style), 1.45);
         if (outsideFs > 0)
           nodes.push({
             kind: "text",

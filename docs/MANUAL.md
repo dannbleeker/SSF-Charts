@@ -139,12 +139,12 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
 | Area | stacked trends | |
 | Butterfly | two-sided comparison (pyramids) | first two series, back to back, one scale |
 | Scatter | correlation | `X`/`Y` rows; `Group` colors points; `X line`/`Y line` partitions; `Trend` fits an OLS line labelled with R² and p, or a **polynomial** curve (`scatter.trendDegree` 2–4, quadratic/cubic/quartic); quadrants shade a 2×2 matrix |
-| Bubble | scatter + size | add a `Size` row; a size legend with reference circles appears automatically |
+| Bubble | scatter + size | add a `Size` row; a size legend with reference circles appears automatically; a negative `Size` is drawn as an outline (pale body, solid ring) at the size of its magnitude |
 | Gantt | project plans | `Start`/`End`/`Milestone` rows; see [Gantt](#gantt) |
 | Combo | columns + line | mark a series with type "line"; secondary axis optional; columns can be stacked, clustered, or 100% |
-| Pie / Doughnut | simple shares | slices from 12 o'clock, clockwise; explode slices to highlight; `pie.breakout: [indices]` collapses categories into an "Other" slice detailed in a bar beside the pie (bar-of-pie) |
+| Pie / Doughnut | simple shares | slices from 12 o'clock, clockwise; a doughnut is a real ring, so the slide behind its centre shows through; explode slices to highlight; `pie.breakout: [indices]` collapses categories into an "Other" slice detailed in a bar beside the pie (bar-of-pie) |
 | Boxplot | distributions | `Min`/`Q1`/`Median`/`Q3`/`Max` rows, or raw samples → automatic Tukey whiskers and outliers; suffix rows with `\| group` for side-by-side grouped boxes |
-| Radar | multi-dimension profiles | categories = spokes, series = translucent polygons; keep ≤ 3 series |
+| Radar | multi-dimension profiles | categories = spokes, series = translucent polygons; keep ≤ 3 series; with no fixed scale the rings follow the data, from zero (or the lowest negative value) up |
 | Heatmap | value matrices | series = rows, categories = columns, one global color scale (diverging when data spans zero); marginal row/column totals optional |
 | Tile map | values by geography | categories = region codes (US postal / ISO-2 / world regions); layout auto-detected |
 | Cascade | stage-by-stage breakdown of a total | categories `"Stage \| Drop label \| Group"`; each bar is a subset of the previous, remainders hang as labeled boxes |

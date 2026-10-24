@@ -67,8 +67,15 @@ export function layoutViolin(cfg: ChartConfig, style: ChartStyle, decor: Decorat
     if (samples.length < 2) return;
     const sorted = samples.slice().sort((a, b) => a - b);
     const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
-    const sd = Math.sqrt(samples.reduce((a, b) => a + (b - mean) ** 2, 0) / samples.length) || 1;
-    // Silverman's rule-of-thumb bandwidth.
+    const sd = Math.sqrt(samples.reduce((a, b) => a + (b - mean) ** 2, 0) / samples.length);
+    // Silverman's rule-of-thumb bandwidth. A category whose observations are all
+    // equal has sd 0, and the axis floor below is then the whole bandwidth — a
+    // spike a sixtieth of the axis tall, whatever the unit. There was a fallback
+    // here, `|| 1`, in DATA UNITS: it set the bandwidth to ~0.8 for any constant
+    // category, which covers the whole axis once that spans a few units or less, so
+    // a category with zero spread was drawn as a rectangle across the full plot —
+    // the widest-looking distribution on the chart (y 8..282 on a 0.40-0.60 axis,
+    // against 140..150 for the same data x100).
     const h = Math.max((vmax - vmin) / 60, 1.06 * sd * Math.pow(samples.length, -0.2));
     const lo = sorted[0];
     const hi = sorted[sorted.length - 1];

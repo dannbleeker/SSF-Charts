@@ -27,7 +27,12 @@ export function layoutCascade(cfg: ChartConfig, style: ChartStyle, decor: Decora
   const { plot: values, raw } = firstSeriesValues(data, n);
   // Valid cascades decrease, so the first stage IS the max; scaling by the
   // max keeps malformed (growing) data inside the plot instead of overflowing.
-  const v0 = Math.max(...values, 1);
+  //
+  // `|| 1` guards only the all-zero case. A floor of 1 here — `Math.max(...values,
+  // 1)` — also clamped any cascade whose data is below 1, and a cascade has no
+  // value axis to show why: [0.09, 0.06, 0.03] drew its first stage, which is the
+  // chart's whole reference, at 25.6pt of a 284pt plot.
+  const v0 = Math.max(0, ...values) || 1;
   const fmt = resolveFormat(values, cfg.numberFormat);
 
   const titleH = titleHeight(cfg, style);

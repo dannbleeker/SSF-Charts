@@ -160,6 +160,23 @@ function markerNode(
 const markerExtent = (shape: MarkerSymbol, r: number) => r * markerScale(shape);
 
 /**
+ * The fill, outline colour and outline width a point is drawn with. `size` is the
+ * bubble's Size cell, and is null on a scatter, which has no Size row.
+ *
+ * A NEGATIVE Size is drawn as an outline: a pale body inside a solid ring in the
+ * point's own colour. The radius takes |Size| (area still tracks the magnitude),
+ * so the colour was the only thing left to say the sign — and it said nothing: a
+ * loss of 500 drew the same disc as a gain of 500, and with mixed signs the
+ * largest negative could be the biggest bubble on the chart under a size key that
+ * read as positive. Excel's answer for a negative bubble is the same, unfilled.
+ * Pale rather than `fill: "none"` because a marker symbol (diamond, triangle…) has
+ * no unfilled form in the PowerPoint renderers.
+ */
+function bubblePaint(size: number | null, fill: string, background: string): [string, string, number] {
+  return size != null && size < 0 ? [lerpColor(background, fill, 0.18), fill, 1.5] : [fill, background, 1];
+}
+
+/**
  * The part of a segment that lies between `top` and `bot`, or null when none of
  * it does. Clipping, not clamping: moving an endpoint onto the boundary bends
  * the line, and the segments this serves are straight fits whose slope is the
@@ -1418,7 +1435,8 @@ export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decora
         : colorScale
           ? style.mutedText
           : paletteColor(cfg.style?.palette ?? PALETTE, gi);
-    nodes.push(markerNode(markerFor(p.group), px(p, i), py(p, i), r, fill, style.background, 1, `point-${i}`));
+    const [markFill, markStroke, markWidth] = bubblePaint(p.size, fill, style.background);
+    nodes.push(markerNode(markerFor(p.group), px(p, i), py(p, i), r, markFill, markStroke, markWidth, `point-${i}`));
     // Keep labels off the mark as DRAWN: an area-matched star reaches ~1.67x
     // its data radius, and a keep-out box built from `r` would let a label sit
     // on its points.
