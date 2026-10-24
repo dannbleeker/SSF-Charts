@@ -27,8 +27,10 @@
  * files. This tool's entire output is directional — "settled" counts from the
  * END, `latest` is the last column, and the fixture table's bottom line is read
  * as "the newest sheet" — and the docstring above tells you to pass a GLOB,
- * whose order is alphabetical by filename. Real round files are named by content
- * hash, so that order is effectively random.
+ * whose order is alphabetical by filename. The archive names rounds
+ * `NNN-<sha>.json`, which happens to list oldest first until round 1000 — a
+ * property of the naming, not a promise of the shell, and files a person lists by
+ * hand have no such order. The sort is `byRoundTime` below.
  *
  * The cost was not hypothetical: the six rounds of 2026-08-11 in glob order made
  * `shapes-items-count-honest` read `steady lately — "unreadable" x 5` when the
@@ -40,30 +42,59 @@ import { readFileSync } from "fs";
 import { FAKE_BASELINE, answersOf, diffAnswers, sheetOf } from "./host-baseline.mjs";
 import { isMain } from "./is-main.mjs";
 
-/** A round's answers plus the build that produced them. */
+/**
+ * A round's answers, the build that produced them, and when the driver started it.
+ *
+ * `startedAt` is the ROUND'S OWN clock (`driverRun.startedAt`, written by the
+ * driver the moment the round begins), and it is on the round file itself, not
+ * on the sheet inside it. Rounds archived before the driver recorded it carry
+ * none, and `byRoundTime` copes with that.
+ */
 export function readRound(path) {
   const file = JSON.parse(readFileSync(path, "utf8"));
   const sheet = sheetOf(file) ?? file;
-  return { path, build: sheet?.build ?? "?", answers: answersOf(file) ?? {} };
+  return { path, build: sheet?.build ?? "?", startedAt: file?.driverRun?.startedAt, answers: answersOf(file) ?? {} };
 }
 
 /**
- * Oldest first, by the timestamp the round stamped on itself.
+ * Oldest first: by the build's stamp, then by the round's own start time.
  *
- * `build` is `"<sha> · <ISO timestamp>"`, so the time is there to be read and
- * nothing was reading it. A round whose stamp cannot be parsed sorts LAST and
- * keeps its relative order, which is the safe direction: an unparseable stamp
- * is most likely a hand-made or future file, and putting it at the end makes it
- * visible in the `latest` column rather than silently reordering real rounds
- * around it.
+ * `build` is `"<sha> · <YYYY-MM-DD HH:MMZ>"`, which is when vite BUILT the
+ * bundle, to the minute — not when a round ran. It orders builds, and it is the
+ * same string on every round of one build. A cycle takes two or three rounds per
+ * build, so those tie, and `Array.prototype.sort` is stable: the tied rounds kept
+ * whatever order the shell listed them in, which is exactly what the docstring
+ * at the top of this file says must never happen. Handed the three rounds of one
+ * build newest-first, `latest` and `streak` named the OLDEST (measured on rounds
+ * 495-497: nine questions printed their sequence reversed; the whole archive
+ * handed over newest-first moved two verdicts from UNSTABLE to "steady lately").
+ * Within a build, the tie is therefore broken by `startedAt`.
+ *
+ * Round files are named `NNN-<sha>.json`, zero-padded and counting up, so a
+ * glob already lists them oldest first and the archive never showed this. It
+ * stops being true at round 1000, where `1000-…` sorts before `999-…`, and it
+ * was never true of rounds a person lists by hand.
+ *
+ * A round whose stamp cannot be parsed sorts LAST and keeps its relative order,
+ * which is the safe direction: an unparseable stamp is most likely a hand-made
+ * or future file, and putting it at the end makes it visible in the `latest`
+ * column rather than silently reordering real rounds around it. A round with no
+ * `startedAt` sorts after the ones that have one, by the same rule.
  */
 export function byRoundTime(a, b) {
-  const t = (r) => {
+  const stamp = (r) => {
     const m = /(\d{4}-\d{2}-\d{2}[T ][\d:]+Z?)/.exec(String(r.build ?? ""));
     const v = m ? Date.parse(m[1].replace(" ", "T")) : NaN;
     return Number.isFinite(v) ? v : Infinity;
   };
-  return t(a) - t(b);
+  const started = (r) => {
+    const v = Date.parse(String(r.startedAt ?? ""));
+    return Number.isFinite(v) ? v : Infinity;
+  };
+  // `-` is not safe on two Infinities (NaN), and a comparator returning NaN is
+  // read as "equal" by accident rather than by decision.
+  const cmp = (x, y) => (x === y ? 0 : x < y ? -1 : 1);
+  return cmp(stamp(a), stamp(b)) || cmp(started(a), started(b));
 }
 
 /**

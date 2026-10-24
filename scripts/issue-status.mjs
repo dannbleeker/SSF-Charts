@@ -34,7 +34,26 @@ import { isMain } from "./is-main.mjs";
 const ROOTS = ["src", "scripts", "docs", "test"];
 const FILES = [".ts", ".mjs", ".js", ".md"];
 
-/** Every `office-js#NNNN` this repo cites, and where. */
+/**
+ * How this repo cites an office-js issue: `office-js#NNNN`, or the issue's own
+ * URL (`github.com/OfficeDev/office-js/issues/NNNN`, which is what a markdown
+ * link `[#NNNN](…)` carries).
+ *
+ * A BARE `#NNNN` is deliberately not matched. It is far too common in prose here
+ * to be a reliable signal, and a wrong number in this report is worse than a
+ * missing one: it sends someone to an unrelated issue. That reason does not reach
+ * a full URL, which cannot be wrong about WHICH issue it means — and skipping it
+ * hid #2881 and #3309 (the reasons `docs/RESEARCH.md` gives for rejecting SVG
+ * coercion), #5896 and #6266 from a report whose header promises "every
+ * office-js issue this repo cites". `test/office-js-watch.test.ts` already counts
+ * the URL form as a citation; the two tools disagreed about what "cited" means.
+ *
+ * ONE PATTERN FOR BOTH SCANS below (the tree, and the two root files), so a third
+ * spelling is added in one place.
+ */
+const CITATION = /office-js(?:\s*#|\/issues\/)(\d{3,6})/g;
+
+/** Every office-js issue this repo cites, and where. */
 export function citedIssues(root = ".") {
   const found = new Map();
   const walk = (dir) => {
@@ -61,10 +80,8 @@ export function citedIssues(root = ".") {
         } catch {
           continue;
         }
-        // `office-js#NNNN` only. A bare `#NNNN` is far too common in prose here
-        // to be a reliable signal, and a wrong number in this report is worse
-        // than a missing one: it sends someone to an unrelated issue.
-        for (const m of text.matchAll(/office-js\s*#(\d{3,6})/g)) {
+        // See `CITATION`: `office-js#NNNN` or the issue's URL, never a bare `#NNNN`.
+        for (const m of text.matchAll(CITATION)) {
           const n = m[1];
           if (!found.has(n)) found.set(n, new Set());
           found.get(n).add(p.replace(/\\/g, "/"));
@@ -75,7 +92,7 @@ export function citedIssues(root = ".") {
   for (const r of ROOTS) walk(join(root, r));
   for (const f of ["CLAUDE.md", "README.md"]) {
     try {
-      for (const m of readFileSync(join(root, f), "utf8").matchAll(/office-js\s*#(\d{3,6})/g)) {
+      for (const m of readFileSync(join(root, f), "utf8").matchAll(CITATION)) {
         const n = m[1];
         if (!found.has(n)) found.set(n, new Set());
         found.get(n).add(f);

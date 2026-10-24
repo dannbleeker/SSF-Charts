@@ -57,6 +57,36 @@
  * cannot be part of a cycle and cannot pull the filesystem in by accident.
  */
 
+/**
+ * The number a round's file name starts with, as written (`065`, `1000`), or ""
+ * when the name does not start with one (`predictions.json`, a missing name).
+ *
+ * THE NUMBER IS NOT THREE CHARACTERS WIDE. The driver pads to three and never
+ * truncates, so round 1000 is `1000-<build>.json`, and every filename reader was
+ * widened from `\d{3}` to `\d{3,}` for exactly that
+ * (`test/round-numbers-past-999.test.ts`). The readers that cut the NAME instead
+ * of matching it were not found by that sweep, because `.slice(0, 3)` contains
+ * no `\d{3}` to grep for: `1000-x.json` read as round 100 and `1060-x.json` as
+ * 106, while the newest round stayed at 999, so `dormantInstruments` called a
+ * line that fires every round "gone quiet 893 rounds ago" and could never see
+ * one that really stopped.
+ */
+export function roundLabelOf(roundName) {
+  return /^\d+/.exec(String(roundName ?? ""))?.[0] ?? "";
+}
+
+/**
+ * The round number out of a file name, or NaN for a file that is not a round.
+ *
+ * NaN and not 0, deliberately: `rounds/predictions.json` lives beside the rounds
+ * and has been counted as one before, and a caller that does arithmetic on the
+ * result must be able to SKIP such a file rather than treat it as round zero.
+ */
+export function roundNumberOf(roundName) {
+  const label = roundLabelOf(roundName);
+  return label ? Number(label) : NaN;
+}
+
 export function poolRasteriseArms(logs) {
   const arms = { rasterise: { ok: 0, stall: 0 }, "cheap read": { ok: 0, stall: 0 } };
   let rounds = 0;
@@ -611,10 +641,29 @@ export function poolScenarioFriction(logs) {
  * spread is the noise floor any claim about a fix has to clear.
  */
 export function poolTagFaults(logs) {
+  // THE TWO `-5010` COLUMNS COUNT A 5010 AT A STEP, ONCE PER FAILURE. They matched
+  // `at=<step>` anywhere in an entry and counted every entry, which was wrong in
+  // two ways that measured 2026-10-24 over the whole archive:
+  //
+  //   - ONCE PER ENTRY. A failed config-tag write is traced twice with the same
+  //     error text — `step()`'s own line (message = the step's label) and the
+  //     `tagging failed` line that echoes it (counted in its own column below) —
+  //     and all 78 archived rounds with a hit carry both, so `cfg-tag-5010` was
+  //     exactly twice the number of failures. The journal's 3/8/8 for rounds
+  //     065-067 and BACKLOG's 8 for 069 are the true counts; this printed 6/16/16
+  //     and 16, and put "scored 0 and 8 for cfg-tag-5010" in the headline noise
+  //     floor for a build whose worst round had four failures and no 5010 at all.
+  //   - ANY CODE. `at=` names the step, not the error: 148 of the 458 config-tag
+  //     hits were ErrorPointer, UnexpectedError, GeneralException or the 45s
+  //     "PowerPoint did not respond" timeout, and 31 of the 186 grouping hits were
+  //     InvalidArgument. The column is named for the code, so it requires it.
+  //
+  // `group-5010` was not doubled (its failure leaves one line); it is held to the
+  // same two rules so both columns mean the same thing.
   const KINDS = [
     [/Cannot read properties of undefined \(reading 'add'\)/, "tags-undefined"],
-    [/at=writing the chart's config tag/, "cfg-tag-5010"],
-    [/at=grouping the chart's shapes/, "group-5010"],
+    [/at=writing the chart's config tag \| code=5010/, "cfg-tag-5010", true],
+    [/at=grouping the chart's shapes \| code=5010/, "group-5010", true],
     [/no chart's tag could be queued/, "no-queue"],
   ];
   const byBuild = new Map();
@@ -625,9 +674,11 @@ export function poolTagFaults(logs) {
     const counts = Object.fromEntries(KINDS.map(([, name]) => [name, 0]));
     counts["tagging-failed"] = 0;
     for (const e of entries) {
-      if (/^tagging failed/.test(String(e.message ?? ""))) counts["tagging-failed"]++;
+      const echo = /^tagging failed/.test(String(e.message ?? ""));
+      if (echo) counts["tagging-failed"]++;
       const blob = JSON.stringify(e.data ?? {});
-      for (const [re, name] of KINDS) if (re.test(blob)) counts[name]++;
+      // `atStep` kinds are counted off the step's own line, never its echo.
+      for (const [re, name, atStep] of KINDS) if (re.test(blob) && !(atStep && echo)) counts[name]++;
     }
     if (!byBuild.has(build)) byBuild.set(build, []);
     byBuild.get(build).push(counts);
@@ -2041,7 +2092,7 @@ export function poolNoiseFloor(logs) {
     }
     const selftest = Array.isArray(log.selftest) ? log.selftest : [];
     const row = {
-      round: String(log.roundName ?? "").slice(0, 3),
+      round: roundLabelOf(log.roundName),
       // The most repeated measurement this harness makes, and the one the
       // session drift moves most.
       laterMed: later.length ? [...later].sort((a, b) => a - b)[Math.floor(later.length / 2)] : null,
@@ -2095,7 +2146,7 @@ export function poolWithinRoundSpread(logs) {
     if (later.length < 4) continue;
     const s = [...later].sort((a, b) => a - b);
     spreads.push({
-      round: String(log.roundName ?? "").slice(0, 3),
+      round: roundLabelOf(log.roundName),
       pct: Math.round((100 * (s[s.length - 1] - s[0])) / s[0]),
     });
   }
@@ -2165,10 +2216,23 @@ export function poolSyncBreakdown(logs, of = 24, changed = 18) {
  *    loaded. A first pass at this split batches on it and reported "drawing
  *    where the user is looking costs 2.3x per shape" — which was committed,
  *    and is wrong. Checked afterwards: sentinel-keyed batches have median
- *    `onSlide` of 0 against 10 for id-keyed ones, so they draw onto EMPTIER
- *    targets, and first batches cost 5802ms against 5591ms for later ones —
- *    no setup effect either. The label never carried the meaning the finding
- *    put on it.
+ *    `onSlide` of 0 against 10 for id-keyed ones, and first batches cost
+ *    5802ms against 5591ms for later ones — no setup effect either. The label
+ *    never carried the meaning the finding put on it.
+ *
+ *    AND THAT 0 IS A PLACEHOLDER, NOT AN EMPTY TARGET, which this docstring
+ *    used to get backwards ("so they draw onto EMPTIER targets"). A draw's
+ *    first batch is issued before the slide is named, so it reads the count
+ *    stored under the sentinel key — 0 — and the next batch then moves its
+ *    shapes onto the real key. Of the 1,194 archived sentinel batches whose
+ *    true prior can be recovered, 717 (60%) were on slides this run had
+ *    ALREADY drawn 1 to 88 shapes on, and their median batch takes 12.9s
+ *    against 3.6s for the id-keyed 0-shape batches. Binned as 0 they lifted the
+ *    empty-target band from 3.6s to 4.9s and the printed "A run slows ITSELF
+ *    down" from 2.2x to 1.6x. `stallsByOccupancy` in `triage.mjs` leaves the
+ *    same rows out for the same reason, so they are not binned here at all.
+ *    Rows with no `onSlideKey` (no archived round lacks one) are kept: the
+ *    absence says nothing about which kind they are.
  *
  * What survives is the curve below, and it is the one the source already
  * described: `shapesDrawnOn` is exported precisely so a caller can avoid a
@@ -2196,7 +2260,10 @@ export function poolDrawCostCurve(logs) {
       }
       // A new draw restarts the count, so a smaller upTo begins a fresh one.
       const size = d.upTo > cum ? d.upTo - cum : d.upTo;
-      prev = { size, drawnHere: typeof d.onSlide === "number" ? d.onSlide : null };
+      // A sentinel-keyed batch's `onSlide` is a placeholder 0 (see trap 2), so it
+      // has no occupancy to be binned by. Its TIME still counts toward `n`.
+      const resolved = d.onSlideKey !== "(visible)" && typeof d.onSlide === "number";
+      prev = { size, drawnHere: resolved ? d.onSlide : null };
       cum = d.upTo;
     }
   }
@@ -2415,9 +2482,27 @@ export function poolUpdateShortfalls(logs) {
     unitMismatch: 0,
     ungroupedCharts: 0,
     atRisk: 0,
+    /**
+     * Readings that reached the sums below: not unit-mismatched, not unsettled,
+     * not contradicted by the deck. COUNTED where they are pooled and not
+     * derived as `updates - unitMismatch - ...`, because the subtraction is what
+     * went wrong: `unsettledKept` was split out of `unitMismatch` on 2026-08-20
+     * and the report's copy of the subtraction was not told, so a pool of nothing
+     * but unsettled readings printed growth figures and a verdict over zero
+     * measurements on 136 of the 411 archived rounds that carry updates.
+     */
+    pooled: 0,
     /** Readings whose two host reads disagreed — kept, flagged, never pooled. */
     unsettledKept: 0,
     unsettledGrowth: 0,
+    /**
+     * Of those, the ones that touched a chart AT RISK. `atRisk` is read from the
+     * host's shape TYPE, not from the disputed shape count, so it is as good on
+     * an unsettled reading as on a settled one — but it is kept APART from
+     * `atRisk` and `blind`: pooling it would let "zero growth over N at-risk
+     * charts" be said over readings whose growth is exactly what was disputed.
+     */
+    unsettledBlind: 0,
     /** Shapes #586 left loose ON PURPOSE, and the charts that left them. */
     strandedByDesign: 0,
     subsetGroups: 0,
@@ -2446,7 +2531,20 @@ export function poolUpdateShortfalls(logs) {
     // cannot answer this either way, and round 082 was exactly that: 20 grouped,
     // 0 not. Without this the report would read "no growth" from such a round
     // and sound like an all-clear.
-    out.ungroupedCharts += entries.filter((e) => /^not grouping/.test(String(e.message))).length;
+    //
+    // CHARTS, NOT LINES. A chart that cannot be grouped is declined once per
+    // reason: all 33 archived `the positional guess named no shape of ours`
+    // declines are followed by `no member handle this host will accept` for the
+    // SAME chart, so counting lines called 33 charts 66. A line is one chart by
+    // its `chart` label and `index`; one with no `chart` (the early rounds) cannot
+    // be told from another and counts as one each, as it always did.
+    const declined = new Set();
+    for (const e of entries) {
+      if (!/^not grouping/.test(String(e.message))) continue;
+      if (e.data?.chart === undefined) out.ungroupedCharts++;
+      else declined.add(`${e.data.chart}#${e.data.index ?? ""}`);
+    }
+    out.ungroupedCharts += declined.size;
     // AND "A GROUP IS DELETED WHOLE" STOPPED BEING TRUE ON 2026-08-19. This
     // comment used to say stranding was possible only for an ungrouped chart.
     // #586 groups the majority the host will name and, in its own words, leaves
@@ -2510,6 +2608,7 @@ export function poolUpdateShortfalls(logs) {
       if (d.settled === false) {
         out.unsettledKept++;
         if (Number(d.growth) > 0) out.unsettledGrowth += Number(d.growth);
+        if (Number(d.atRisk) > 0) out.unsettledBlind++;
         continue;
       }
       // Checked BEFORE the reading is pooled, and counted rather than dropped
@@ -2520,6 +2619,7 @@ export function poolUpdateShortfalls(logs) {
         out.deckContradicted++;
         continue;
       }
+      out.pooled++;
       const atRisk = Number(d.atRisk) || 0;
       out.atRisk += atRisk;
       const growth = Number(d.growth) || 0;

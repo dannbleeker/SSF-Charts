@@ -36,14 +36,43 @@
  * not a measurement.
  */
 import { readFileSync } from "fs";
-import { NEVER_ASKED, UNINFORMATIVE_ANSWERS, sheetOf } from "./host-baseline.mjs";
+import { NEVER_ASKED, RENAMED_ANSWERS, UNINFORMATIVE_ANSWERS, sheetOf } from "./host-baseline.mjs";
 import { isMain } from "./is-main.mjs";
+
+/**
+ * A question's answers in today's words.
+ *
+ * `RENAMED_ANSWERS` is applied by `answersOf` to each question's FINAL answer
+ * and to nothing else, and this file reads the per-SAMPLE answers raw. So in the
+ * 87 rounds archived before 2026-09-01, `which-end-a-short-read-drops` sampled
+ * `all` and `none` — which today are `not-a-short-read` and `none-of-ours`, both
+ * of them `UNINFORMATIVE_ANSWERS` — and `explainBy` counted them as two real
+ * faces: 84 of those rounds listed the question as EXPLAINED by regime and 3 as
+ * COIN, where the same observation recorded in today's words is `steady` and
+ * not listed at all. That is the manufactured verdict `explainBy`'s own comment
+ * (2026-09-28) says a non-answer must never produce, arrived at through the old
+ * spelling of one.
+ *
+ * Mapped here, at the one place every reader below gets its samples from, and
+ * returned as a copy: a captured sheet is evidence and is READ, never written
+ * back (see `RENAMED_ANSWERS`).
+ */
+function inTodaysWords(a) {
+  const renamed = RENAMED_ANSWERS[a?.id];
+  if (!renamed) return a;
+  const word = (w) => renamed[w] ?? w;
+  return {
+    ...a,
+    answer: word(a.answer),
+    samples: Array.isArray(a.samples) ? a.samples.map((s) => (s ? { ...s, answer: word(s.answer) } : s)) : a.samples,
+  };
+}
 
 /** The samples a round recorded per question, with the build that produced them. */
 export function readRoundSamples(path) {
   const file = JSON.parse(readFileSync(path, "utf8"));
   const sheet = sheetOf(file);
-  const answers = Array.isArray(sheet?.answers) ? sheet.answers : [];
+  const answers = Array.isArray(sheet?.answers) ? sheet.answers.map(inTodaysWords) : [];
   return { path, build: sheet?.build ?? "?", answers };
 }
 
@@ -143,11 +172,23 @@ export const explainByRegime = (samples, neverAsked = NEVER_ASKED) => explainBy(
  *
  * Compares only the passes where BOTH questions have a real answer — a pass one
  * of them never reached cannot witness agreement or disagreement.
+ *
+ * "REAL" MEANS BOTH TIERS OF NON-ANSWER ARE DROPPED, the same two `explainBy`
+ * drops. This filtered `NEVER_ASKED` alone, so a pass that answered
+ * `unreadable` counted as a pass both questions answered and a move to or from
+ * it as the question moving — while `explainBy`, choosing which questions to
+ * pair, treated the same sample as nothing. Across the 474 archived rounds that
+ * changed 98 of 2,512 pair verdicts (92 independent -> lockstep, 6 the other
+ * way), 97 of them from `unreadable`, and left the CLI contradicting itself in
+ * one report: round 290 listed `picture-then-shape-read` with two real samples
+ * and then printed "3 pass(es) both answered" for it. The 2026-09-28 fix landed
+ * in `explainBy` and this was the other reader in the file.
  */
-export function flippedTogether(aSamples, bSamples, neverAsked = NEVER_ASKED) {
+export function flippedTogether(aSamples, bSamples, neverAsked = NEVER_ASKED, uninformative = UNINFORMATIVE_ANSWERS) {
   const byPass = (ss) => {
     const m = new Map();
-    for (const s of ss ?? []) if (s && !neverAsked.has(s.answer)) m.set(s.pass, s.answer);
+    for (const s of ss ?? [])
+      if (s && !neverAsked.has(s.answer) && !uninformative.has(s.answer)) m.set(s.pass, s.answer);
     return m;
   };
   const a = byPass(aSamples);

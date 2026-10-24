@@ -72,6 +72,7 @@ import {
   poolUpdateCost,
   poolUpdateShortfalls,
   poolWithinRoundSpread,
+  roundNumberOf,
   roundProfile,
 } from "./round-pools.mjs";
 // THE ONE COPY, imported rather than repeated. `host-probe.ts` and
@@ -694,7 +695,46 @@ export function roundsToJudgeOn(logs, afterBuild, buildOf, madeOn) {
   // an entry that says when it was made can be judged on any round taken after
   // that day. The build match stays first: it is exact, and dates are only as
   // good as the stamp.
-  return madeAt !== -1 ? logs.slice(madeAt + 1) : madeOn ? logs.filter((l) => stampDate(l, buildOf) > madeOn) : [];
+  if (madeAt !== -1) return logs.slice(madeAt + 1);
+  if (!madeOn) return [];
+  // Both sides in `stampDate`'s form, or the string comparison below is between
+  // two different spellings of one instant.
+  const staked = readMadeOn(madeOn).stamp;
+  return logs.filter((l) => stampDate(l, buildOf) > staked);
+}
+
+/**
+ * A prediction's `madeOn`, rewritten into the form `stampDate` gives a round —
+ * `YYYY-MM-DD` or `YYYY-MM-DD HH:MM`, UTC — so the two can be compared as strings.
+ *
+ * THE SEPARATOR IS WHAT BROKE. A round's stamp has a SPACE between day and time,
+ * and `madeOn` is typed by hand, so an ISO value pasted from `toISOString()`
+ * (`2026-08-19T10:00:00.000Z`) put a `T` there. Space is 0x20 and `T` is 0x54, so
+ * every round taken LATER THE SAME DAY compared as older than the claim and was
+ * dropped: the ledger said `no round yet` all day, and `stakedWithoutATime` said
+ * nothing, because its zoneless test accepted `[ T]` but a trailing `Z` made it
+ * return false. Seconds and fractions have the same effect, and so does a numeric
+ * UTC offset (`date -Iseconds` writes `+02:00`), which is converted rather than
+ * dropped.
+ *
+ * `bare` (a day with no time) and `zoneless` (a time with no zone) are the two
+ * spellings `stakedWithoutATime` warns about. A string that is none of these
+ * forms is returned as it stands, which is what the comparison did before.
+ */
+function readMadeOn(madeOn) {
+  const raw = String(madeOn ?? "");
+  const m = /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}(?::?\d{2})?)?)?$/i.exec(
+    raw.trim(),
+  );
+  if (!m) return { stamp: raw, bare: false, zoneless: false };
+  const [, day, time, zone] = m;
+  if (!time) return { stamp: day, bare: true, zoneless: false };
+  if (!zone) return { stamp: `${day} ${time}`, bare: false, zoneless: true };
+  if (/^z$/i.test(zone)) return { stamp: `${day} ${time}`, bare: false, zoneless: false };
+  const offset = `${zone.slice(0, 3)}:${zone.length > 3 ? zone.slice(-2) : "00"}`;
+  const at = Date.parse(`${day}T${time}:00${offset}`);
+  const stamp = Number.isFinite(at) ? new Date(at).toISOString().slice(0, 16).replace("T", " ") : `${day} ${time}`;
+  return { stamp, bare: false, zoneless: false };
 }
 
 /**
@@ -757,7 +797,6 @@ function stampDate(log, buildOf) {
  * noise on every correctly-staked entry.
  */
 export function stakedWithoutATime(prediction, logs, buildOf) {
-  const madeOn = String(prediction?.madeOn ?? "");
   // A DAY WITH NO TIME, or a time with no ZONE. Both make the comparison mean
   // something other than what the writer meant, and both fail quietly.
   //
@@ -767,8 +806,7 @@ export function stakedWithoutATime(prediction, logs, buildOf) {
   // Lexicographically "21:14Z" < "23:00", so the two rounds that were taken to
   // judge it read as older than the claim and the entry said `no round yet`.
   // That is the worst direction to fail in: `no round yet` reads as patience.
-  const bare = /^\d{4}-\d{2}-\d{2}$/.test(madeOn);
-  const zoneless = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}$/.test(madeOn);
+  const { bare, zoneless } = readMadeOn(prediction?.madeOn);
   if (!bare && !zoneless) return false;
   // Only when the build is absent: a build that IS in the archive pins the
   // position exactly and the date is never consulted.
@@ -1028,7 +1066,7 @@ function reportScenarioFriction(logs) {
 }
 
 /** Charts that would not follow a drag, which no scenario counts. */
-function reportUpdateShortfalls(logs) {
+export function reportUpdateShortfalls(logs) {
   const o = poolUpdateShortfalls(logs);
   if (!o.updates) return;
   console.log(`
@@ -1076,6 +1114,17 @@ function reportUpdateShortfalls(logs) {
 ` +
         `    second 48 times against the first's zero. A fifth of this instrument used to vanish here.`,
     );
+  // THE AT-RISK COUNT ABOVE IS OF POOLED READINGS ONLY, and `atRisk` does not
+  // depend on the disputed shape count — it is the host's shape TYPE. So a
+  // disputed reading can have touched an at-risk chart, and a headline of "0
+  // touched a chart AT RISK" over a trace that says otherwise is false (rounds
+  // 132 and 140). Said here, apart, because pooling it would let zero growth be
+  // announced over charts whose growth is precisely what was in dispute.
+  if (o.unsettledBlind)
+    console.log(
+      `    ${o.unsettledBlind} of those touched a chart AT RISK, which the count above leaves out: that
+` + `    chart's growth is the number the two reads disagreed on.`,
+    );
   // THE INSTRUMENT'S OWN ERROR RATE, which is a number worth printing: this
   // reading has produced four false positives in two days, every one of them a
   // host lag the deck later contradicted.
@@ -1089,7 +1138,11 @@ function reportUpdateShortfalls(logs) {
 ` +
         `    lag window agree on the stale number.`,
     );
-  const usable = o.updates - o.unitMismatch - o.deckContradicted;
+  // COUNTED WHERE THEY ARE POOLED, not `updates - unitMismatch - deckContradicted`:
+  // that subtraction forgot `unsettledKept` when it was split out, and a pool of
+  // nothing but disputed readings passed it and printed figures and a verdict
+  // over zero measurements.
+  const usable = o.pooled;
   if (usable > 0) {
     console.log(`    the slide GREW by ${String(o.blindGrowth).padStart(5)} shape(s), worst single update ${o.worst}`);
     console.log(`    on charts that HAD a list ${String(o.sightedGrowth).padStart(4)} — an ordinary change of size`);
@@ -1103,11 +1156,14 @@ function reportUpdateShortfalls(logs) {
     // `not grouping` count is a poor stand-in: it says a round contained such a
     // chart, not that an UPDATE ever touched one.
     if (o.blindGrowth === 0) {
+      // The disputed readings are not in `atRisk`; if one touched an at-risk chart
+      // the parenthesis below must not say every chart was safe.
+      const disputed = o.unsettledBlind ? `, bar the ${o.unsettledBlind} disputed reading(s) above` : "";
       if (o.atRisk === 0)
         console.log(
           `    NOT AN ALL-CLEAR: no update here touched a chart that could strand anything
 ` +
-            `    (0 at risk — every one was grouped, or had its parts list). Zero growth over
+            `    (0 at risk — every one was grouped, or had its parts list${disputed}). Zero growth over
 ` +
             `    zero at-risk charts is the question never being put.
 ` +
@@ -1120,7 +1176,16 @@ function reportUpdateShortfalls(logs) {
         );
     }
   } else {
-    console.log(`    no usable reading yet — every measurement here predates the instrument's fix.`);
+    // SAY WHICH KIND LEFT THEM OUT. This used to say every measurement "predates
+    // the instrument's fix", which is true of the unit-mismatched ones only; a
+    // disputed reading does not predate anything, and the reader was sent to wait
+    // for a fix that had already shipped.
+    const why = [
+      o.unitMismatch && `${o.unitMismatch} predate the instrument's fix`,
+      o.unsettledKept && `${o.unsettledKept} had two host reads that disagreed`,
+      o.deckContradicted && `${o.deckContradicted} were contradicted by the deck`,
+    ].filter(Boolean);
+    console.log(`    no usable reading yet — none of the ${o.updates} was pooled (${why.join(", ")}).`);
   }
   if (o.unitMismatch)
     console.log(
@@ -2963,7 +3028,10 @@ export function dormantInstruments(logs, minGap = 40, source = undefined) {
   const total = new Map();
   let newest = 0;
   for (const log of logs ?? []) {
-    const n = Number(String(log?.roundName ?? "").slice(0, 3));
+    // THE WHOLE NUMBER IN THE NAME, not its first three characters: round 1000 is
+    // `1000-x.json`, which `.slice(0, 3)` read as 100 while `newest` stayed at 999.
+    // A log with no round number in its name is skipped, not counted as round 0.
+    const n = roundNumberOf(log?.roundName);
     if (!Number.isFinite(n)) continue;
     newest = Math.max(newest, n);
     for (const e of log?.trace?.entries ?? []) {

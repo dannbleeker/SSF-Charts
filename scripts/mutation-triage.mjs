@@ -1,7 +1,8 @@
 /**
  * WHICH SURVIVING MUTANTS NOBODY HAS RULED ON YET.
  *
- * A surviving mutant is a line this repo changed and no test noticed — which is
+ * A surviving mutant is a line this repo changed and no test noticed (one a test
+ * ran and let through, or `NoCoverage`: one no test ran at all) — which is
  * the question `stryker.config.json` says the job exists to ask: "Which
  * assertions are decorative? ... Three guards in one session turned out to pass
  * against the code they were written to catch. Nobody has ever checked the other
@@ -52,13 +53,28 @@ import { isMain } from "./is-main.mjs";
  */
 export const KNOWN_SURVIVORS = {};
 
+/**
+ * The two statuses that mean "the engine changed this line and no test noticed".
+ *
+ * `Survived`: tests ran the line and none failed. `NoCoverage`: no test ran it at
+ * all. `stryker.config.json` sets `coverageAnalysis: "perTest"`, under which a
+ * non-static mutant that no test covers is reported `NoCoverage` and never run,
+ * so it is the status a week of NEW code with no tests produces. It was dropped
+ * here, which made "0 surviving mutant(s) nobody has ruled on" and exit 0 the
+ * report for exactly that week — while `scoreByFile` in the same file counted
+ * those mutants as unkilled, so the same report showed `new-feature.ts` at 0 of 2
+ * under a headline of nothing found. Stryker's own clear-text reporter lists the
+ * two together as undetected.
+ */
+const UNDETECTED = new Set(["Survived", "NoCoverage"]);
+
 /** Stryker's json report -> the surviving mutants, flattened and keyed. */
 export function survivorsOf(report) {
   const files = report?.files ?? {};
   const out = [];
   for (const [path, entry] of Object.entries(files)) {
     for (const m of entry?.mutants ?? []) {
-      if (m?.status !== "Survived") continue;
+      if (!UNDETECTED.has(m?.status)) continue;
       const line = m?.location?.start?.line ?? 0;
       out.push({
         key: `${path}:${line}:${m.mutatorName ?? "?"}`,
@@ -66,6 +82,9 @@ export function survivorsOf(report) {
         line,
         mutator: m.mutatorName ?? "?",
         replacement: String(m.replacement ?? "").slice(0, 80),
+        // Kept apart in the list: a line no test RUNS needs a test, where one
+        // that ran and survived needs a better assertion. Present only when true.
+        ...(m.status === "NoCoverage" ? { uncovered: true } : {}),
       });
     }
   }
@@ -100,7 +119,8 @@ export function reportBody(fresh, all, rows) {
     lines.push("");
     lines.push("### Not yet ruled on");
     lines.push("");
-    for (const s of fresh.slice(0, 50)) lines.push(`- \`${s.key}\` → \`${s.replacement}\``);
+    for (const s of fresh.slice(0, 50))
+      lines.push(`- \`${s.key}\` → \`${s.replacement}\`${s.uncovered ? " — no test runs this line" : ""}`);
     if (fresh.length > 50) lines.push(`- …and ${fresh.length - 50} more (see the artifact)`);
   }
   if (rows.length) {

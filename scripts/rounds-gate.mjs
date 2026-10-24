@@ -370,6 +370,56 @@ export function coverageOf(round) {
   return { ran, total, collapsed: total > 0 && ran / total < COVERAGE_FLOOR };
 }
 
+/** Fewer prior rounds than this and "the usual" is a guess, not a median. */
+export const MIN_PRIOR_SPANS = 3;
+
+/**
+ * HOW LONG THE NEWEST ROUND TOOK, against rounds that ran the SAME SCENARIOS.
+ *
+ * "The usual" used to be the median span of EVERY earlier round, and the
+ * scenario list grew from 13 to 19 while that median did not follow it. At
+ * round 497 the median over 467 rounds was 617s — the length of a 13-scenario
+ * round — while a 19-scenario round takes about 905s, so an ordinary round sat
+ * on the 1.5x line and was told it was "a degraded sample, not a change": 35 of
+ * the last 59 rounds judged were, and 55% of every 19-scenario round, against
+ * 10% of the rounds the median describes. Drawn only from rounds of the same
+ * scenario count the same line fires on 4 of 96, and those four average 6.5
+ * post-retry failures against 0.5 for the rest, which is what it was written to
+ * find. `docs/BACKLOG.md` ("Round duration is a fourth denominator trap") names
+ * this exact +47% and says nobody has quoted it yet; the gate was quoting it on
+ * every run.
+ *
+ * The list's length is `selftest.length` and not the number that RAN: a round
+ * that skipped scenarios is still a round of that list, and its being short is
+ * what the line should be allowed to say.
+ *
+ * With fewer than `MIN_PRIOR_SPANS` comparable rounds (the first rounds after
+ * the list changes) there is no usual yet, and this says so rather than
+ * borrowing the old list's. `null` when the newest round carries no usable span.
+ */
+export function spanAgainstUsual(rounds) {
+  const newest = rounds[rounds.length - 1];
+  const span = roundSpanSeconds(newest);
+  if (span === null) return null;
+  const scenarios = (r) => r?.selftest?.length ?? 0;
+  const priorSpans = rounds
+    .slice(0, -1)
+    .filter((r) => scenarios(r) === scenarios(newest))
+    .map(roundSpanSeconds)
+    .filter((n) => typeof n === "number");
+  if (priorSpans.length < MIN_PRIOR_SPANS)
+    return { span, scenarios: scenarios(newest), prior: priorSpans.length, median: null, ratio: null };
+  const sorted = [...priorSpans].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  return {
+    span,
+    scenarios: scenarios(newest),
+    prior: priorSpans.length,
+    median,
+    ratio: median ? span / median : 1,
+  };
+}
+
 if (isMain(import.meta.url, process.argv[1])) {
   // EXIT 2 MEANS "I COULD NOT DO MY JOB", and it has to be its own code. This
   // gate's whole value is that exit 1 means a scenario stopped passing — so a
@@ -733,19 +783,22 @@ if (isMain(import.meta.url, process.argv[1])) {
   // HOW LONG THIS ROUND TOOK, printed before anything that reads its counters.
   // A slow round is a degraded round in this archive, and the reader has never
   // been able to see which kind they were looking at.
+  //
+  // AGAINST ROUNDS OF THE SAME SCENARIO COUNT — see `spanAgainstUsual`. The
+  // median of the whole archive described a 13-scenario round and fired on most
+  // 19-scenario ones.
   const newest = rounds[rounds.length - 1];
-  const span = roundSpanSeconds(newest);
-  const priorSpans = rounds
-    .slice(0, -1)
-    .map(roundSpanSeconds)
-    .filter((n) => typeof n === "number");
-  if (span !== null && priorSpans.length >= 3) {
-    const sorted = [...priorSpans].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)];
-    const ratio = median ? span / median : 1;
+  const usual = spanAgainstUsual(rounds);
+  if (usual) {
+    const { span, median, ratio } = usual;
     const age = paneAgeAtStartSeconds(newest);
-    console.log(`
-  THIS ROUND TOOK ${span}s (median of ${priorSpans.length} prior round(s): ${median}s)`);
+    console.log(
+      median === null
+        ? `
+  THIS ROUND TOOK ${span}s (no usual yet: ${usual.prior} prior round(s) ran these ${usual.scenarios} scenarios)`
+        : `
+  THIS ROUND TOOK ${span}s (median of ${usual.prior} prior ${usual.scenarios}-scenario round(s): ${median}s)`,
+    );
     // THE READING THAT PREDICTS THE COUNTERS. See `paneAgeAtStartSeconds`.
     if (age !== null)
       console.log(
@@ -757,7 +810,7 @@ if (isMain(import.meta.url, process.argv[1])) {
 ` +
               `    degraded sample; reload the pane between rounds to avoid it.`,
       );
-    if (ratio >= 1.5)
+    if (ratio !== null && ratio >= 1.5)
       console.log(
         `    ${ratio.toFixed(1)}x the usual. Slow rounds in this archive average roughly twice the post-retry
 ` + `    failures of fast ones — read this round's counters as a degraded sample, not as a change.`,
