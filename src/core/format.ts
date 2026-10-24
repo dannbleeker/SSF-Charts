@@ -482,12 +482,31 @@ export function parseDateToken(raw: string): number | null {
   // a day number at all, while `Apr 31` was accepted and moved.
   //
   // Checked only where the token names a day UNAMBIGUOUSLY — the ISO and
-  // dotted forms, and a month-word form carrying exactly one one-or-two-digit
-  // number. Anything looser is left alone rather than guessed at, which is the
-  // same rule the shape gates above follow.
+  // dotted forms, a slash date, and a month-word form carrying exactly one
+  // one-or-two-digit number. Anything looser is left alone rather than guessed
+  // at, which is the same rule the shape gates above follow.
+  //
+  // The slash date is the form that was missed. This check was written when
+  // `03/01` could be either month or day, so no slash date named its day for
+  // certain and none was included; the ambiguity gate above landed afterwards
+  // and made every survivor unambiguous — a first number up to 12 with a second
+  // above it is month-first (the day is the SECOND number), two equal numbers
+  // agree whichever way they are read, and a four-digit year first is Y/M/D —
+  // but nobody went back to extend this. So `04/31/2026` became 1 May and
+  // `02/29/2023` 1 March, while `Apr 31 2026`, `2026-04-31` and `30.02.2026`
+  // were all refused: the same nonexistent day, three spellings refused and
+  // one moved. A day-first `31/04/2026` never reached here; `Date.parse` returns
+  // NaN for its month 31.
+  //
+  // Bare dates only, like the dotted form: a time of day after it changes what
+  // the instant is compared against (`24:00` is the NEXT day's midnight), and a
+  // month-word date with a time is left alone for the same reason.
+  const slashDay = /^(?:\d{1,2}\/(\d{1,2})\/\d{2,4}|\d{4}\/\d{1,2}\/(\d{1,2}))$/.exec(t);
   const asked = dmy
     ? Number(dmy[1])
     : (/^\d{4}-\d{2}-(\d{2})(?:[T ]|$)/.exec(t)?.[1] ??
+      slashDay?.[1] ??
+      slashDay?.[2] ??
       // Only a token that NAMES its month in words can have its single
       // one-or-two-digit number read as a day. Without that condition
       // `2025-12` — a year-month category label, which the line chart spaces
@@ -716,10 +735,23 @@ function gaussSolve(A: number[][], b: number[]): number[] | null {
   return b.map((v, i) => v / A[i][i]);
 }
 
-/** Human p-value: "< 0.001", "< 0.01", "< 0.05", or "= 0.31". */
-export function formatP(p: number): string {
-  for (const cut of [0.001, 0.01, 0.05]) if (p < cut) return `< ${cut}`;
-  return `= ${p.toFixed(2)}`;
+/**
+ * Human p-value: "< 0.001", "< 0.01", "< 0.05", or "= 0.31" — in the chart's
+ * own number system.
+ *
+ * It took no locale and used `toFixed`, and its three thresholds were literals,
+ * so a scatter chart with `numberFormat.locale: "de-DE"` printed `2,0` on its
+ * axes beside `p = 0.12` in its trend caption: the "two number systems in one
+ * chart" that `formatPercent` above exists to prevent, and that the percent
+ * sweep in `test/format-edge.test.ts` could not see because this caption has no
+ * "%" in it. Every digit now goes through the same cached Intl formatter, so the
+ * thresholds follow the locale too. The caller passes `numberFormat.locale`; with
+ * none it prints exactly what it always did.
+ */
+export function formatP(p: number, locale?: string): string {
+  const nf = (decimals: number) => numberFormatter(locale ?? "en-US", decimals);
+  for (const cut of [0.001, 0.01, 0.05]) if (p < cut) return `< ${nf(cut === 0.001 ? 3 : 2).format(cut)}`;
+  return `= ${nf(2).format(p)}`;
 }
 
 /** Regularized incomplete beta I_x(a, b) via continued fraction (NR-style). */

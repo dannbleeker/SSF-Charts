@@ -111,6 +111,20 @@ export function isNamedColor(color: string): boolean {
 
 export function toRgb(color: string): [number, number, number] {
   const c = paintText(color);
+  // The `transparent` keyword is no colour at all: it is the slide behind it,
+  // which every sink already takes to be white — `officeHex` answers "#ffffff"
+  // for it, the pptx sink's `hexOr` falls back to white for it, and the SVG
+  // canvas it draws is transparent over a white slide. `alphaOf` knew the
+  // keyword and this did not, so it
+  // read as the UNREADABLE mid grey below, whose luminance (0.216) is under the
+  // 0.5 cut `relLuminance(style.background)` makes, and a chart written
+  // `background: "transparent"` was laid out for a DARK canvas that is drawn
+  // light: the heatmap's cell lightness range fell from 4.01:1 to 1.10:1, "no
+  // data" came out #919191 — louder than the data — and every tint that mixes
+  // toward the background (box, violin, treemap, sunburst, ribbons, waffle)
+  // mixed toward grey. Ink on a fill that is not there goes against the slide
+  // for the same reason.
+  if (/^transparent$/i.test(c)) return [255, 255, 255];
   if (c.startsWith("#")) {
     const h = c.slice(1);
     // CSS hex is 3, 4, 6 or 8 digits and nothing else. Any other length is a
@@ -128,10 +142,23 @@ export function toRgb(color: string): [number, number, number] {
     //
     // 4 and 8 carry an alpha byte the colour maths has no use for; `alphaOf`
     // reads it separately.
-    if (h.length !== 3 && h.length !== 4 && h.length !== 6 && h.length !== 8) return UNREADABLE;
+    //
+    // And every character has to be a hex digit, for the same reason as the
+    // length. `parseInt` stops at the first character that is not one and
+    // returns the digits in front of it, so NaN only ever came back when the
+    // FIRST was bad: `#00ff0o` (a letter o for a zero) read as #000ff0, `#4e7g`
+    // as #44ee77, and the alpha slot of a 4- or 8-digit form is never read at
+    // all, so `#abc;` — a CSS paste with its semicolon — read as #aabbcc.
+    // Those are the same plausible wrong colour the length check exists to
+    // stop, and the sinks split on it: `officeHex` draws whatever this answers,
+    // while the SVG allow-list and the pptx sink's `readHex` are both strict
+    // and draw black. `contrastInk` then inked the segment for the invented
+    // colour — dark on a light #aabbcc — over a preview and a deck that fill it
+    // black, where an unreadable paint gets white ink and stays legible.
+    if (!/^(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(h)) return UNREADABLE;
     const rgb = h.length === 3 || h.length === 4 ? h.slice(0, 3).replace(/./g, "$&$&") : h.slice(0, 6);
     const n = parseInt(rgb, 16);
-    return Number.isNaN(n) ? UNREADABLE : [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
   }
   // `parseFloat` is looser than the regex that fed it: `[\d.]+` matches a bare
   // "." and a "..", and `parseFloat(".")` is NaN. So a colour of `hsl(., 50%,
@@ -160,6 +187,24 @@ export function toRgb(color: string): [number, number, number] {
     return [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v * scale)))) as [number, number, number];
   }
   if (/^hsla?\(/i.test(c)) {
+    // The hue is read as DEGREES, so a hue that says otherwise is not one this
+    // function can read. `nums` keeps the digits and drops the letters after
+    // them, which made `hsl(0.5turn 100% 50%)` — CSS cyan — half a degree, and
+    // red; `3.14159rad` and `200grad` the same. It also split `1e2` into 1 and 2
+    // and shifted every component along, and read `hsl(none 100% 50%)` with the
+    // saturation as the hue. The unit is not ours to convert: the paint grammar
+    // admits `deg` and nothing else (svg.ts's PAINT_OK), so the preview draws
+    // these black, and learning `turn` here alone would leave the deck's parser
+    // (`readHex` in `skill/scripts/pptx-paint.mjs`, which reads the number the
+    // same way) and the preview as two other answers. Unreadable is the answer
+    // the contract gives (`toRgb` parses what the allow-list accepts), and the
+    // declared grey beats a confident wrong hue that `contrastInk` then inks for.
+    //
+    // `deg` stays: it was right all along, in this sink and the deck's, and
+    // PAINT_OK admits it. A bare `hsl()` has no hue token and is left to the
+    // maths below, as it always was.
+    const hue = /^hsla?\(\s*([^\s,/)]*)/i.exec(c)?.[1] ?? "";
+    if (hue !== "" && !/^[+-]?[\d.]+(?:deg)?$/i.test(hue)) return UNREADABLE;
     const [h = 0, s = 0, l = 0] = nums(c);
     if (!finite([h, s, l])) return UNREADABLE;
     return hslToRgb(((h % 360) + 360) % 360, Math.max(0, Math.min(1, s / 100)), Math.max(0, Math.min(1, l / 100)));
@@ -332,6 +377,27 @@ const relLuminance = (hex: string): number => {
 };
 
 /**
+ * The colour a chart is laid out AGAINST, from the `style.background` it was
+ * given: that colour when it is one, the default white canvas when it is not.
+ *
+ * "Not" is a paint that draws nothing (`transparent`, or any form with zero
+ * alpha — `rgba(0, 0, 0, 0)` is what a browser's computed style answers for it)
+ * or one that cannot be read at all (`none`, a typo like `off-white`). The sinks
+ * already treat both the same way: the SVG canvas is transparent over a white
+ * slide, and `paintOr` (the preview) and `hexOr` (the deck) fall back to white
+ * for a paint they cannot read. Here the mid grey `toRgb` answers for an
+ * unreadable paint — chosen so that `contrastInk` still picks a sane INK — was
+ * read as a canvas verdict, and a luminance of 0.216 laid the chart out for a
+ * dark slide.
+ *
+ * Applied in the helpers below, which take `background` as a plain string.
+ * Layouts that mix toward `style.background` directly with `lerpColor` get the
+ * `transparent` keyword right through `toRgb`, but not these other spellings.
+ */
+const canvasOf = (background: string): string =>
+  toRgb(background) === UNREADABLE || alphaOf(background) === 0 ? "#ffffff" : background;
+
+/**
  * A background panel/zone tint (weekend shading, marginal-total strips, scatter
  * quadrants) that stays subtle on either theme. The charts hardcode tints tuned
  * for a light canvas; on a LIGHT background this returns that literal UNCHANGED
@@ -340,9 +406,10 @@ const relLuminance = (hex: string): number => {
  * step away from black — a faint lift off the dark canvas instead.
  */
 export function zoneFill(background: string, lightFill: string): string {
-  if (relLuminance(background) >= 0.5) return lightFill;
+  const canvas = canvasOf(background);
+  if (relLuminance(canvas) >= 0.5) return lightFill;
   const drop = Math.min(1, Math.max(0, 1 - relLuminance(lightFill)));
-  return lerpColor(background, "#ffffff", drop);
+  return lerpColor(canvas, "#ffffff", drop);
 }
 
 /**
@@ -360,7 +427,7 @@ export function zoneFill(background: string, lightFill: string): string {
  * recessive on either canvas.
  */
 export function noDataFill(background: string): string {
-  const bg = relLuminance(background);
+  const bg = relLuminance(canvasOf(background));
   if (bg >= 0.5) return NO_DATA;
   // The ratio NO_DATA keeps against a white canvas, re-solved against this one.
   const ratio = 1.05 / (relLuminance(NO_DATA) + 0.05);
@@ -384,7 +451,7 @@ export function sequentialScale(
   color: string,
   background = "#ffffff",
 ): (v: number) => string {
-  const lo = lerpColor(background, color, 0.12);
+  const lo = lerpColor(canvasOf(background), color, 0.12);
   const span = max - min || 1;
   return (v) => lerpColor(lo, color, (v - min) / span);
 }
@@ -403,5 +470,6 @@ export function divergingScale(
   background = "#ffffff",
 ): (v: number) => string {
   const extent = Math.max(Math.abs(min), Math.abs(max)) || 1;
-  return (v) => (v >= 0 ? lerpColor(background, positive, v / extent) : lerpColor(background, negative, -v / extent));
+  const canvas = canvasOf(background);
+  return (v) => (v >= 0 ? lerpColor(canvas, positive, v / extent) : lerpColor(canvas, negative, -v / extent));
 }

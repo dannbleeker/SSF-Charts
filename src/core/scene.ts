@@ -666,6 +666,23 @@ export function textWidth(text: string, fontSize: number, bold = false): number 
  * Parses via the shared `toRgb` — this used to carry its own hex-only copy, which
  * read every rgb()/hsl() fill as pure black and so chose WHITE ink for a
  * near-white segment.
+ *
+ * The 0.35 cut is a choice of METRIC, and it is not WCAG 2.x's. Against this
+ * dark ink white and dark are equally legible at L = 0.187, so a fill between
+ * 0.187 and 0.35 gets white ink at the LOWER WCAG 2.x ratio — on the default
+ * palette #1baf7a 2.82:1 (dark ink would give 6.99), #e87ba4 2.69 (7.31),
+ * #eb6834 3.20 (6.15), #e34948 3.95 (4.98), and #898781, `style.neutral`, 3.59
+ * (5.48). Where the cut does sit is APCA's equal-contrast point (Y ≈ 0.343), and
+ * APCA rates white the better ink on every one of those (Lc 59 against 50, 57
+ * against 52, 64 against 45, 71 against 38), and by 76 against 34 on the default
+ * blue #2a78d6, where WCAG 2.x calls it a tie (4.42 against 4.46) and dark ink
+ * looks poor. WCAG 2.x is known to over-reward dark text on saturated mid-tones.
+ *
+ * Measured, not changed: moving the cut to the WCAG point re-inks five of the
+ * eight default hues (the four above, and the blue) on every chart that labels
+ * inside its segments, so which metric governs label ink is for the owner to
+ * settle, not for a drive-by edit. The pane's own text is held to WCAG 1.4.3
+ * (4.5:1); this ink is not, and a 10pt label on those four hues does not pass it.
  */
 export function contrastInk(fill: string): string {
   const [r, g, b] = toRgb(fill).map((c) => {

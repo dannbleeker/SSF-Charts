@@ -187,7 +187,9 @@ the toggle does nothing at all, and leaves the chart exactly as it was.
   way round — `03/01/2026` is 3 January in Europe and 1 March in the US — is
   refused rather than guessed at, and the cell reads as empty. Write it as
   `2026-01-03` or `03.01.2026` to say which you meant. Slash dates with only one
-  possible reading (`01/15/2026`, `2026/01/15`) are fine.
+  possible reading (`01/15/2026`, `2026/01/15`) are fine. A day that does not
+  exist in its month (`04/31/2026`, `2026-02-30`, `Feb 29 2023`) reads as empty
+  rather than being moved into the next month.
 
 ### Special rows (magic series names)
 

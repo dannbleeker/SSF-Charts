@@ -243,7 +243,20 @@ describe("the preview sink and the pptx sink answer the same colour", () => {
   ];
 
   /** Paints neither sink can read — the one place they answer differently. */
-  const UNREADABLE_FORMS = ["rgb(., ., .)", "hsl(., 50%, 50%)", "", "not-a-color"];
+  const UNREADABLE_FORMS = [
+    "rgb(., ., .)",
+    "hsl(., 50%, 50%)",
+    "",
+    "not-a-color",
+    // A hex of a LEGAL length with a stray character in it. `parseInt` read the
+    // digits in front of the typo, so this sink drew an invented colour
+    // (`#aabbcc`, `#000ff0`, `#4e79a7`) while the pptx sink's strict regex and
+    // the SVG allow-list drew black: the declared grey/black pair is the only
+    // difference there is meant to be.
+    "#abc;",
+    "#00ff0o",
+    "#4e79a7zz",
+  ];
 
   it("normalises every functional and hex form identically", () => {
     // Case only: the pptx sink echoes a hex literal's own case, and OOXML does
