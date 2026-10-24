@@ -260,6 +260,41 @@ const XML_ILLEGAL =
 export const xmlText = (s) => String(s ?? "").replace(XML_ILLEGAL, "");
 
 /**
+ * A label's LINES: its text split at every spelling of a line break.
+ *
+ * A pasted header can carry one (Alt+Enter in Excel, `FY24\n(Actual)`).
+ * `parseClipboardGrid` keeps it on purpose so a wrapped header stays one row, and
+ * the datasheet's own note calls the result "a label that the chart draws on two
+ * lines". The break reaches the scene as-is and was read three ways: the live
+ * renderer hands it to PowerPoint, which makes two paragraphs; pptxgenjs splits it
+ * on `\n` into two `<a:p>`; and the SVG preview put it raw inside one `<text>`,
+ * where it collapses to a space — one line. The preview was the odd one out, and
+ * `src/render/svg.ts` now draws the lines this function names.
+ *
+ * The spellings were the other half. pptxgenjs splits on LF only, and `xmlText`
+ * DELETES VT and FF, so a Word line break glued `Q1\vReport` into `Q1Report`
+ * here while the live path passed it to PowerPoint, which breaks the line. EVERY
+ * spelling is a break — CRLF, LF, CR, VT, FF, NEL, U+2028 and U+2029 — and the
+ * lines leave joined by `\n`, the one thing pptxgenjs understands.
+ *
+ * Trailing empty lines go. pptxgenjs does not split a text that ENDS in a newline
+ * at all, so the break would arrive as a raw CRLF inside one run.
+ *
+ * NOT folded onto one line, though that would fit the box: the layout sizes a
+ * label as a single line (`textWidth` reads the string as one run), so a
+ * two-line label overflows its box in the deck and the live add-in alike. That is
+ * the layout's to fix, and folding it here would only make the deck disagree with
+ * the live add-in, which draws both lines. Mirrors `src/render/svg.ts` —
+ * duplicated because this module ships standalone inside the skill zip.
+ */
+const LINE_BREAK = /\r\n|[\n\r\v\f\u0085\p{Zl}\p{Zp}]/u;
+const labelLines = (s) => {
+  const lines = String(s ?? "").split(LINE_BREAK);
+  while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
+};
+
+/**
  * A font name safe to place in an OOXML ATTRIBUTE.
  *
  * pptxgenjs escapes every text run it writes, but not `fontFace`: it emits
@@ -349,7 +384,7 @@ export function makeAddNode({ dashKind, annularSectorPoints, symbolPreset, arrow
         break;
       }
       case "text": {
-        slide.addText(xmlText(n.text), {
+        slide.addText(xmlText(labelLines(n.text).join("\n")), {
           x: dx + n.x * IN,
           y: dy + n.y * IN,
           w: Math.max(0.05, n.w * IN),
@@ -441,7 +476,22 @@ export function makeAddNode({ dashKind, annularSectorPoints, symbolPreset, arrow
           const rel = (p) => ({ x: (p.x - x0) * IN, y: (p.y - y0) * IN });
           const arc = annularSectorPoints(n.cx, n.cy, Math.max(0, n.innerR), n.r, n.startAngle, n.endAngle);
           const half = arc.length / 2; // outer points carry moveTo; inner points don't.
-          const pts = arc.map((p, i) => (i < half ? { ...rel(p), moveTo: i === 0 } : rel(p)));
+          // A FULL TURN with a hole (a one-group sunburst's inner ring, a one-slice
+          // sunburst) is two circles, not one outline. As a single contour the
+          // path runs the outer circle, then a straight segment from the outer
+          // point at 12 o'clock to the inner one, the inner circle back, and a
+          // close that retraces that segment — and an OOXML path strokes every
+          // segment, so the wedge's 1pt separator showed as a radial line across
+          // the band. The SVG preview draws two evenodd circles and the live fan
+          // skips its edges for a full turn (`span >= 359.9`), so only the deck
+          // had a seam. Each circle gets its own moveTo and close: the inner one
+          // runs the other way round (`annularSectorPoints` returns it reversed),
+          // so the fill still leaves the hole.
+          const ring = span >= 359.9;
+          const pts = arc.map((p, i) =>
+            i < half ? { ...rel(p), moveTo: i === 0 } : ring && i === half ? { ...rel(p), moveTo: true } : rel(p),
+          );
+          if (ring) pts.splice(half, 0, { close: true });
           pts.push({ close: true });
           slide.addShape("custGeom", { ...box, points: pts });
         }

@@ -46,8 +46,40 @@ export interface DeckItem {
   slot?: number;
   /** Run token, written alongside the slot — see `SlideDressing.run`. */
   run?: string;
-  /** Slide background; defaults to white, matching the skill renderer. */
+  /**
+   * Slide background. Omitted, it is the `style.background` of `configJson` —
+   * the chart's own canvas colour, as the skill renderer paints it — and white
+   * when the chart names none.
+   */
   background?: string;
+}
+
+/**
+ * The canvas colour a chart's own config asks for, if it asks for one.
+ *
+ * READ FROM THE TAG THE SLIDE IS ABOUT TO CARRY rather than passed by each
+ * caller. Nothing in the add-in ever filled `DeckItem.background`: the own-slide
+ * offer, the stalled-update slide swap, the demo deck and the self-test all
+ * built their items without it, so every generated slide was an explicit white
+ * `<p:bg>` under whatever the chart was styled for. A dark-styled chart paints
+ * its ink for a dark canvas (`style.background`, which the pane's preview draws
+ * behind it), and the scene has no backdrop rect of its own, so the title, axis
+ * labels, legend and outside value labels landed #f2f2f2 on white — about 1.1:1
+ * — and the slide swap replaced the user's dark slide with that. The skill
+ * renderer was fixed for exactly this (`render-pptx.mjs`), and the builder both
+ * paths share is the one place that cannot be forgotten by a fifth caller.
+ *
+ * Unreadable config reads as "none": the tag is written verbatim and a deck is
+ * not worth losing over a colour.
+ */
+function backgroundOf(configJson: string | undefined): string | undefined {
+  if (!configJson) return undefined;
+  try {
+    const background = (JSON.parse(configJson) as { style?: { background?: unknown } } | null)?.style?.background;
+    return typeof background === "string" ? background : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -85,7 +117,7 @@ export async function buildDeckBase64(
     // `hexOr`, not `hex` — see the note at its definition. An unrecognised
     // background must fall back to white, because `hex`'s black is right for ink
     // and catastrophic for the paint everything else is read against.
-    slide.background = { color: hexOr(item.background, "#ffffff") };
+    slide.background = { color: hexOr(item.background ?? backgroundOf(item.configJson), "#ffffff") };
     // Centre the scene on the slide — the same arithmetic the skill renderer
     // uses, so a chart lands in the same place whichever path produced it.
     const dx = (size.w - item.scene.width * IN) / 2;
@@ -105,7 +137,20 @@ export async function buildDeckBase64(
       // Where the live renderer would have put the chart's frame, so an edit
       // of a generated chart anchors the same way one drawn shape-by-shape
       // does. Points, matching CHART_ORIGIN_TAG's units.
-      origin: item.configJson ? [dx / IN, dy / IN, dx / IN, dy / IN] : undefined,
+      //
+      // THE FRAME ORIGIN ONLY. This used to say it twice, as the anchor too,
+      // which is right only when the group's box starts at the frame origin — a
+      // titled chart, whose title sits at (0,0). The group is framed on its
+      // children's bounding box, so for anything else (an untitled chart starts
+      // 2 to 112pt inside the frame, a mekko 2pt before it) the first edit read
+      // that gap as a drag and moved the chart, and the in-place path tore it
+      // apart. The anchor is measured from the group by `injectGroupsAndTags`.
+      origin: item.configJson ? [dx / IN, dy / IN] : undefined,
+      // The chart's text alternative, as the skill renderer passes it. Without
+      // it the group carries no `descr`: the one output of the three with no alt
+      // text, and — on the stalled-update slide swap — a replacement that DROPS
+      // the alt text the chart was first drawn with.
+      desc: item.scene.desc,
     });
   }
 

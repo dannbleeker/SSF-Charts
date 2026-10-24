@@ -985,10 +985,12 @@ practical substitute for live data links.
 - **"Theme unavailable"** — host below 1.10.
 - **Chart not recognized for editing** — it must carry the SSF Charts tag;
   charts inserted before tagging existed can't be re-opened.
-- **"SSF Charts has been updated"** — a new version was published while your
-  pane was open, so the pane is holding a page whose files have been replaced.
-  Close the pane and open it again. Your slides are untouched; nothing was lost,
-  and the chart you were working on is still on the slide.
+- **"Part of SSF Charts … could not be loaded"** — either the connection
+  dropped, or a new version was published while your pane was open, so the pane
+  is holding a page whose files have been replaced. The browser gives the same
+  error for both, so the message names both. Close the pane and open it again.
+  Your slides are untouched; nothing was lost, and the chart you were working on
+  is still on the slide.
 - **Other languages** — the pane is translation-ready and localizes itself from
   `Office.context.displayLanguage`, but **no dictionary ships today**: every
   string is English. Adding one is a single entry in `DICTS` in

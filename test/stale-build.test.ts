@@ -31,11 +31,14 @@ describe("a chunk the server no longer has", () => {
     expect(isStaleBuild(new TypeError("Importing a module script failed."))).toBe(true);
   });
 
-  it("does NOT claim a plain network failure is a stale build", () => {
-    // The check that matters most. `TypeError: Failed to fetch` is any network
-    // trouble — dropped wifi, a proxy, the site down — and telling someone to
-    // reopen the pane when the network is out sends them round a loop with no
-    // exit. Only the module-loading wording counts.
+  it("leaves a bare fetch() failure to whoever made the request", () => {
+    // `TypeError: Failed to fetch` is `fetch()`'s wording and never `import()`'s,
+    // so it is some OTHER request failing — and dressing it as a chunk that would
+    // not load would send whoever debugs it to the wrong place. Only the
+    // module-loading wording counts. (That wording, when a NETWORK failure
+    // produces it, is word for word the deleted-chunk one: it cannot be told
+    // apart here, so the sentence names both causes — see
+    // `test/fix-r4-deck-and-preview-parity.test.ts`.)
     expect(isStaleBuild(new TypeError("Failed to fetch"))).toBe(false);
     expect(isStaleBuild(new Error("NetworkError when attempting to fetch resource."))).toBe(false);
     expect(isStaleBuild(new Error("An internal error has occurred."))).toBe(false);
@@ -45,7 +48,11 @@ describe("a chunk the server no longer has", () => {
 
   it("says what happened and what to do, and never shows a URL", () => {
     const err = new StaleBuildError("the deck writer");
-    expect(err.message).toContain("has been updated");
+    // Names BOTH causes: the browser's error for a chunk that would not load is
+    // the same whether the server replaced it or the connection dropped, so the
+    // sentence may not assert the first. See `test/fix-r4-deck-and-preview-parity.test.ts`.
+    expect(err.message).toContain("was updated");
+    expect(err.message).toMatch(/connection/i);
     expect(err.message).toContain("the deck writer");
     expect(err.message, "the pane must say how to recover, not merely what broke").toMatch(/open it again/i);
     // A REASSURANCE, because the failure arrives mid-insert and the honest
@@ -72,7 +79,7 @@ describe("a chunk the server no longer has", () => {
     // there rather than at each call site.
     const raw = new Error("Failed to fetch dynamically imported module: https://x/assets/pptxgen.es-C8DOodSg.js");
     expect(errorText(raw), "the raw browser message reached the user").not.toMatch(/dynamically imported/i);
-    expect(errorText(raw)).toMatch(/has been updated/i);
+    expect(errorText(raw)).toMatch(/was updated/i);
     // And the wrapped form keeps the part name it was given.
     await expect(lazy(() => Promise.reject(raw), "the deck writer")).rejects.toThrow(/the deck writer/);
     await lazy(() => Promise.reject(raw), "the deck writer").catch((e) => {

@@ -355,10 +355,13 @@ disqualifying as a push.
 **The product bug it found is real and was worth the leg.** Every user meets
 this eventually: the pane stays open for a PowerPoint session, a release goes
 out during one, and the next deck insert asks for a deleted chunk. They saw a
-URL from an add-in that looked broken. It now says "SSF Charts has been updated
-since this pane was opened … close the pane and open it again — your slides are
-untouched", from `src/render/lazy.ts`. The round found in one night a failure
-mode no unit test had reason to imagine.
+URL from an add-in that looked broken. It now says "Part of SSF Charts … could
+not be loaded — either the connection dropped or SSF Charts was updated since
+this pane was opened. Close the pane and open it again — your slides are
+untouched", from `src/render/lazy.ts` (it first said only "has been updated",
+which a dropped connection produces too: the browser's error is the same for
+both). The round found in one night a failure mode no unit test had reason to
+imagine.
 
 ## What stops the driver hanging
 

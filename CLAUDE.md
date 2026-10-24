@@ -2972,6 +2972,14 @@ about the chart` when the rasteriser is unstable. If that fires, every "the
   pptx), `officeHex` in `powerpoint.ts` (the live add-in). The same bug has now
   been found in all three independently — each was fixed when a sweep aimed at
   _that_ renderer found it. Change one, check the other two.
+  **And a fourth gate sits in front of the preview's paint**: `color.ts` does
+  the colour maths (`toRgb`, which `contrastInk` in `scene.ts` picks label ink
+  from), but what the SVG actually PAINTS is decided by `PAINT_OK` in
+  `src/render/svg.ts`, which a colour `color.ts` reads perfectly can still
+  fail — `RGB(…)` in capitals, a signed channel and `hsl(210deg …)` all drew
+  black there until 2026-10-24, with in-bar labels inked for the real colour on
+  a black bar. `test/color.test.ts` never calls
+  `svg.ts`; `test/fix-r4-deck-and-preview-parity.test.ts` does.
   **Done deliberately once, on 2026-08-09, and it paid immediately**: probing
   all three with the same six inputs found the same defect in all three in one
   pass, rather than one at a time over three sessions. The defect: `parseFloat`

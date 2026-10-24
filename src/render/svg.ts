@@ -38,6 +38,30 @@ const esc = (s: string) =>
   xmlText(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 /**
+ * A label's LINES: its text split at every spelling of a line break. The twin of
+ * `labelLines` in `skill/scripts/pptx-paint.mjs`, whose note has the whole story:
+ * a pasted header can carry a line break, the live renderer and the deck both
+ * draw it as two lines, and this preview emitted it raw inside one `<text>`,
+ * where SVG collapses it to a space — a chart that showed one line while the
+ * slide it was inserted as shows two. And VT/FF, which `xmlText` deletes, glued
+ * `Q1<VT>Report` into `Q1Report` here and in the deck.
+ */
+const LINE_BREAK = /\r\n|[\n\r\v\f\u0085\p{Zl}\p{Zp}]/u;
+const labelLines = (s: unknown): string[] => {
+  const lines = String(s ?? "").split(LINE_BREAK);
+  while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
+};
+
+/**
+ * One line's pitch as a multiple of the font size. An approximation, like the
+ * baseline offsets the single-line case uses (0.36 and 0.25 of the size): the
+ * SVG cannot ask the host's font for its metrics, and Segoe UI and Arial, the
+ * two faces in play, run from about 1.15 to 1.33.
+ */
+const LINE_PITCH = 1.2;
+
+/**
  * Colours reach the scene graph verbatim from ChartConfig (series color, custom
  * palette, per-point colors) and are interpolated straight into SVG paint
  * attributes. A value like `#000"><image href=x onerror=alert(1)>` would break
@@ -61,8 +85,27 @@ const esc = (s: string) =>
  * to open a tag, no `&` to start an entity, and no `*`, so it cannot even open
  * a CSS comment. The alternation is anchored, so a slash outside the function
  * form still fails.
+ *
+ * The same one-colour-two-pictures gap stayed open in three more spellings the
+ * other sinks already read (`toRgb` in `src/core/color.ts`, and `readHex` in
+ * `skill/scripts/pptx-paint.mjs`, both case-insensitive and both taking `-?` on a
+ * channel): an UPPER or mixed-case function name (`RGB(…)` — CSS function names
+ * are case-insensitive), a sign (`rgb(300,-20,50)`, `hsl(-30 …)`, which CSS clamps
+ * and wraps the way those parsers do), and the `deg` unit on a hue
+ * (`hsl(210deg 60% 45%)`, which is just the default unit spelled out). Each fell
+ * back to BLACK here and drew the real colour in the deck. The bar was black and
+ * its in-bar value label was inked from the REAL colour, so a mid-light fill got
+ * near-black text on a black bar — invisible in the preview and in every picture
+ * insert, which are drawn from this same string (`rasterizeScene`).
+ *
+ * Widened by the `i` flag, the two sign characters and the one unit word, so it
+ * still cannot widen what escapes: inside the parentheses there is still no quote,
+ * `<`, `>`, `&` or `*`, and the only letters allowed are the whole word `deg`.
+ * The other angle units (`turn`, `rad`, `grad`) are deliberately NOT admitted:
+ * `toRgb` reads the number and drops the unit, so those hues are misread by every
+ * sink, and letting this one draw the true colour would only add a third answer.
  */
-const PAINT_OK = /^(#[0-9a-fA-F]{3,8}|rgba?\([\d.,\s%/]+\)|hsla?\([\d.,\s%/]+\)|url\(#[\w.-]+\)|[a-zA-Z]{1,24})$/;
+const PAINT_OK = /^(#[0-9a-f]{3,8}|(?:rgba?|hsla?)\((?:[\d.,\s%/+-]|deg)+\)|url\(#[\w.-]+\)|[a-z]{1,24})$/i;
 /**
  * A paint the markup can carry, or black.
  *
@@ -217,12 +260,19 @@ function nodeToSvg(n: SceneNode): string {
       const anchor = n.align === "left" ? "start" : n.align === "right" ? "end" : "middle";
       const x = n.align === "left" ? n.x : n.align === "right" ? n.x + n.w : n.x + n.w / 2;
       // Approximate vertical alignment with baseline offsets.
+      const lines = labelLines(n.text);
+      // The block of lines hangs from the top, sits on the bottom or centres
+      // on the middle, as a PowerPoint text box with that anchor lays out its
+      // paragraphs — so the first baseline moves up by the lines beneath it.
+      // Zero for the ordinary one-line label, whose markup is unchanged.
+      const rise =
+        (lines.length - 1) * n.fontSize * LINE_PITCH * (n.valign === "top" ? 0 : n.valign === "bottom" ? 1 : 0.5);
       const y =
-        n.valign === "top"
+        (n.valign === "top"
           ? n.y + n.fontSize
           : n.valign === "bottom"
             ? n.y + n.h - n.fontSize * 0.25
-            : n.y + n.h / 2 + n.fontSize * 0.36;
+            : n.y + n.h / 2 + n.fontSize * 0.36) - rise;
       const weight = n.bold ? ` font-weight="600"` : "";
       const family = n.fontFamily ? ` font-family="${esc(n.fontFamily)}"` : "";
       // `num` substitutes for a non-finite size and nothing else, so zero and
@@ -232,7 +282,18 @@ function nodeToSvg(n: SceneNode): string {
       // silently is not what the scene asked for, which is the preview lying
       // about what the deck will contain. The third sink's own floor, matching
       // the clamps `pptx-paint.mjs` and `officeFontPt` already apply.
-      return `<text x="${r(x)}" y="${r(y)}" font-size="${Math.max(0.01, num(n.fontSize, 12))}" fill="${paint(n.color)}" text-anchor="${anchor}"${weight}${family}${name(n)}>${esc(n.text)}</text>`;
+      // One `<tspan>` per line, each placed absolutely: SVG never breaks a line
+      // on a newline, so the break has to be drawn. A one-line label keeps the
+      // bare text node it always had.
+      const body =
+        lines.length === 1
+          ? esc(lines[0])
+          : lines
+              .map((line, i) =>
+                line ? `<tspan x="${r(x)}" y="${r(y + i * n.fontSize * LINE_PITCH)}">${esc(line)}</tspan>` : "",
+              )
+              .join("");
+      return `<text x="${r(x)}" y="${r(y)}" font-size="${Math.max(0.01, num(n.fontSize, 12))}" fill="${paint(n.color)}" text-anchor="${anchor}"${weight}${family}${name(n)}>${body}</text>`;
     }
     case "ellipse": {
       const stroke = n.stroke ? ` stroke="${paint(n.stroke)}" stroke-width="${num(n.strokeWidth, 1)}"` : "";

@@ -87,8 +87,21 @@ const GROUP_NAME = "PowerChart";
 export interface SlideDressing {
   /** Serialized ChartConfig for the group's `POWERCHART_CONFIG` tag. */
   configJson?: string;
-  /** `POWERCHART_ORIGIN` payload: [frameLeft, frameTop, groupLeft, groupTop]. */
-  origin?: [number, number, number, number];
+  /**
+   * `POWERCHART_ORIGIN` payload: [frameLeft, frameTop, groupLeft, groupTop].
+   *
+   * The last two are the position the tagged shape ACTUALLY has, and only the
+   * XML knows it: the group is framed on the bounding box of the shapes
+   * pptxgenjs wrote, which starts at the frame origin plus the scene's ink
+   * offset (an untitled clustered chart's first ink is 42pt below it). An edit
+   * reads any gap between that position and this anchor as the user having
+   * dragged the chart, so a caller-supplied pair was a guess that moved the
+   * chart on its first update and tore it apart on an in-place one. They are
+   * therefore MEASURED from the shape being tagged and written over whatever is
+   * passed; the caller's value is used only for a slide with no measurable
+   * frame, and a caller with nothing better to say gives the frame origin only.
+   */
+  origin?: [number, number, number?, number?];
   /**
    * `POWERCHART_SCENE`: the fingerprint of the scene these shapes were drawn
    * from, so the chart's first in-place update has something to diff against.
@@ -210,6 +223,32 @@ function frameOf(element: string): { x: number; y: number; cx: number; cy: numbe
   return { x: Number(off[1]), y: Number(off[2]), cx: Number(ext[1]), cy: Number(ext[2]) };
 }
 
+/**
+ * The bounding box of the framed shapes among `children`, in EMU, or null when
+ * none of them has a frame.
+ *
+ * The ONE place the group's box is decided: `groupSlideShapes` frames its group
+ * on it and `slideShapesBounds` reports it, so the position a chart is tagged
+ * at and the position it is measured at cannot be computed two ways.
+ */
+function boundsOf(children: string[]): { x: number; y: number; cx: number; cy: number } | null {
+  const frames = children.map(frameOf).filter((f): f is NonNullable<typeof f> => !!f);
+  if (!frames.length) return null;
+  // Reduced, not spread, for the reason the datasheet's formula engine already
+  // carries twice: `Math.min(...arr)` passes one ARGUMENT per element, so the
+  // bound comes from the data and a big enough slide overflows the stack rather
+  // than returning a wrong answer. The trigger here is synthetic — it takes
+  // ~150k top-level shapes on one slide, and this module is handed decks by a
+  // library caller — but the loop costs the same and has no bound at all.
+  const least = (pick: (f: (typeof frames)[number]) => number) =>
+    frames.reduce((a, f) => Math.min(a, pick(f)), Infinity);
+  const most = (pick: (f: (typeof frames)[number]) => number) =>
+    frames.reduce((a, f) => Math.max(a, pick(f)), -Infinity);
+  const x = least((f) => f.x);
+  const y = least((f) => f.y);
+  return { x, y, cx: most((f) => f.x + f.cx) - x, cy: most((f) => f.y + f.cy) - y };
+}
+
 /** Highest `<p:cNvPr id>` on the slide — ids must be unique within a slide. */
 function maxShapeId(slideXml: string): number {
   let max = 0;
@@ -250,22 +289,9 @@ export function groupSlideShapes(slideXml: string, groupTagRid?: string, descr?:
   const children = topLevelElements(body);
   if (children.length < 2) return slideXml;
 
-  const frames = children.map(frameOf).filter((f): f is NonNullable<typeof f> => !!f);
-  if (!frames.length) return slideXml;
-  // Reduced, not spread, for the reason the datasheet's formula engine already
-  // carries twice: `Math.min(...arr)` passes one ARGUMENT per element, so the
-  // bound comes from the data and a big enough slide overflows the stack rather
-  // than returning a wrong answer. The trigger here is synthetic — it takes
-  // ~150k top-level shapes on one slide, and this module is handed decks by a
-  // library caller — but the loop costs the same and has no bound at all.
-  const least = (pick: (f: (typeof frames)[number]) => number) =>
-    frames.reduce((a, f) => Math.min(a, pick(f)), Infinity);
-  const most = (pick: (f: (typeof frames)[number]) => number) =>
-    frames.reduce((a, f) => Math.max(a, pick(f)), -Infinity);
-  const x = least((f) => f.x);
-  const y = least((f) => f.y);
-  const cx = most((f) => f.x + f.cx) - x;
-  const cy = most((f) => f.y + f.cy) - y;
+  const box = boundsOf(children);
+  if (!box) return slideXml;
+  const { x, y, cx, cy } = box;
 
   const id = maxShapeId(slideXml) + 1;
   // `descr` is PowerPoint's alt text. Escaped through `xmlAttr` like every other
@@ -418,6 +444,29 @@ function usableSlideEmu(emu: { cx: number; cy: number }): { cx: number; cy: numb
 }
 
 /**
+ * The four numbers of a `POWERCHART_ORIGIN` tag, with the anchor taken from the
+ * slide rather than from the caller. See `SlideDressing.origin` for why.
+ *
+ * Skipped for a slide left ungrouped (`group: false`): no shape carries the tag,
+ * so there is no position for it to be an anchor FOR, and the caller's own pair
+ * stands. Divided by `EMU_PER_POINT` unrounded, because the live writers store
+ * the host's own `left`/`top` and the host reports a file's offset exactly.
+ */
+function anchoredOrigin(
+  origin: NonNullable<SlideDressing["origin"]>,
+  slideXml: string,
+  group: boolean | undefined,
+): [number, number, number, number] {
+  const box = group === false ? null : slideShapesBounds(slideXml);
+  return [
+    origin[0],
+    origin[1],
+    box ? box.x / EMU_PER_POINT : (origin[2] ?? origin[0]),
+    box ? box.y / EMU_PER_POINT : (origin[3] ?? origin[1]),
+  ];
+}
+
+/**
  * Apply grouping and tags to a base64 .pptx, returning a new base64 .pptx.
  *
  * `dressing[i]` describes `ppt/slides/slide{i+1}.xml` — pptxgenjs numbers
@@ -476,7 +525,8 @@ export async function injectGroupsAndTags(
     let groupRid: string | undefined;
     const groupTags: [string, string][] = [];
     if (item.configJson) groupTags.push(["POWERCHART_CONFIG", item.configJson]);
-    if (item.origin) groupTags.push(["POWERCHART_ORIGIN", JSON.stringify(item.origin)]);
+    if (item.origin)
+      groupTags.push(["POWERCHART_ORIGIN", JSON.stringify(anchoredOrigin(item.origin, slide, item.group))]);
     // Beside the config, in the same part: one shape may reference only one tags
     // part, and the update path needs BOTH to take the fast path at all.
     if (item.sceneTag) groupTags.push(["POWERCHART_SCENE", item.sceneTag]);
@@ -529,12 +579,29 @@ export async function injectGroupsAndTags(
   return { base64: await zip.generateAsync({ type: "base64" }), shapesPerSlide };
 }
 
-/** Top-level shapes on a slide, before it is grouped. */
-export function countSlideShapes(slideXml: string): number {
+/** The slide tree's top-level shapes; none for a slide without a readable tree. */
+function slideChildren(slideXml: string): string[] {
   const treeClose = slideXml.indexOf("</p:spTree>");
   const headerEnd = slideXml.indexOf("</p:grpSpPr>");
-  if (treeClose < 0 || headerEnd < 0 || headerEnd > treeClose) return 0;
-  return topLevelElements(slideXml.slice(headerEnd + "</p:grpSpPr>".length, treeClose)).length;
+  if (treeClose < 0 || headerEnd < 0 || headerEnd > treeClose) return [];
+  return topLevelElements(slideXml.slice(headerEnd + "</p:grpSpPr>".length, treeClose));
+}
+
+/** Top-level shapes on a slide, before it is grouped. */
+export function countSlideShapes(slideXml: string): number {
+  return slideChildren(slideXml).length;
+}
+
+/**
+ * Where a slide's chart sits, in EMU: the bounding box of its top-level shapes.
+ *
+ * That is the frame `groupSlideShapes` gives the group, and — for the one-shape
+ * slide it declines to group — the frame of the shape `tagFirstShape` tags, so
+ * either way it is the position the host reports back as the tagged shape's
+ * `left`/`top`. Null when no shape has a frame to measure.
+ */
+export function slideShapesBounds(slideXml: string): { x: number; y: number; cx: number; cy: number } | null {
+  return boundsOf(slideChildren(slideXml));
 }
 
 /** Read a part, failing loudly when the generator's layout has moved. */
