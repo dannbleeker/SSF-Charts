@@ -4217,18 +4217,40 @@ describe("claims the archive can contradict", () => {
 
   it("does not let a broken query read as a refutation", async () => {
     // @ts-expect-error - plain .mjs tool, no types.
-    const { checkClaims } = await import("../scripts/claims.mjs");
+    const { checkClaims, CLAIMS } = await import("../scripts/claims.mjs");
     // A check that throws is a broken CLAIM, not a moved fact. Reporting it as
     // STALE would send someone to re-read doctrine that is perfectly true.
-    const rows = checkClaims([
+    const logs = [
       {
         get roundName(): string {
           throw new Error("boom");
         },
       },
-    ]);
-    for (const r of rows) if (r.ok === false) expect(r.actual).not.toContain("threw");
-    expect(rows.every((r: { ok: boolean | null }) => r.ok !== false || true)).toBe(true);
+    ];
+    // WHICH CLAIMS THROW is found by asking each one, not by reading the rows:
+    // the rows are the thing under test, and picking the ones to look at by what
+    // they say about themselves is how this assertion came to pass for a catch
+    // that filed the throw under any wording but "threw". It used to end in
+    // `r.ok !== false || true`, which is true of every row, and only failed for a
+    // refutation whose own text contained that one word.
+    const throwing: string[] = CLAIMS.filter((c: { check: (l: unknown[]) => unknown }) => {
+      try {
+        c.check(logs);
+        return false;
+      } catch {
+        return true;
+      }
+    }).map((c: { id: string }) => c.id);
+    expect(throwing.length, "no claim reads the round that throws, so this tests nothing").toBeGreaterThan(0);
+
+    const rows: { id: string; ok: boolean | null; actual: string }[] = checkClaims(logs);
+    for (const id of throwing) {
+      const row = rows.find((r) => r.id === id);
+      // `null` is "could not tell"; `false` is STALE, and that is the wrong word
+      // for a query that fell over.
+      expect(row?.ok, `${id}: a check that threw was filed as a refutation`).toBe(null);
+      expect(row?.actual, `${id}: the report lost why the check threw`).toContain("boom");
+    }
   });
 
   it("gives every claim a query, a date and a sentence", async () => {
