@@ -54,18 +54,38 @@ export function buildAgendaScene(chapters: string[], opts: AgendaOptions = {}): 
   // renderer wraps it. Shrink until the widest title fits, then ellipsize.
   const itemW = (f: number) => width - marginX * 2 - f * 2.6;
   let fs = Math.min(18, rowH * 0.42);
-  const overflows = (f: number) => list.some((c, i) => textWidth(c, f, i === highlight) > itemW(f));
+  // Every row is measured BOLD, whichever one is highlighted. The pane inserts
+  // one slide per chapter, each with its own `highlight`, and measuring a row at
+  // the weight THIS slide draws it gave each slide a different font. Three
+  // chapters, one of them 72 characters: only the slide highlighting it shrank
+  // (17.5pt against 18pt on its siblings); at 91 characters every slide shrank
+  // and that one shrank further (15, 14, 15). A deck of section dividers whose
+  // list resized, and shifted left by 2.6pt per point of shrink, as the
+  // presenter paged through it. Bold is the widest a row ever gets, so fitting
+  // every row at it gives every slide in the set — and the overview, which
+  // highlights nothing — the same size, and the highlighted row still fits.
+  const overflows = (f: number) => list.some((c) => textWidth(c, f, true) > itemW(f));
   while (fs > 9 && overflows(fs)) fs -= 0.5;
+
+  // The slide title gets the rows' treatment, and for the same reason: it was
+  // the one text node on the slide left at a fixed 28pt bold, so a title past
+  // ~48 characters left its box and one past ~55 left the slide (a 59-character
+  // title's ink ended at 1044.6 on a 960pt slide). Shrunk to half size, then
+  // ellipsized, as the rows are. The rule below stays where it was.
+  const titleW = width - marginX * 2;
+  const title = String(opts.title ?? "Agenda");
+  let titleFs = fsTitle;
+  while (titleFs > fsTitle / 2 && textWidth(title, titleFs, true) > titleW) titleFs -= 0.5;
 
   const nodes: SceneNode[] = [
     {
       kind: "text",
       x: marginX,
       y: titleY,
-      w: width - marginX * 2,
+      w: titleW,
       h: fsTitle * 1.5,
-      text: opts.title ?? "Agenda",
-      fontSize: fsTitle,
+      text: clipToWidth(title, titleFs, titleW, true),
+      fontSize: titleFs,
       bold: true,
       color: s.text,
       align: "left",

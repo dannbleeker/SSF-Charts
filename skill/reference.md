@@ -157,7 +157,7 @@ Everything the SSF Charts engine accepts. All lengths in points (1pt = 1/72").
   overlap?: number,                         // clustered: Excel bar overlap −100…100 (default 0 = edge to edge)
   valueAxisTitle?: string,                  // units label, e.g. "€m"
   segmentOrder?: "sheet"|"reverse"|"ascending"|"descending",
-  categorySort?: "ascending"|"descending",  // by column total (not waterfall/gantt)
+  categorySort?: "ascending"|"descending",  // by column total; a pie/doughnut by its slices, the first series (not waterfall/gantt)
   secondaryAxis?: boolean,                  // combo: right-hand axis for line series
   labelOffsets?: { [nodeName]: {dx, dy} },  // manual label nudges
   numberFormat?: { decimals?: number|"auto", suffix?: string,
@@ -195,8 +195,10 @@ Everything the SSF Charts engine accepts. All lengths in points (1pt = 1/72").
 Owner (the middle part of an `Activity | Owner | Remark` category). Opt-in: a
 plan's row order is the plan, so nothing regroups on its own. A stable
 partition rather than a sort — rows keep their order inside a lane, unowned
-tasks stay together at the end — and `After` is renumbered so the dependency
-arrows still join the same tasks.
+tasks stay together at the end under a header of their own (`Other`; a
+localized word goes in `labels: { other }`), so they are never read as the last
+owner's tasks or counted by that owner's summary bar — and `After` is
+renumbered so the dependency arrows still join the same tasks.
 
 `gantt: { workdays?: boolean | number[] }` — working-day timeline: non-working
 days collapse to zero width so a bar's length reads as working days, not

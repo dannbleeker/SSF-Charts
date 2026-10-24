@@ -317,9 +317,19 @@ function contentShapes(s: SlideSnapshot): number {
 }
 
 /**
+ * How re-editable a slide already is: a config tag (2), then a group with none
+ * (1) — one `retag` away — then a loose pile (0), which needs a regroup AND a
+ * tag, two writes that can each fail.
+ */
+function editable(s: SlideSnapshot): number {
+  return s.tagged ? 2 : s.grouped ? 1 : 0;
+}
+
+/**
  * Pick the slide to keep when several claim one item: most content wins, then
- * an unstamped slide over a stamped one, then the earliest — so a deck's
- * reading order is preserved when two attempts landed the same chart.
+ * an unstamped slide over a stamped one, then the more re-editable one (see
+ * `editable`), then the earliest — so a deck's reading order is preserved when
+ * two attempts landed the same chart.
  */
 function pickKeeper(group: SlideSnapshot[]): SlideSnapshot {
   // A grouped slide we cannot measure still outranks a loose pile of shapes:
@@ -334,6 +344,16 @@ function pickKeeper(group: SlideSnapshot[]): SlideSnapshot {
     const sc = rank(s);
     if (sc !== bc) return sc > bc ? s : best;
     if (s.stamped !== best.stamped) return best.stamped ? s : best;
+    // The same reason, for a group whose children WERE counted. The comment on
+    // `rank` gave the re-editable copy the win only when it could not be
+    // measured, so once pass C counted the children the group tied with a loose
+    // pile of the same size and the tie fell to the EARLIEST index — keeping the
+    // loose copy and queueing the grouped, tagged one for deletion. That is the
+    // natural retry shape (attempt 1 timed out before grouping; attempt 2 grouped
+    // and tagged on a later slide), and when the loose keeper's tag read also
+    // failed the plan scheduled no regroup for it, so the only copy left was not
+    // re-editable. Equal content: keep the one that already is.
+    if (editable(s) !== editable(best)) return editable(s) > editable(best) ? s : best;
     return s.index < best.index ? s : best;
   });
 }

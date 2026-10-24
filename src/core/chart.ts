@@ -313,6 +313,52 @@ function cleanDecorations(decor: Partial<Decorations>): Partial<Decorations> {
   return (out as Partial<Decorations> | undefined) ?? decor;
 }
 
+/**
+ * A number out of authored JSON, or undefined when what was written is not one.
+ *
+ * Only what would POISON arithmetic is refused, which is NaN: `Math.floor("abc")`
+ * is NaN, and NaN is the one value every `Math.max`/`Math.min` clamp passes
+ * straight through — the clamp that was meant to bound it hands it on, and the
+ * code after it (`slice(0, NaN)`, `new Array(NaN)`, a displacement of NaN) does
+ * something unrelated to the author's intent. A numeric string is read as the
+ * number it spells, because that is what those clamps already did with it; an
+ * Infinity is a number and the clamps already bound it.
+ *
+ * Not `typeof v === "number" && isFinite(v)`, the rule `scale` and `fontSize`
+ * apply: those are replaced by a default, and this repair has to keep the
+ * numeric string and the explicit "no limit" that already worked.
+ */
+function authoredNumber(v: unknown): number | undefined {
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  return Number.isNaN(n) ? undefined : n;
+}
+
+/**
+ * Repair the named numeric fields of a nested option object: a value that is no
+ * number is DROPPED, so the consumer's own `??` default applies, and a numeric
+ * string becomes the number. A no-op — the same object back — unless something
+ * was actually wrong, so a valid config renders byte-identically.
+ *
+ * For options that are not objects at all (`otherBucket: true`, `scatter: "x"`)
+ * there is nothing to repair; those are read as absent by the optional chains
+ * downstream, as they always were.
+ */
+function cleanNumbers<T>(obj: T, keys: readonly string[]): T {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return obj;
+  const rec = obj as Record<string, unknown>;
+  let out: Record<string, unknown> | undefined;
+  for (const key of keys) {
+    const v = rec[key];
+    if (v == null) continue;
+    const n = authoredNumber(v);
+    if (n === v) continue;
+    const repaired = (out ??= { ...rec });
+    if (n === undefined) delete repaired[key];
+    else repaired[key] = n;
+  }
+  return (out as T | undefined) ?? obj;
+}
+
 /** Drop label nudges carrying a non-finite delta (they corrupt a node's coords). */
 function cleanOffsets(offs: Record<string, { dx: number; dy: number }>): Record<string, { dx: number; dy: number }> {
   const out: Record<string, { dx: number; dy: number }> = {};
@@ -372,13 +418,41 @@ export function normalizeConfig(cfg: ChartConfig): ChartConfig {
       ? { ...cfg.style, fontSize: clampFontSize(cfg.style.fontSize) }
       : cfg.style;
 
+  // The authored counts and limits are arithmetic too, and every one of them
+  // reaches a clamp that passes NaN straight through — see `authoredNumber`.
+  // Measured, with a non-numeric string (an agent writing "auto", "quadratic" or
+  // "50%" for a documented number is the plausible mistake):
+  //   - `otherBucket.max`      every series folded into one "Other" bar;
+  //   - `scatter.spreadLimit`  a NaN cap, so EVERY marker's position was NaN and
+  //                            a scatter drew no points, under a footnote that
+  //                            promised "spread by up to ±" and named no number;
+  //   - `scatter.trendDegree`  `new Array(NaN)` threw "Invalid array length" out
+  //                            of buildChart, and the chart was lost;
+  //   - `gapWidth`, `overlap`  NaN column thickness: a column chart with NO
+  //                            columns, 0 of 8 segments drawn;
+  //   - `butterfly.split`      `slice(0, NaN)`: no left flank, every series piled
+  //                            onto the right;
+  //   - `boxplot.iqrMultiplier` NaN fences: every outlier silently dropped (2 of
+  //                            2 on a raw-sample box), which is data the chart
+  //                            then fails to show.
+  // Dropped here, once, so each falls back to the default it already had.
+  const authored = cleanNumbers(cfg, ["gapWidth", "overlap"]);
+  const otherBucket = cleanNumbers(cfg.otherBucket, ["max"]);
+  const scatter = cleanNumbers(cfg.scatter, ["spreadLimit", "trendDegree"]);
+  const butterfly = cleanNumbers(cfg.butterfly, ["split"]);
+  const boxplot = cleanNumbers(cfg.boxplot, ["iqrMultiplier"]);
+
   return {
-    ...cfg,
+    ...authored,
     width,
     height,
     scale,
     style,
     horizontal,
+    otherBucket,
+    scatter,
+    butterfly,
+    boxplot,
     data: normalizeData(cfg.data),
     decorations:
       cfg.decorations && typeof cfg.decorations === "object" && !Array.isArray(cfg.decorations)
@@ -482,7 +556,17 @@ function sortCategories(cfg: ChartConfig): ChartConfig {
   const { data } = cfg;
   // Sort runs before error/target rows are extracted; those carried rows are
   // not real stack contributors, so exclude them from the ranking totals.
-  const ranked = data.series.filter((s) => !CARRIED_ROW.test(s.name.trim()));
+  //
+  // A pie or doughnut is the exception to "every row": `layoutPie` draws the
+  // slices from `series[0]` ALONE and reads any other row as a radius, so ranking
+  // by the sum of all of them ordered the slices by a quantity nobody could see.
+  // A second year left over from a column chart, or the documented `Radius` row
+  // for a variable-radius pie, decided the order — always, for the latter — and
+  // "descending" came out A 11% | B 56% | C 33%. Rank by what is drawn.
+  const ranked =
+    cfg.kind === "pie" || cfg.kind === "doughnut"
+      ? data.series.slice(0, 1)
+      : data.series.filter((s) => !CARRIED_ROW.test(s.name.trim()));
   const totals = data.categories.map((_, c) => ranked.reduce((a, s) => a + (s.values[c] ?? 0), 0));
   const sign = cfg.categorySort === "ascending" ? 1 : -1;
   const order = data.categories.map((_, c) => c).sort((a, b) => sign * (totals[a] - totals[b]));
@@ -542,9 +626,18 @@ function collapseOther(cfg: ChartConfig): ChartConfig {
   const rank = series.map((_, i) => i).sort((a, b) => totals[b] - totals[a]);
   const keep = new Set(rank.slice(0, max - 1));
   const kept = series.filter((_, i) => keep.has(i)); // original order preserved
-  const otherVals = cfg.data.categories.map((_, c) =>
-    series.reduce((a, s, i) => (keep.has(i) ? a : a + (s.values[c] ?? 0)), 0),
-  );
+  // A SUM OF NOTHING IS BLANK, NOT ZERO. The reduce this replaces was seeded with
+  // 0 and coalesced every cell with `?? 0`, so a category that is empty in every
+  // folded series came out as a MEASURED 0 — and `columnHasData` counts any
+  // finite number as data, so a column nobody had filled in (a quarter not
+  // reported yet, pasted as an empty column) printed a total of "0" and dragged a
+  // mean line down with it ("Ø 76" for "Ø 101": the three real totals averaged
+  // with a fourth that was never measured). Only the synthesized series can make
+  // this mistake — an authored blank is already null — so it is made here once.
+  const otherVals = cfg.data.categories.map((_, c) => {
+    const cells = series.flatMap((s, i) => (keep.has(i) ? [] : [s.values[c]])).filter((v): v is number => v != null);
+    return cells.length ? cells.reduce((a, v) => a + v, 0) : null;
+  });
   return {
     ...cfg,
     data: { ...cfg.data, series: [...kept, { name: cfg.labels?.other ?? "Other", values: otherVals }] },
@@ -568,11 +661,15 @@ function applyPareto(cfg: ChartConfig): ChartConfig {
   if (!bar) return cfg;
   const order = cfg.data.categories.map((_, c) => c).sort((a, b) => (bar.values[b] ?? 0) - (bar.values[a] ?? 0));
   const pick = <T>(arr: T[] | undefined) => (arr ? order.map((c) => arr[c]) : undefined);
-  const barVals = order.map((c) => bar.values[c] ?? 0);
-  const total = barVals.reduce((a, v) => a + Math.max(0, v), 0) || 1;
+  // The bar keeps its blanks: coalescing them to 0 here handed `columnHasData` a
+  // finite number, and a category nobody filled in printed a total of "0" (the
+  // same fabricated zero `collapseOther` used to make). Only the running share
+  // below treats a blank as nothing to add, which is what it is.
+  const barVals = order.map((c) => bar.values[c] ?? null);
+  const total = barVals.reduce((a: number, v) => a + Math.max(0, v ?? 0), 0) || 1;
   let run = 0;
   const cum = barVals.map((v) => {
-    run += Math.max(0, v);
+    run += Math.max(0, v ?? 0);
     return Math.round((run / total) * 1000) / 10;
   });
   return {
@@ -605,7 +702,7 @@ const AFTER_ROW = /^(after|dep(endency)?)$/i;
  * A stable partition, not a sort — inside a lane the rows keep the order they
  * were written in, because that order is the plan. (categorySort refuses to
  * touch a Gantt for exactly that reason; this reorders only on request.) Tasks
- * with no owner keep to themselves at the end.
+ * with no owner keep to themselves at the end, under a header of their own.
  *
  * The subtle part is `After`: its values are 1-based ROW INDICES, so moving
  * rows without renumbering them would silently point every dependency arrow at
@@ -641,10 +738,22 @@ function applyGanttLanes(cfg: ChartConfig): ChartConfig {
       if (ownerOf(c) === lane) push(i);
     });
   }
-  // Unassigned rows keep their own order, after the lanes.
-  data.categories.forEach((c, i) => {
-    if (!ownerOf(c)) push(i);
-  });
+  // Unassigned rows keep their own order, after the lanes — UNDER A HEADER OF
+  // THEIR OWN. They were pushed through the same `push` as a lane's members and
+  // given no header, so they followed the last owner's tasks at the same "> "
+  // indent with nothing between them: drawn as that owner's work, and, because
+  // the layout's summary scan runs "from this header to the next one", spanned by
+  // that owner's summary bar. In the shipped showcase plan Ben's lane read as
+  // ending on 5 Feb, at an unowned Handover, rather than on 2 Feb, at his Ship.
+  //
+  // Named with the caller's word for "Other" (`labels.other`): the engine stays
+  // language-agnostic and that is the one seam it has for a word it injects.
+  const unowned = data.categories.flatMap((c, i) => (ownerOf(c) ? [] : [i]));
+  if (unowned.length) {
+    labels.push(cfg.labels?.other ?? "Other");
+    perm.push(-1);
+    for (const i of unowned) push(i);
+  }
 
   const oldToNew = new Map<number, number>();
   perm.forEach((old, next) => {
@@ -783,7 +892,12 @@ function buildMultiples(rawCfg: ChartConfig): Scene | null {
   const style: ChartStyle = { ...DEFAULT_STYLE, ...cfg.style };
   const fs = style.fontSize;
   const n = dataSeries.length;
-  const cols = Math.max(1, Math.min(n, multiples.columns ?? (n <= 3 ? n : Math.ceil(Math.sqrt(n)))));
+  // WHOLE columns. A fraction survived `Math.max`/`Math.min` untouched and went
+  // into `si % cols`, so columns 2.5 on five series put THREE 186pt panels in
+  // the first row (the third at x = 392, its bars running to 563 on a 480pt
+  // chart) and started the second row half a column in. Floored, as every other
+  // authored count in this file is; 0.5 and below were already held to one.
+  const cols = Math.max(1, Math.min(n, Math.floor(multiples.columns ?? (n <= 3 ? n : Math.ceil(Math.sqrt(n))))));
   const rows = Math.ceil(n / cols);
   const gap = 10;
   const titleH = titleHeight(cfg, style);
@@ -900,7 +1014,19 @@ function buildMultiples(rawCfg: ChartConfig): Scene | null {
   });
   const foot = footnoteNode(cfg, style, String(cfg.footnote ?? ""));
   if (foot) nodes.push(foot);
-  return { width: cfg.width, height: cfg.height, nodes: clipTextToFrame(nodes, cfg.width) };
+  return {
+    width: cfg.width,
+    height: cfg.height,
+    nodes: clipTextToFrame(nodes, cfg.width),
+    // Described from what the panels DRAW, as `buildChart` describes a single
+    // chart (see the comment there): the categories in the order the panels plot
+    // them, and the series that became panels — the Error, Target and Band rows
+    // carried into every panel are marks on a panel, not data series of their own.
+    // `buildChart` used to describe the config as it arrived, so a screen reader
+    // announced "3 data series: North, South, Error" over two panels and read the
+    // categories in an order no panel uses.
+    desc: describeChart({ ...cfg, data: { ...cfg.data, series: dataSeries } }),
+  };
 }
 
 /** Human-readable chart-kind names for the accessible description. */
@@ -962,7 +1088,7 @@ export function describeChart(cfg: ChartConfig): string {
 export function buildChart(rawCfg: ChartConfig): Scene {
   const cfg0 = normalizeConfig(rawCfg);
   const multiples = buildMultiples(cfg0);
-  if (multiples) return { ...multiples, title: cfg0.title, desc: describeChart(cfg0) };
+  if (multiples) return { ...multiples, title: cfg0.title };
   const extracted = extractErrorRows(sortCategories(applyPareto(applyGanttLanes(cfg0))));
   let cfg = collapseOther(extracted.cfg);
   // Described from the config the chart is DRAWN from, not the one it arrived

@@ -37,7 +37,11 @@ export function spreadAlongAxis(
 ): number[] {
   const n = items.length;
   const disp = new Array<number>(n).fill(0);
-  if (n < 2 || opts.limit <= 0) return disp;
+  // `!(limit > 0)`, not `limit <= 0`: a NaN cap fails BOTH comparisons, so the
+  // old guard let it through and `Math.max(-NaN, …)` made EVERY displacement NaN
+  // — for a marker that overlaps nothing as much as for one that does, which is
+  // the contract above broken at its root. No usable cap, no motion.
+  if (n < 2 || !(opts.limit > 0)) return disp;
   const pad = opts.pad ?? 1;
   // Biggest first, ties by index: the big bubble is the visually dominant one
   // and should barely move. Mirrors the label pass, which already lets the

@@ -669,7 +669,9 @@ describe("gantt owner lanes (gantt.lanes)", () => {
     // A stable partition, not a sort: Spec still precedes Review inside Ana's
     // lane, because that order is the plan.
     // The axis renders the activity name; the ">" only drives the indent.
-    expect(labels(plan("owner"))).toEqual(["Ana", "Spec", "Review", "Ben", "Build", "Ship", "Handover"]);
+    // "Handover" has no owner, so it sits under a header of its own rather than
+    // trailing Ben's tasks as if it were his (`test/fix-c3-config-shaping.test.ts`).
+    expect(labels(plan("owner"))).toEqual(["Ana", "Spec", "Review", "Ben", "Build", "Ship", "Other", "Handover"]);
   });
 
   it("renumbers After so the arrows still join the same tasks", () => {

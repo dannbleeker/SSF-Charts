@@ -293,8 +293,10 @@ Set `gantt.lanes: "owner"` to regroup the tasks under one header per owner
 (the middle part of an `Activity | Owner | Remark` category). It is opt-in
 because a plan's row order IS the plan — nothing regroups behind your back —
 and it groups rather than sorts: inside a lane your rows keep the order you
-wrote them, unowned tasks stay together at the end, and `After` dependencies
-are renumbered so the arrows still join the same tasks. To control the
+wrote them, unowned tasks stay together at the end under a header of their
+own ("Other"), so they never read as the last owner's work or count toward
+that owner's summary bar, and `After` dependencies are renumbered so the
+arrows still join the same tasks. To control the
 grouping yourself, type a section-header row and indent its tasks with `>` —
 that has always worked and this changes nothing about it.
 
