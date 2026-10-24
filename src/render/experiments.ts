@@ -22,12 +22,16 @@
  * Rules that make them cheap enough to keep:
  *
  *   - Own scratch slide, always given back, even on the failure path.
+ *   - A question that has to be asked on a REAL slide (the scratch slide
+ *     misreports collections) names what the slide holds first, draws only
+ *     beside it, and takes back what it drew by id on every answer. See
+ *     `heldIds`: two experiments forgot that the slide was the user's.
  *   - Answer in a fixed vocabulary, like the probe sheet, so an archive of them
  *     can be compared rather than read.
  *   - Say what was actually observed in `detail`, because the vocabulary will be
  *     wrong for something eventually and the detail is what survives that.
  */
-import { addScratchSlide, deleteSlideById, deleteShapesById, withProbeContext } from "./powerpoint";
+import { addScratchSlide, deleteSlideById, deleteShapesById, withProbeContext, type ProbeContext } from "./powerpoint";
 import { trace } from "../core/trace";
 
 export interface ExperimentResult {
@@ -63,6 +67,69 @@ const read = <T>(f: () => T): T | undefined => {
   } catch {
     return undefined;
   }
+};
+
+/** A shape's id, when the host named it. */
+const idOf = (s: unknown): string | undefined => {
+  const id = read(() => (s as { id?: string }).id);
+  return typeof id === "string" && id.length > 0 ? id : undefined;
+};
+
+/**
+ * What the deck's first slide already holds, named BEFORE an experiment draws
+ * on it — or `undefined` when the host would not list it.
+ *
+ * THE FIRST SLIDE IS THE USER'S, NOT A SCRATCH SLIDE. Every experiment below
+ * that works on a real slide draws its own shapes beside whatever is there, and
+ * has to tell the two apart afterwards: grouping "whatever the slide holds"
+ * swallows the user's own shapes, and the tidy-up then deletes them with the
+ * group. `grouped-child-by-id` and `group-members-real-slide` did exactly that —
+ * they passed the slide's whole collection to `addGroup`, painted the first
+ * shape red, and deleted the group — because their comment said "the scratch
+ * slide is empty until this experiment fills it" and they had moved to slide 0
+ * without anyone rewriting it. The three written after the move had the repair
+ * inline; the two older ones never did, and nothing compared them.
+ *
+ * `undefined` IS NOT AN EMPTY SLIDE. A collection the host never answered used to
+ * read as "nothing was there", which made every shape on the slide look like the
+ * experiment's own — the same swallow, reached by a flaky read instead of a
+ * missing one. The three that had the repair inline had this hole as well: it
+ * takes `PropertyNotLoaded` on `items` to open it, and the real host raises that
+ * for a collection it has not populated. An experiment that cannot say what was
+ * on the slide first does not start.
+ */
+async function heldIds(ctx: ProbeContext, target: () => PowerPoint.Slide): Promise<Set<string> | undefined> {
+  const before = target().shapes;
+  before.load("items/id");
+  await ctx.sync();
+  const items = read(() => before.items);
+  return items && new Set(items.map(idOf).filter((id): id is string => id !== undefined));
+}
+
+/** The answer an experiment gives when `heldIds` could not say what the slide held. */
+const UNLISTED = {
+  answer: "no-child-ids",
+  detail:
+    "the slide would not list what it already holds, so its own shapes could not be told from the new ones; nothing was drawn",
+};
+
+/** Of a re-read collection, only the shapes the slide did not hold before. */
+const addedSince = <T>(items: T[] | undefined, had: Set<string>): T[] =>
+  (items ?? []).filter((s) => {
+    const id = idOf(s);
+    return id !== undefined && !had.has(id);
+  });
+
+/**
+ * Take back what an experiment put on the user's own slide, by id.
+ *
+ * Best-effort and silent, like the runner's own slide hand-back: a tidy-up that
+ * fails must not become the experiment's answer, and a shape left behind is
+ * named in the next run's `heldIds` rather than folded into its group.
+ */
+const takeBack = async (slideId: string | undefined, ids: (string | undefined)[]): Promise<void> => {
+  const named = ids.filter((id): id is string => id !== undefined);
+  if (slideId && named.length) await deleteShapesById(slideId, named).catch(() => 0);
 };
 
 /**
@@ -108,6 +175,11 @@ const groupedChildById: Experiment = {
       named.load("id");
       await ctx.sync();
       const targetSlideId = read(() => (named as unknown as { id?: string }).id);
+      // WHAT IS ALREADY ON IT, named before anything is drawn. This slide is the
+      // user's, so the three rectangles below have to be told apart from the
+      // shapes beside them afterwards — see `heldIds`.
+      const had = await heldIds(ctx, target);
+      if (!had) return UNLISTED;
       const made = [0, 1, 2].map((n) =>
         target().shapes.addGeometricShape(PowerPoint.GeometricShapeType.rectangle, {
           left: 20 + n * 40,
@@ -139,79 +211,97 @@ const groupedChildById: Experiment = {
       //
       // The asymmetry is written down all over this repo: "a by-id lookup is the
       // one thing PowerPoint on the web reliably refuses, and a collection read
-      // is the one thing it reliably honours". The scratch slide is empty until
-      // this experiment fills it, so what comes back IS the three shapes.
-      const collection = target().shapes;
-      collection.load("items/id");
-      await ctx.sync();
-      const members = read(() => collection.items) ?? [];
-      const ids = members
-        .map((s) => read(() => (s as unknown as { id?: string }).id))
-        .filter((id): id is string => typeof id === "string" && id.length > 0);
-      if (ids.length < made.length) {
-        return { answer: "no-child-ids", detail: `named ${ids.length} of ${made.length} before grouping` };
-      }
-      // GROUPED FROM THE COLLECTION READ, not from the creation proxies.
-      //
-      // The renderer does the same — `freshMembers` — and the reason is the one
-      // this file keeps meeting: a creation proxy whose path Office.js has
-      // rewritten to `shapes.getItem(id)` is refused by this host, and the fake
-      // models it, answering `InvalidParam passed to GetItem(id)`, code 5010,
-      // errorLocation `ShapeCollection.getItem`. Handing those proxies to
-      // `addGroup` throws before the question is ever put.
-      let group;
+      // is the one thing it reliably honours". The slide is NOT empty — it is the
+      // user's — so what comes back is filtered below to what it did not hold
+      // before. (This sentence used to say the scratch slide was empty until the
+      // experiment filled it, which stopped being true when the question moved to
+      // slide 0, and the code under it went on trusting it.)
+      let ids: string[] = [];
+      let groupId: string | undefined;
       try {
-        group = (target().shapes as unknown as { addGroup(shapes: unknown[]): PowerPoint.Shape }).addGroup(members);
-        group.load("id");
+        const collection = target().shapes;
+        collection.load("items/id");
         await ctx.sync();
-      } catch (err) {
-        return {
-          answer: "no-group",
-          detail: `grouping ${ids.length} shapes threw: ${String((err as { message?: string })?.message ?? err).slice(0, 140)}`,
-        };
-      }
-      const groupId = read(() => (group as unknown as { id?: string }).id);
-      // THE QUESTION. A fresh proxy off the slide, by the id the child had
-      // before the group swallowed it.
-      //
-      // CAUGHT, because a refusal here IS the answer. This host answers
-      // `InvalidParam passed to GetItem(id)`, code 5010, errorLocation
-      // `ShapeCollection.getItem` — the same 5010 that blocks the parts list —
-      // and letting that escape as `threw` would file the answer under "the
-      // experiment broke" instead of under "the host said no".
-      let child;
-      try {
-        child = target().shapes.getItemOrNullObject(ids[0]);
-        child.load("id");
-        await ctx.sync();
-      } catch (err) {
-        return {
-          answer: "refused-by-id",
-          detail: `resolving child ${ids[0]} of group ${String(read(() => (group as unknown as { id?: string }).id))} threw: ${String((err as { message?: string })?.message ?? err).slice(0, 140)}`,
-        };
-      }
-      const gone = read(() => (child as unknown as { isNullObject?: boolean }).isNullObject) === true;
-      const back = read(() => (child as unknown as { id?: string }).id);
-      if (gone || back !== ids[0]) {
-        return {
-          answer: gone ? "no-such-shape" : "unreadable",
-          detail: `child ${ids[0]} of group ${String(groupId)} read back as ${String(back)}`,
-        };
-      }
-      // AND CAN IT BE WRITTEN TO? An id that resolves and then refuses a
-      // property change buys nothing — the update writes through these proxies.
-      try {
-        (child as unknown as { fill: { setSolidColor(c: string): void } }).fill.setSolidColor("FF0000");
-        await ctx.sync();
-        // TAKE IT BACK OFF THE USER'S SLIDE. The scratch slide is returned by the
-        // runner; shapes put on a real slide are this experiment's to remove.
-        if (groupId && targetSlideId) await deleteShapesById(targetSlideId, [groupId]).catch(() => 0);
-        return { answer: "yes", detail: `child ${ids[0]} resolved and took a fill inside group ${String(groupId)}` };
-      } catch (err) {
-        return {
-          answer: "reads-but-refuses-writes",
-          detail: `child ${ids[0]} resolved; the write threw: ${String((err as { message?: string })?.message ?? err).slice(0, 120)}`,
-        };
+        // ONLY THE THREE THIS DREW. Grouping the slide's whole collection put the
+        // user's own shapes in the group, painted the first of them red, and
+        // deleted the lot on a `yes`; on any other answer it left them grouped
+        // with the test rectangles on slide 1, where the next run grouped that
+        // group into a new one (`child 5 of group 9`, `child 9 of group 13`).
+        const members = addedSince(
+          read(() => collection.items),
+          had,
+        );
+        ids = members.map(idOf).filter((id): id is string => id !== undefined);
+        if (ids.length < made.length) {
+          return { answer: "no-child-ids", detail: `named ${ids.length} of ${made.length} before grouping` };
+        }
+        // GROUPED FROM THE COLLECTION READ, not from the creation proxies.
+        //
+        // The renderer does the same — `freshMembers` — and the reason is the one
+        // this file keeps meeting: a creation proxy whose path Office.js has
+        // rewritten to `shapes.getItem(id)` is refused by this host, and the fake
+        // models it, answering `InvalidParam passed to GetItem(id)`, code 5010,
+        // errorLocation `ShapeCollection.getItem`. Handing those proxies to
+        // `addGroup` throws before the question is ever put.
+        let group;
+        try {
+          group = (target().shapes as unknown as { addGroup(shapes: unknown[]): PowerPoint.Shape }).addGroup(members);
+          group.load("id");
+          await ctx.sync();
+        } catch (err) {
+          return {
+            answer: "no-group",
+            detail: `grouping ${ids.length} shapes threw: ${String((err as { message?: string })?.message ?? err).slice(0, 140)}`,
+          };
+        }
+        groupId = read(() => (group as unknown as { id?: string }).id);
+        // THE QUESTION. A fresh proxy off the slide, by the id the child had
+        // before the group swallowed it.
+        //
+        // CAUGHT, because a refusal here IS the answer. This host answers
+        // `InvalidParam passed to GetItem(id)`, code 5010, errorLocation
+        // `ShapeCollection.getItem` — the same 5010 that blocks the parts list —
+        // and letting that escape as `threw` would file the answer under "the
+        // experiment broke" instead of under "the host said no".
+        let child;
+        try {
+          child = target().shapes.getItemOrNullObject(ids[0]);
+          child.load("id");
+          await ctx.sync();
+        } catch (err) {
+          return {
+            answer: "refused-by-id",
+            detail: `resolving child ${ids[0]} of group ${String(groupId)} threw: ${String((err as { message?: string })?.message ?? err).slice(0, 140)}`,
+          };
+        }
+        const gone = read(() => (child as unknown as { isNullObject?: boolean }).isNullObject) === true;
+        const back = read(() => (child as unknown as { id?: string }).id);
+        if (gone || back !== ids[0]) {
+          return {
+            answer: gone ? "no-such-shape" : "unreadable",
+            detail: `child ${ids[0]} of group ${String(groupId)} read back as ${String(back)}`,
+          };
+        }
+        // AND CAN IT BE WRITTEN TO? An id that resolves and then refuses a
+        // property change buys nothing — the update writes through these proxies.
+        try {
+          (child as unknown as { fill: { setSolidColor(c: string): void } }).fill.setSolidColor("FF0000");
+          await ctx.sync();
+          return { answer: "yes", detail: `child ${ids[0]} resolved and took a fill inside group ${String(groupId)}` };
+        } catch (err) {
+          return {
+            answer: "reads-but-refuses-writes",
+            detail: `child ${ids[0]} resolved; the write threw: ${String((err as { message?: string })?.message ?? err).slice(0, 120)}`,
+          };
+        }
+      } finally {
+        // TAKE IT BACK OFF THE USER'S SLIDE, on EVERY answer. The scratch slide is
+        // returned by the runner; shapes put on a real slide are this experiment's
+        // to remove — the group once there is one (deleting a group deletes what
+        // is in it), the loose rectangles it could name until then. This used to
+        // run on `yes` alone, so the answer the real host actually gave
+        // (`no-such-shape`, three runs in a row) left a group behind each time.
+        await takeBack(targetSlideId, groupId ? [groupId] : ids);
       }
     });
   },
@@ -315,6 +405,12 @@ const groupMembersOnRealSlide: Experiment = {
         named.load("id");
         await ctx.sync();
         const targetSlideId = read(() => (named as unknown as { id?: string }).id);
+        // What the user's slide holds BEFORE this draws on it. The group below is
+        // made of the three rectangles added here and nothing else — it used to be
+        // made of the slide's whole collection, which took the user's shapes into
+        // the group and deleted them with it. See `heldIds`.
+        const had = await heldIds(ctx, target);
+        if (!had) return UNLISTED;
         for (const n of [0, 1, 2]) {
           target().shapes.addGeometricShape(PowerPoint.GeometricShapeType.rectangle, {
             left: 20 + n * 40,
@@ -324,47 +420,59 @@ const groupMembersOnRealSlide: Experiment = {
           });
         }
         await ctx.sync();
-        const collection = target().shapes;
-        collection.load("items/id");
-        await ctx.sync();
-        const members = read(() => collection.items) ?? [];
-        if (members.length < 3) return { answer: "no-child-ids", detail: `slide listed ${members.length} shapes` };
-        let group;
+        let drew: string[] = [];
+        let groupId: string | undefined;
         try {
-          group = (target().shapes as unknown as { addGroup(shapes: unknown[]): PowerPoint.Shape }).addGroup(members);
-          group.load("id");
+          const collection = target().shapes;
+          collection.load("items/id");
           await ctx.sync();
-        } catch (err) {
-          return { answer: "no-group", detail: String((err as { message?: string })?.message ?? err).slice(0, 140) };
+          const members = addedSince(
+            read(() => collection.items),
+            had,
+          );
+          drew = members.map(idOf).filter((id): id is string => id !== undefined);
+          if (members.length < 3)
+            return { answer: "no-child-ids", detail: `slide listed ${members.length} new shapes of 3` };
+          let group;
+          try {
+            group = (target().shapes as unknown as { addGroup(shapes: unknown[]): PowerPoint.Shape }).addGroup(members);
+            group.load("id");
+            await ctx.sync();
+          } catch (err) {
+            return { answer: "no-group", detail: String((err as { message?: string })?.message ?? err).slice(0, 140) };
+          }
+          groupId = read(() => (group as unknown as { id?: string }).id);
+          // THE QUESTION, asked exactly as production asks it: `shape.group.shapes`
+          // loaded for `items/id`, which is what `queueGroupMembers` does.
+          // Declared without a placeholder value: every path below assigns both,
+          // and a default here would be a value nothing can ever read — which is
+          // also what the linter says.
+          let answer: string;
+          let detail: string;
+          try {
+            const inner = (group as unknown as { group: { shapes: { load(p: string): void; items?: unknown[] } } })
+              .group.shapes;
+            inner.load("items/id");
+            await ctx.sync();
+            const kids = read(() => inner.items) ?? [];
+            const withIds = kids
+              .map((k) => read(() => (k as { id?: string }).id))
+              .filter((id): id is string => typeof id === "string" && id.length > 0);
+            // THREE OUTCOMES, not two. A group that lists children without naming
+            // them is not the same as one that lists none: the first is a host that
+            // half-answers, the second is the flat refusal production sees.
+            answer = withIds.length ? "yes" : kids.length ? "listed-but-unnamed" : "empty";
+            detail = `group ${String(groupId)} listed ${kids.length} child(ren), ${withIds.length} named`;
+          } catch (err) {
+            answer = "threw";
+            detail = String((err as { message?: string })?.message ?? err).slice(0, 140);
+          }
+          return { answer, detail };
+        } finally {
+          // Every answer, not only the three that got as far as the question: a
+          // group that would not form leaves its rectangles loose on the slide.
+          await takeBack(targetSlideId, groupId ? [groupId] : drew);
         }
-        const groupId = read(() => (group as unknown as { id?: string }).id);
-        // THE QUESTION, asked exactly as production asks it: `shape.group.shapes`
-        // loaded for `items/id`, which is what `queueGroupMembers` does.
-        // Declared without a placeholder value: every path below assigns both,
-        // and a default here would be a value nothing can ever read — which is
-        // also what the linter says.
-        let answer: string;
-        let detail: string;
-        try {
-          const inner = (group as unknown as { group: { shapes: { load(p: string): void; items?: unknown[] } } }).group
-            .shapes;
-          inner.load("items/id");
-          await ctx.sync();
-          const kids = read(() => inner.items) ?? [];
-          const withIds = kids
-            .map((k) => read(() => (k as { id?: string }).id))
-            .filter((id): id is string => typeof id === "string" && id.length > 0);
-          // THREE OUTCOMES, not two. A group that lists children without naming
-          // them is not the same as one that lists none: the first is a host that
-          // half-answers, the second is the flat refusal production sees.
-          answer = withIds.length ? "yes" : kids.length ? "listed-but-unnamed" : "empty";
-          detail = `group ${String(groupId)} listed ${kids.length} child(ren), ${withIds.length} named`;
-        } catch (err) {
-          answer = "threw";
-          detail = String((err as { message?: string })?.message ?? err).slice(0, 140);
-        }
-        if (groupId && targetSlideId) await deleteShapesById(targetSlideId, [groupId]).catch(() => 0);
-        return { answer, detail };
       },
       undefined,
       true,
@@ -408,14 +516,8 @@ const groupMembersAgedProxy: Experiment = {
         named.load("id");
         await ctx.sync();
         const targetSlideId = read(() => (named as unknown as { id?: string }).id);
-        const before = target().shapes;
-        before.load("items/id");
-        await ctx.sync();
-        const had = new Set(
-          (read(() => before.items) ?? [])
-            .map((s) => read(() => (s as { id?: string }).id))
-            .filter((id): id is string => typeof id === "string" && id.length > 0),
-        );
+        const had = await heldIds(ctx, target);
+        if (!had) return UNLISTED;
         for (const n of [0, 1, 2]) {
           target().shapes.addGeometricShape(PowerPoint.GeometricShapeType.rectangle, {
             left: 20 + n * 40,
@@ -428,14 +530,13 @@ const groupMembersAgedProxy: Experiment = {
         const collection = target().shapes;
         collection.load("items/id");
         await ctx.sync();
-        const items = read(() => collection.items) ?? [];
         // ONLY THE THREE THIS EXPERIMENT ADDED. Grouping whatever the slide
         // already held would swallow the user's own shapes and delete them in
         // the tidy-up below.
-        const mine = items.filter((s) => {
-          const id = read(() => (s as { id?: string }).id);
-          return typeof id === "string" && id.length > 0 && !had.has(id);
-        });
+        const mine = addedSince(
+          read(() => collection.items),
+          had,
+        );
         if (mine.length < 3) return { answer: "no-child-ids", detail: `named ${mine.length} of 3 new shapes` };
         let groupId: string | undefined;
         try {
@@ -510,14 +611,8 @@ const addGroupReturnsUsableOnRealSlide: Experiment = {
         named.load("id");
         await ctx.sync();
         const targetSlideId = read(() => (named as unknown as { id?: string }).id);
-        const before = target().shapes;
-        before.load("items/id");
-        await ctx.sync();
-        const had = new Set(
-          (read(() => before.items) ?? [])
-            .map((s) => read(() => (s as { id?: string }).id))
-            .filter((id): id is string => typeof id === "string" && id.length > 0),
-        );
+        const had = await heldIds(ctx, target);
+        if (!had) return UNLISTED;
         for (const n of [0, 1]) {
           target().shapes.addGeometricShape(PowerPoint.GeometricShapeType.rectangle, {
             left: 300 + n * 40,
@@ -530,10 +625,10 @@ const addGroupReturnsUsableOnRealSlide: Experiment = {
         const coll = target().shapes;
         coll.load("items/id");
         await ctx.sync();
-        const mine = (read(() => coll.items) ?? []).filter((s) => {
-          const id = read(() => (s as { id?: string }).id);
-          return typeof id === "string" && id.length > 0 && !had.has(id);
-        });
+        const mine = addedSince(
+          read(() => coll.items),
+          had,
+        );
         if (mine.length < 2) return { answer: "no-child-ids", detail: `named ${mine.length} of 2` };
         let groupId: string | undefined;
         try {
@@ -573,14 +668,8 @@ const tagOnFreshShapeRealSlide: Experiment = {
         named.load("id");
         await ctx.sync();
         const targetSlideId = read(() => (named as unknown as { id?: string }).id);
-        const before = target().shapes;
-        before.load("items/id");
-        await ctx.sync();
-        const had = new Set(
-          (read(() => before.items) ?? [])
-            .map((s) => read(() => (s as { id?: string }).id))
-            .filter((id): id is string => typeof id === "string" && id.length > 0),
-        );
+        const had = await heldIds(ctx, target);
+        if (!had) return UNLISTED;
         target().shapes.addGeometricShape(PowerPoint.GeometricShapeType.rectangle, {
           left: 300,
           top: 90,
@@ -591,11 +680,11 @@ const tagOnFreshShapeRealSlide: Experiment = {
         const coll = target().shapes;
         coll.load("items/id");
         await ctx.sync();
-        const mine = (read(() => coll.items) ?? []).find((s) => {
-          const id = read(() => (s as { id?: string }).id);
-          return typeof id === "string" && id.length > 0 && !had.has(id);
-        });
-        const shapeId = read(() => (mine as unknown as { id?: string } | undefined)?.id);
+        const [mine] = addedSince(
+          read(() => coll.items),
+          had,
+        );
+        const shapeId = idOf(mine);
         if (!mine || !shapeId) return { answer: "no-child-ids", detail: "the new shape was not named" };
         try {
           (mine as unknown as { tags: { add(k: string, v: string): void } }).tags.add("POWERCHART_EXPERIMENT", "v1");

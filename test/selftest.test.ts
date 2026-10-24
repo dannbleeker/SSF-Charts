@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "fs";
 import { deckGrowth } from "../src/taskpane/selftest";
+import { rawSlideCountUses } from "./helpers/slide-count-sites";
 import {
   installHost,
   makeSlide,
@@ -4114,6 +4115,21 @@ describe("a slide count nobody took", () => {
     expect((src.match(/deckGrowth\(/g) ?? []).length, "not every site goes through the helper").toBeGreaterThanOrEqual(
       6,
     );
+
+    /**
+     * EVERY COUNT, BY WHAT IT HOLDS AND NOT BY WHAT IT IS CALLED. The three
+     * regexes above key on the spellings the first sweep met — `after - before`,
+     * `afterInsert - before`, `settled - before` — and a scenario that named its
+     * counts `slideCountBefore`/`slideCountAfter` or `countBefore`/`countAfter`/
+     * `countSwept` sailed past all of them: `stop a run mid-draw`, `a big chart on
+     * a slide of its own` and `a chart handed over as a file` compared their raw
+     * counts for weeks while this test claimed to count every site. This reads the
+     * source as a program: any variable bound to `await slideCount()` that then
+     * meets an operator is a site, whatever it is called. Its power is pinned in
+     * `fix-h4-selftest-and-probes.test.ts` against the pre-repair shapes.
+     */
+    const rawCounts = rawSlideCountUses(src);
+    expect(rawCounts, `a slide count is compared or subtracted raw: ${rawCounts.join(" | ")}`).toEqual([]);
 
     // ONE ANSWER TO UNKNOWN, everywhere. Every scenario that reads a growth
     // reaches `countlessSkip` when the count is missing — none of them turns it

@@ -390,11 +390,21 @@ const blindSkip = (gap: string) => ({
  * How many slides the deck gained between two counts — or null when either
  * count was never taken.
  *
- * `slideCount()` RETURNS UNDEFINED ON A HOST THAT WILL NOT ANSWER, and does so
- * on purpose: its own docstring says "No safe default here, deliberately …
- * Not knowing has to stay distinguishable from knowing." Three callers here
- * subtracted the two numbers anyway, and unknown arrived dressed as a
- * measurement in two different costumes.
+ * `slideCount()` HAS NO SAFE DEFAULT, and says so on purpose: its own docstring
+ * reads "No safe default here, deliberately … Not knowing has to stay
+ * distinguishable from knowing." Three callers here subtracted the two numbers
+ * anyway, and unknown arrived dressed as a measurement in two different
+ * costumes.
+ *
+ * WHAT MAKES IT UNREAD HAS CHANGED, AND THE RULE HAS NOT. In rounds 360 and 361
+ * it was `ppRun` dropping the batch's pass-through value, so EVERY
+ * `PowerPoint.run` resolved undefined (`81dd9f0`). That is fixed: today a host
+ * that refuses a sync makes `slideCount()` throw, and Office.js throws on a
+ * `ClientResult` read before its sync, so an unread count reaches a scenario
+ * only if that fix regresses or a host answers `getCount` with no value. The type says `number`; the guard is for the day it is wrong, and
+ * every scenario that reads a count has to take it — `stop a run mid-draw`,
+ * `a big chart on a slide of its own` and `a chart handed over as a file` were
+ * left out of the first sweep because their variables are named differently.
  *
  * ROUND 360 IS THE FIRST COSTUME. `insertTwice` reported **"deck grew by NaN
  * (want 4); 0 of 4 charts re-editable"** as a hard FAILED verdict — a sentence
@@ -1201,6 +1211,62 @@ async function deleteSlideAddedSince(before: string[] | undefined): Promise<bool
   return false;
 }
 
+/**
+ * What the slide a scenario added now holds — read under the name the deck lists
+ * it by NOW, because the name `addSlideForChart` returned stops resolving.
+ *
+ * THAT ID IS THE ADD-TIME FORM, and this host re-keys a slide once it settles
+ * (`deleteSlideAddedSince` has the history). `a big chart on a slide of its own`
+ * read its slide with the add-time id after eleven batches — about 100 seconds
+ * on the host, long past the re-key — and always got null, so `landed` was
+ * undefined and the scenario's one content check, "the draw reported success and
+ * the slide came back empty", could not fire. All 121 archived passes print
+ * "undefined shapes". `stop a run mid-draw` makes the same read seconds after
+ * the add and gets a number in 38 of 119 passes, which is what a race between the
+ * re-key and the read looks like from outside.
+ *
+ * So: the add-time id first, which is right when the host has not re-keyed yet
+ * and costs one read; then the deck's own listing, by the set difference
+ * `deleteSlideAddedSince` takes, and the shapes of whatever the slide is called
+ * there.
+ *
+ * THREE ANSWERS, because null used to mean two different things:
+ *
+ *   `{ landed }`     the slide was found and its shapes counted.
+ *   `{ gone: true }` the deck listed, twice, and nothing in it is new. Round 373
+ *                    is the case: the slide the add reported was not there, the
+ *                    insert's recovery drew all 103 shapes on the VISIBLE slide,
+ *                    and the verdict still said "slide swept". Asked twice, 400ms
+ *                    apart, because a late listing is how a self-test invents
+ *                    wreckage, and it may not.
+ *   `{}`             nobody could say — the deck would not list, the difference
+ *                    was not exactly one slide, or the slide would not list its
+ *                    shapes. The verdict says so instead of printing a count.
+ */
+async function shapesOnAddedSlide(
+  slideId: string,
+  before: string[] | undefined,
+): Promise<{ landed?: number; gone?: true }> {
+  const direct = await slideShapeList(slideId);
+  if (direct) return { landed: direct.length };
+  if (!before) return {};
+  const known = new Set(before);
+  for (let pass = 0; pass < 2; pass++) {
+    if (pass) await new Promise((resolve) => setTimeout(resolve, 400));
+    const now = await deckSlideIds().catch(() => undefined);
+    if (!now) return {};
+    const fresh = now.filter((id) => !known.has(id));
+    if (fresh.length > 1) return {};
+    if (fresh.length === 1) {
+      // The same name that already failed to resolve is not a second opinion.
+      if (fresh[0] === slideId) return {};
+      const settled = await slideShapeList(fresh[0]);
+      return settled ? { landed: settled.length } : {};
+    }
+  }
+  return { gone: true };
+}
+
 async function stillThere(target: { slideId: string; shapeId?: string }): Promise<boolean | undefined> {
   if (!target.shapeId) return undefined;
   const shapes = await slideShapeList(target.slideId);
@@ -1566,14 +1632,40 @@ const explodePicture: Scenario = async (prefix) => {
   // tag-write path; this repo has already spent rounds on that hunt.
   const rescan = await probeCharts(prefix);
   if (rescan.blind) return blindSkip(rescan.gap);
-  const back = rescan.found.find((c) => c.target.shapeId === exploded.shapeId);
+  // THE SLIDE AS WELL AS THE SHAPE, and the update's own report first.
+  //
+  // This looked the exploded chart up by shape id alone, and shape ids are
+  // per-slide integers on the real host: round 497's deck inventory has
+  // `PowerChart` id `26` on five slides and `34`, `43`, `53` on two each. So
+  // when the explode lost its config tag — the one defect this scenario exists
+  // to catch — any OTHER probe chart that happened to carry the same number
+  // satisfied the find, and the verdict read "config intact". The fake hands out
+  // global ids, which is why no test could see it.
+  //
+  // Round 026-162f80a is the receipt: the explode's tag write failed ("tagging
+  // failed — charts are not re-editable until repaired"), the settle pass
+  // reported `lost: 1`, the deck scan dropped from six charts to five, and the
+  // verdict said "collapsed to a picture and exploded back, config intact". A
+  // chart with no config cannot be in the rescan, so the match had to be another
+  // slide's.
+  //
+  // `exploded.lost` is the update saying so first-hand — the same field the
+  // rescale scenarios already read — and it is believed rather than re-derived
+  // from a scan: a rescan that finds SOME chart does not undo the update's
+  // account of THIS one. The id case is kept for the update that reports nothing
+  // and still loses the tag.
+  const back = exploded.lost
+    ? undefined
+    : rescan.found.find((c) => c.target.slideId === exploded.slideId && c.target.shapeId === exploded.shapeId);
   return {
     ok: !!back,
     detail: back
       ? confirmed
         ? "collapsed to a picture and exploded back, config intact"
         : "collapsed and exploded back, config intact — but the host would not confirm it was a picture"
-      : "exploded, but the config did not survive",
+      : exploded.lost
+        ? `exploded, but the config did not survive (the update reported ${exploded.lost})`
+        : "exploded, but the config did not survive",
   };
 };
 
@@ -2077,6 +2169,9 @@ const stopMidDraw: Scenario = async (prefix) => {
   // delete, not N shape deletes.
   const sweptSlide = (await deleteSlideAddedSince(deckIdsBefore)) || (await deleteSlideById(slideId));
   const slideCountAfter = await slideCount();
+  // How much the deck gained across the add and the sweep — null when either
+  // count was never taken. Zero or more means the slide is still there.
+  const deckLeft = deckGrowth(slideCountBefore, slideCountAfter);
   /**
    * A stop that landed before any shape did is the case `stop a run part-way`
    * already covers, and it cannot answer the mid-draw question — so it SKIPS
@@ -2116,11 +2211,22 @@ const stopMidDraw: Scenario = async (prefix) => {
     //
     // So the DECK decides, not the return value. If it shrank, the slide is
     // gone, and how it went is not this scenario's subject.
-    slideCountAfter >= slideCountBefore &&
+    //
+    // A DECK THAT WAS NEVER COUNTED DECIDES NOTHING. The comparison used to be a
+    // raw `slideCountAfter >= slideCountBefore`, which is false for an unread
+    // count — so a slide the host would not delete, in a deck that would not say
+    // how big it was, dropped out of the problems and the scenario passed. See
+    // `deckGrowth`, which this was left out of when its six other sites were
+    // swept because these two variables are named differently.
+    deckLeft !== null &&
+      deckLeft >= 0 &&
       (sweptSlide
         ? `the slide was reported deleted but the deck still holds ${slideCountAfter} of ${slideCountBefore}`
         : "the slide this drew on could not be deleted, so the aborted draw is still in the deck"),
   ].filter(Boolean);
+  // Nothing else is wrong, and the one thing left to check needed a count the host
+  // would not give: that is a skip, like every other unread count here.
+  if (!problems.length && deckLeft === null) return countlessSkip();
   return {
     ok: problems.length === 0,
     detail: problems.length
@@ -2203,7 +2309,7 @@ const chartAsItsOwnFile: Scenario = async (prefix) => {
   if (landed !== 1)
     return {
       ok: false,
-      detail: `the host took ${landed} slide(s) from a one-slide file; the deck went ${countBefore} to ${countAfter}`,
+      detail: `the host took ${landed} slide(s) from a one-slide file; the deck went ${countBefore ?? "?"} to ${countAfter ?? "?"}`,
     };
 
   // The chart has to be FINDABLE, not merely present. `listChartsInDeck` is
@@ -2218,17 +2324,29 @@ const chartAsItsOwnFile: Scenario = async (prefix) => {
   const swept = await deleteSlideAddedSince(before);
   const countSwept = await slideCount();
 
+  // THROUGH `deckGrowth`, like every other count here. These were a raw
+  // `countAfter - countBefore !== 1` — "the deck grew by NaN, not 1", filed as a
+  // hard failure when the host had simply not said how big the deck was (the
+  // loud costume; round 360 filed it for `insertTwice`) — and a raw
+  // `countSwept > countBefore`, which is false for an unread count and so hid a
+  // slide the sweep could not take back (the quiet one).
+  const grew = deckGrowth(countBefore, countAfter);
+  const leftBehind = deckGrowth(countBefore, countSwept);
   const problems = [
-    countAfter - countBefore !== 1 && `the deck grew by ${countAfter - countBefore}, not 1`,
+    grew !== null && grew !== 1 && `the deck grew by ${grew}, not 1`,
     mine.length !== 1 && `${mine.length} of 1 charts from the file are re-editable`,
     !scanIsComplete(scan) && `the deck scan was short, so "not found" may mean "not looked at" — ${scanGap(scan)}`,
-    !swept && countSwept > countBefore && "the slide the file added could not be taken back",
+    !swept && leftBehind !== null && leftBehind > 0 && "the slide the file added could not be taken back",
   ].filter(Boolean);
+  // The first question — did the deck gain exactly one slide — cannot be answered
+  // without both counts, and neither can "was it taken back" when the sweep said
+  // it was not. Nothing else being wrong, that is a skip, not a pass.
+  if (!problems.length && (grew === null || (!swept && leftBehind === null))) return countlessSkip();
   return {
     ok: problems.length === 0,
     detail: problems.length
       ? problems.join("; ")
-      : `one slide from a generated file, its chart re-editable, slide returned (deck ${countBefore} to ${countAfter} to ${countSwept})`,
+      : `one slide from a generated file, its chart re-editable, slide returned (deck ${countBefore} to ${countAfter} to ${countSwept ?? "?"})`,
   };
 };
 
@@ -2303,11 +2421,17 @@ const bigChartOnItsOwnSlide: Scenario = async (prefix) => {
     outcome = `threw: ${errorText(err)}`;
   }
 
-  const landed = (await slideShapeList(slideId))?.length;
+  // Through the name the deck lists the slide by NOW, not the add-time id — which
+  // has stopped resolving by the time eleven batches have drawn. See
+  // `shapesOnAddedSlide`: this read used to come back null on every real-host
+  // run, and the empty-slide check below never once had a number to look at.
+  const { landed, gone } = await shapesOnAddedSlide(slideId, deckIdsBefore);
   // CLEAN UP FIRST, REPORT SECOND — every scenario after this one reads the
   // deck. One slide delete, not N shape deletes.
   const swept = (await deleteSlideAddedSince(deckIdsBefore)) || (await deleteSlideById(slideId));
   const slideCountAfter = await slideCount();
+  // Null when either count was never taken — see `deckGrowth`.
+  const deckLeft = deckGrowth(slideCountBefore, slideCountAfter);
 
   /**
    * BATCHES MATTER TO THE VERDICT. A chart that happened to fit in one commit
@@ -2348,11 +2472,26 @@ const bigChartOnItsOwnSlide: Scenario = async (prefix) => {
     // old wording turned that into "the scenario could not delete the slide it
     // added", which reads as a slide left in someone's deck. There was no
     // slide. A self-test may not invent wreckage.
+    //
+    // NOR MAY IT LOSE REAL WRECKAGE TO A COUNT IT NEVER TOOK. This was a raw
+    // `slideCountAfter > slideCountBefore`, false for an unread count, so a slide
+    // the host would not delete dropped out of the problems. Unread is `null`
+    // here and skips below; see `deckGrowth`.
     !swept &&
-      slideCountAfter > slideCountBefore &&
+      deckLeft !== null &&
+      deckLeft > 0 &&
       "the scenario could not delete the slide it added, and the deck still holds it",
+    // THE SLIDE THE ADD REPORTED IS NOT IN THE DECK. Round 373: the insert's own
+    // recovery drew the whole chart on the VISIBLE slide and this scenario said
+    // "slide swept". That is the shipped offer failing for the user — they asked
+    // for a slide of their own — and no delete problem, because there was no
+    // slide to delete.
+    gone && "the slide added for this chart is no longer in the deck, so the chart is not on a slide of its own",
     typeof landed === "number" && landed === 0 && "the draw reported success and the slide came back empty",
   ].filter(Boolean);
+  // The slide would not delete and the deck would not say how big it is: nothing
+  // else is wrong, and whether a slide was left behind is exactly what is unknown.
+  if (!problems.length && !swept && deckLeft === null) return countlessSkip();
   return {
     ok: problems.length === 0,
     detail: problems.length
@@ -2361,7 +2500,10 @@ const bigChartOnItsOwnSlide: Scenario = async (prefix) => {
         // about the SLIDE ID, and that sentence is the whole finding.
         `${problems.join("; ")} — while the control insert onto the visible slide DREW, seconds earlier ` +
         `(${batches} batch(es), ${landed ?? "unreadable"} shape(s) landed)`
-      : `${batches} batches onto a slide added moments before, ${landed} shapes, slide swept; control also drew`,
+      : // A count nobody took is not printed as one: this line said "undefined
+        // shapes" on 121 archived passes.
+        `${batches} batches onto a slide added moments before, ` +
+        `${typeof landed === "number" ? `${landed} shapes` : "shape count unreadable"}, slide swept; control also drew`,
   };
 };
 

@@ -555,6 +555,43 @@ export function scratchReplacementWhy(result: { why?: string; answer: string }):
 }
 
 /**
+ * Whether the run must give up its scratch slide now that `probe` has been asked
+ * on it — it declared `burnsTheSlide` — so the next question takes a fresh one.
+ * Says so in the trace, which is where a reader of a round finds the give-up.
+ *
+ * ONE FUNCTION BECAUSE THE FLAG WAS READ AT ONE OF THE TWO PLACES A QUESTION IS
+ * ASKED. The main loop checked `burnsTheSlide` on the top-level question and
+ * nothing checked it on a partner: `follow.probe` is never in the list that
+ * loop walks, so the partner block — which buys a slide of its own and asks on it
+ * — went on to hand that slide to whatever came next. Same shape as
+ * `scratchReplacementWhy` above, and for the same reason: two copies of a rule
+ * is how one of them goes unwritten.
+ *
+ * `shape-add-held-slide-proxy-again` declares `burnsTheSlide: true` ("it gives up
+ * its slide too rather than handing the wreckage to whatever runs next") and for
+ * as long as it has, `binding-names-shape-later` was asked first on the slide it
+ * had just written through a dead proxy. Round 497's first sample of that row is
+ * `commit-threw` on `reused-slide/replaced` — the partner's slide — and it is the
+ * sample that locked the row; passes 2 and 3 started on a slide whose id had gone,
+ * re-acquired by position, and answered `yes`.
+ *
+ * WHAT THIS DOES NOT CLAIM is that the answer changes. Clean fresh slides
+ * answered `commit-threw` 16 of 16 in the archive, so the row most likely stays
+ * `commit-threw` and reads as stable. What changes is the CONDITIONS it is
+ * sampled under, which is the whole point of declaring the flag.
+ *
+ * A PREDICATE, NOT A FUNCTION THAT RETURNS THE NEW SLIDE, because
+ * `test/host-probe.test.ts` ("routes every scratch-slide acquisition through
+ * takeScratch") holds every `scratchId = …` to `null` or `takeScratch(…)`: the
+ * assignment stays at the call site, where that scan can see it is a drop.
+ */
+function givesUpTheSlide(probe: Probe, scratchId: string | null): boolean {
+  if (!probe.burnsTheSlide || !scratchId) return false;
+  trace("probe", "giving up the scratch slide this question wrecked", { id: probe.id, scratchId });
+  return true;
+}
+
+/**
  * Answers that mean "the question was put and produced nothing to name".
  *
  * `other` is every probe's catch-all: it is what a question returns when the
@@ -4015,10 +4052,7 @@ export async function runHostProbes(
         // question succeeded, so nothing else here would have replaced anything.
         // The `if (!scratchId)` at the top of the loop takes the new one, which is
         // the same path a lost slide already uses — no second mechanism.
-        if (probe.burnsTheSlide && scratchId) {
-          trace("probe", "giving up the scratch slide this question wrecked", { id: probe.id, scratchId });
-          scratchId = null;
-        }
+        if (givesUpTheSlide(probe, scratchId)) scratchId = null;
         // Reset on ANY question that came back inside its budget, including one
         // that could not be set up: a host still refusing questions promptly is a
         // host still talking to us.
@@ -4097,6 +4131,9 @@ export async function runHostProbes(
             pass,
           );
           trace("probe", "partner answered", { id: follow.probe.id, answer: r.answer });
+          // The partner's own flag, which nothing read: it asked on a slide of its
+          // own and the loop went on to hand that slide to the next question.
+          if (givesUpTheSlide(follow.probe, scratchId)) scratchId = null;
         }
       }
       // The breaker is a fact about the host, not about a pass: once the run has
