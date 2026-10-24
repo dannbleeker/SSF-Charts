@@ -4308,17 +4308,91 @@ describe("a Testing panel whose chunk does not arrive", () => {
     }
   });
 
+  /**
+   * WHAT "SHOWN AND WIRED" MEANS FOR THE BUTTON THE ROUND DRIVER CLICKS.
+   *
+   * `#demo-round` ships `disabled` in `taskpane.html` and `wireRoundButton` is the
+   * only thing that clears it, so "enabled before the click" is the proof that
+   * the wiring ran at all, and "the note changed after it" is the proof that a
+   * listener answered. They are two dead states, not one: a button nothing
+   * enabled, and a button that was enabled with nothing on it.
+   *
+   * This used to click first and then ask `round.disabled || note !== ""`. A
+   * button nothing had enabled ignored the click, stayed disabled, and satisfied
+   * the first disjunct — so the one pane this test was written for, a section
+   * shown while its buttons were never wired, passed it; so did a listener left
+   * on a button that was still disabled. In the wired pane the disjunct is false,
+   * so it decided nothing but the broken cases.
+   *
+   * Returns what is wrong, or undefined for a button that works.
+   */
+  async function roundButtonProblem(): Promise<string | undefined> {
+    const round = $("demo-round") as HTMLButtonElement;
+    if (round.disabled) return "#demo-round is still disabled: nothing wired it, so a click on it lands on nothing";
+    const before = $("host-note").textContent ?? "";
+    round.click();
+    await settle();
+    if (($("host-note").textContent ?? "") === before)
+      return "#demo-round is enabled but a click on it did nothing: it has no listener";
+    return undefined;
+  }
+
   it("shows it, and really wires it, when the chunk is there", async () => {
     // The other side of the same coin: without this the assertion above would
     // pass on a pane that never shows the panel at all.
     await bootHostPane();
     expect($("testing-section").hidden, "the round driver's pane cannot reach the Testing section").toBe(false);
-    const round = $("demo-round") as HTMLButtonElement;
-    round.click();
-    await settle();
-    expect(
-      round.disabled || ($("host-note").textContent ?? "") !== "",
-      "the section is visible but its buttons have no listeners",
-    ).toBe(true);
+    expect(await roundButtonProblem(), "the section is visible but its buttons are not wired").toBeUndefined();
+  });
+
+  // THE CHECK ABOVE HAS TO BE ABLE TO FAIL ON THE STATE IT WAS WRITTEN FOR. Each
+  // of these boots the real panel and then breaks one thing about how
+  // `#demo-round` was wired, leaving the section SHOWN: the window the comment on
+  // this describe says `revealTestingSection()` exists to close. The earlier
+  // form of the check passed all three.
+  const brokenWirings: Record<
+    string,
+    { wire: (round: () => HTMLButtonElement) => (real: () => void) => void; rejectedFor: RegExp }
+  > = {
+    "wireHarness wired nothing": { wire: () => () => {}, rejectedFor: /still disabled/ },
+    "the button was wired and then left disabled": {
+      wire: (round) => (real) => {
+        real();
+        round().disabled = true;
+      },
+      rejectedFor: /still disabled/,
+    },
+    "the button is enabled but its listener is gone": {
+      wire: (round) => (real) => {
+        real();
+        // A clone keeps the attributes and drops every listener.
+        round().replaceWith(round().cloneNode(true));
+      },
+      rejectedFor: /no listener/,
+    },
+  };
+  it.each(Object.keys(brokenWirings))("rejects a shown panel where %s", async (name) => {
+    const round = () => $("demo-round") as HTMLButtonElement;
+    vi.doMock("../src/taskpane/harness-ui", async (importOriginal) => {
+      const real = await importOriginal<typeof import("../src/taskpane/harness-ui")>();
+      const broken = brokenWirings[name].wire(round);
+      return {
+        ...real,
+        wireHarness: (...args: Parameters<typeof real.wireHarness>) => broken(() => real.wireHarness(...args)),
+      };
+    });
+    try {
+      await bootHostPane();
+      expect($("testing-section").hidden, "the broken wiring was meant to leave the panel shown").toBe(false);
+      // The REASON is asserted, not just that something was wrong: a check that
+      // rejected the clone for being disabled would be right by accident.
+      expect(
+        (await roundButtonProblem()) ?? "(the check found nothing wrong)",
+        `a shown panel where ${name} passed the check`,
+      ).toMatch(brokenWirings[name].rejectedFor);
+    } finally {
+      vi.doUnmock("../src/taskpane/harness-ui");
+      vi.resetModules();
+    }
   });
 });
