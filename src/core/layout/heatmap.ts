@@ -65,7 +65,23 @@ export function layoutHeatmap(cfg: ChartConfig, style: ChartStyle, decor: Decora
   const fs = style.fontSize;
   const opts = cfg.heatmap ?? {};
 
-  const all = data.series.flatMap((s) => s.values.filter((v): v is number => v != null));
+  // Calendar layout: a single daily series with date categories becomes a
+  // weekday × week grid (the GitHub-contributions view).
+  const calDays = data.categories.map((c) => parseDateToken(c));
+  const calendar = !!opts.calendar && data.series.length >= 1 && calDays.every((d): d is number => d != null);
+
+  // The series the scale is read from: all of them for the matrix, whose one
+  // shared scale is what makes its rows comparable, and the FIRST alone for the
+  // calendar, which draws that row and no other. The scale, the diverging mode,
+  // `constant` and the sign marks were all read off every row while the grid
+  // drew one, so a second row on another scale washed the calendar out to its
+  // palest step (14 of 14 days, a calendar that looked empty), and a negative
+  // anywhere in it turned the drawn one diverging, put a red step on the legend
+  // for a value nobody could see, and — under `symbols: "sign"` — marked every
+  // day "+", the uniform noise `wantSign` below exists to avoid. Rows past the
+  // first stay unread, as `types.ts` says of the calendar: "a single daily series".
+  const scaled = calendar ? data.series.slice(0, 1) : data.series;
+  const all = scaled.flatMap((s) => s.values.filter((v): v is number => v != null));
   const min = minOf(all);
   const max = maxOf(all);
   const positive = opts.color ?? style.palette[0];
@@ -95,10 +111,7 @@ export function layoutHeatmap(cfg: ChartConfig, style: ChartStyle, decor: Decora
   const cl = clusterOn ? clusterRows(data.series.map((s) => data.categories.map((_, c) => s.values[c] ?? 0))) : null;
   const rows = cl ? cl.order.map((i) => data.series[i]) : data.series;
 
-  // Calendar layout: a single daily series with date categories becomes a
-  // weekday × week grid (the GitHub-contributions view).
-  const calDays = data.categories.map((c) => parseDateToken(c));
-  if (opts.calendar && data.series.length >= 1 && calDays.every((d): d is number => d != null)) {
+  if (calendar) {
     return calendarLayout(
       cfg,
       style,

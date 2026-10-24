@@ -6,7 +6,17 @@ import { maxOf, minOf } from "../agg";
 import { lerpColor, noDataFill, sequentialScale } from "../color";
 import { seriesColor } from "../style";
 import { detectLayout, TILE_LAYOUTS } from "./tilemap-layouts";
-import { titleInkBottom, bandFontSize, fitPlot, footnoteH, MIN_LABEL_FS, titleHeight, titleNode } from "./frame";
+import {
+  titleInkBottom,
+  bandFontSize,
+  fitPlot,
+  footnoteH,
+  legendRowCount,
+  legendWrapWalk,
+  MIN_LABEL_FS,
+  titleHeight,
+  titleNode,
+} from "./frame";
 import type { LayoutResult } from "./column";
 
 /**
@@ -21,6 +31,17 @@ import type { LayoutResult } from "./column";
  * would spend that slack and move every ordinary tilemap by half a point.
  */
 const LEGEND_INK = 2.65;
+
+/** Where a glyph legend that cannot wrap from the grid's left edge starts instead (the footnote's own margin). */
+const LEGEND_MARGIN = 2;
+
+/**
+ * The smallest tile, in font sizes, that still draws its mini-bars. Below it the
+ * glyph loop draws only the code, and in glyph mode the tile's fill is a faint
+ * backdrop that carries no value — so the grid shows no data. Stated once
+ * because the draw and the legend's row reservation both ask it.
+ */
+const GLYPH_MIN_TILE = 2;
 
 /**
  * A hex tile's width and height as a fraction of its grid cell.
@@ -141,9 +162,10 @@ export function layoutTilemap(cfg: ChartConfig, style: ChartStyle, decor: Decora
   // together used to predict `fs * 0.0785 + 0.5` of overflow, and did: the min
   // and max labels had their descenders cut by the frame on EVERY tilemap at
   // EVERY size, 1.3pt at a 10pt font and 1.9 at 18, the measurement to the tenth.
-  const legendH = vals.length ? LEGEND_INK * fs + gutter : fs * 0.5;
+  const oneRowLegendH = vals.length ? LEGEND_INK * fs + gutter : fs * 0.5;
   const availW = cfg.width - 4;
-  const availH = cfg.height - titleH - legendH - footnoteH(cfg, style, decor) - 4;
+  // The tile that fits once `legendH` is taken off the height.
+  //
   // Hex tiles nest: rows step ~0.87·tile and odd rows shift half a column, so
   // the footprint needs an extra half column of width and less height.
   // The 6pt floor keeps a tile visible on an ordinary chart, and it is the last
@@ -155,10 +177,47 @@ export function layoutTilemap(cfg: ChartConfig, style: ChartStyle, decor: Decora
   //
   // So the floor applies only when the frame can pay for it. It is unreachable
   // on any chart big enough to want it, so nothing of an ordinary size moves.
-  const want = hex
-    ? Math.min((availW - (cols - 1) * gutter) / (cols + 0.5), availH / ((rows - 1) * 0.87 + 1))
-    : Math.min((availW - (cols - 1) * gutter) / cols, (availH - (rows - 1) * gutter) / rows);
-  const tile = Math.max(1, want);
+  const fitTile = (legendH: number) => {
+    const availH = cfg.height - titleH - legendH - footnoteH(cfg, style, decor) - 4;
+    const want = hex
+      ? Math.min((availW - (cols - 1) * gutter) / (cols + 0.5), availH / ((rows - 1) * 0.87 + 1))
+      : Math.min((availW - (cols - 1) * gutter) / cols, (availH - (rows - 1) * gutter) / rows);
+    return Math.max(1, want);
+  };
+  /**
+   * The glyph legend WRAPS, and the rows it needs are reserved before the grid is
+   * fitted — the same walk (`legendWrapWalk`) the boxplot, radar, scatter and
+   * butterfly legends take, so the reserver and the drawer count the same rows.
+   *
+   * It advanced a chip, a gap and a measured name per series along ONE row from
+   * the grid's left edge and never asked whether the next fit: twelve monthly
+   * series on the default Europe map put "Dec" at x=493 on a 480-wide chart, and
+   * six long names put the last chip at x=651. `clipTextToFrame` only reads
+   * text, so the names were clipped or dropped while the colour chips — rects —
+   * stayed where they were, across whatever sits beside the chart on the slide.
+   *
+   * Counted from the left MARGIN, which is the most room the legend can have,
+   * because the grid's own left edge depends on the tile and the tile depends on
+   * what is reserved here. The draw hangs it from the grid when that costs no
+   * more rows than this, so a legend that already fit keeps its place.
+   *
+   * Each row past the first costs one `legendRow` pitch (`fs * 1.6`), on top of
+   * the band every tilemap already reserves, which holds one row of it. Those
+   * rows are taken only while the tile still reaches `GLYPH_MIN_TILE`: below it
+   * the bars are not drawn at all (see the glyph loop), so a key that costs the
+   * grid its bars is naming nothing. Past that the key is DROPPED — "where there
+   * is no room for both, the key is the one that goes", as the title clearance
+   * below has it — rather than squeezing the grid to the tile floor for a legend
+   * that has nothing left to explain.
+   */
+  const legendNames = glyph ? data.series.map((s) => s.name) : [];
+  const wantRows = legendRowCount(legendNames, fs, LEGEND_MARGIN, cfg.width - 4);
+  const rowPitch = fs * 1.6;
+  const glyphLegendRows =
+    wantRows <= 1 || fitTile(oneRowLegendH + (wantRows - 1) * rowPitch) >= fs * GLYPH_MIN_TILE ? wantRows : 0;
+  const extraLegendH = Math.max(0, glyphLegendRows - 1) * rowPitch;
+  const legendH = oneRowLegendH + extraLegendH;
+  const tile = fitTile(legendH);
   const gridW = (hex ? cols + 0.5 : cols) * tile + (cols - 1) * gutter;
   const x0 = (cfg.width - gridW) / 2;
   // The grid's own height, and a top edge that keeps it on the canvas. The tile
@@ -172,13 +231,16 @@ export function layoutTilemap(cfg: ChartConfig, style: ChartStyle, decor: Decora
   const rowsBottom = y0 + gridH;
   /**
    * Where the legend hangs from. Normally the bottom of the grid — but the tile
-   * floor above is explicitly allowed to overrun `availH`, and when it does the
+   * floor above is explicitly allowed to overrun the height budget, and when it does the
    * grid drags the legend off the frame with it: 17pt below a 300x60 chart. So
    * the legend takes the grid's bottom or the last position its own reserved
    * band still fits at, whichever is higher. On any chart whose grid fits its
    * budget the first is always the smaller, so nothing of an ordinary size moves.
    */
-  const legendTop = Math.max(0, Math.min(rowsBottom, cfg.height - LEGEND_INK * fs - footnoteH(cfg, style, decor)));
+  const legendTop = Math.max(
+    0,
+    Math.min(rowsBottom, cfg.height - LEGEND_INK * fs - extraLegendH - footnoteH(cfg, style, decor)),
+  );
   /**
    * …and only where that position is clear of the TITLE.
    *
@@ -241,7 +303,7 @@ export function layoutTilemap(cfg: ChartConfig, style: ChartStyle, decor: Decora
     // Mini bar glyph: one bar per series, from the region's row of values.
     if (glyph) {
       const svals = seriesVals.get(code);
-      if (svals && tile >= fs * 2) {
+      if (svals && tile >= fs * GLYPH_MIN_TILE) {
         const nb = svals.length;
         const bw = (tile * 0.78) / nb;
         const bx0 = x + tile * 0.11;
@@ -320,15 +382,20 @@ export function layoutTilemap(cfg: ChartConfig, style: ChartStyle, decor: Decora
   }
 
   // Glyph mode: a series legend instead of the value gradient.
-  if (glyph && legendClearOfTitle) {
-    let lx = x0;
+  if (glyph && glyphLegendRows > 0 && legendClearOfTitle) {
+    const chip = fs * 0.7;
+    // Hung from the grid's left edge, where it has always been, whenever that
+    // costs no more rows than were reserved; from the margin otherwise.
+    const fromGrid = legendRowCount(legendNames, fs, x0, cfg.width - 4) <= glyphLegendRows;
+    const slots = legendWrapWalk(legendNames, fs, fromGrid ? x0 : LEGEND_MARGIN, cfg.width - 4);
     data.series.forEach((s, si) => {
-      const chip = fs * 0.7;
+      const { x: lx, row } = slots[si];
+      const top = legendTop + row * rowPitch;
       nodes.push(
         {
           kind: "rect",
           x: lx,
-          y: legendTop + fs * 0.6,
+          y: top + fs * 0.6,
           w: chip,
           h: chip,
           fill: seriesColor(style, si, s.color),
@@ -337,7 +404,7 @@ export function layoutTilemap(cfg: ChartConfig, style: ChartStyle, decor: Decora
         {
           kind: "text",
           x: lx + chip + 3,
-          y: legendTop + fs * 0.3,
+          y: top + fs * 0.3,
           w: textWidth(s.name, fs) + 6,
           h: fs * 1.4,
           text: s.name,
@@ -348,7 +415,6 @@ export function layoutTilemap(cfg: ChartConfig, style: ChartStyle, decor: Decora
           name: `legend-${si}`,
         },
       );
-      lx += chip + 3 + textWidth(s.name, fs) + 12;
     });
   }
   // Gradient legend + "no data" swatch.

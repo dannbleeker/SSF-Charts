@@ -231,9 +231,12 @@ Multiple series → stacked waterfall (contributions stack per column).
 **Clustered-stacked**: give series `stack: 0`, `stack: 1`, … — same index
 stacks together; different indices sit side by side per category.
 
-**Boxplot without summary rows**: when no `Min`/`Q1`/… rows are present,
-every series row is a raw observation — quartiles are computed (exclusive
-method) and whiskers use Tukey 1.5×IQR fences with outliers drawn as dots.
+**Boxplot without summary rows**: a group (the rows sharing a `| group`
+suffix, or all of them) is read as a five-number summary only when it has all
+five of `Min`/`Q1`/`Median`/`Q3`/`Max`. Otherwise every series row in it is a
+raw observation — quartiles are computed (exclusive method) and whiskers use
+Tukey 1.5×IQR fences with outliers drawn as dots — so a person called Max, or
+quarterly samples named `Q1`…`Q4`, stay observations.
 
 **Funnel**: one series of stage values (order ascending for a pyramid);
 centered bands with width ∝ value, conversion % vs the previous stage in
@@ -321,7 +324,8 @@ there are already `max` or fewer series.
 **Calendar heatmap** (`heatmap.calendar`): a single daily series with date
 categories (ISO strings or day numbers with `data.dates`) is laid out as a
 weekday (row) × week (column) grid with month labels — the
-GitHub-contributions view. Falls back to the matrix layout without dates.
+GitHub-contributions view. Falls back to the matrix layout without dates. Only
+the first series is drawn, and the colour scale follows it alone.
 
 **Butterfly stacked flanks** (`butterfly.split`): the first `split` series
 stack on the left flank and the rest stack on the right (a legend replaces the
@@ -384,7 +388,8 @@ SVG/pptx, outlines in the live add-in (polygons have no freeform fill there).
 **Tilemap mini-glyphs** (`tilemap.glyph: "bars"`): with a multi-series
 datasheet (categories = regions, series = periods), each tile draws a mini bar
 chart of that region's values with a series legend, instead of a single value
-color.
+color. The legend wraps onto more rows when the names are wider than the chart,
+and is left out when the room for it would cost the tiles their bars.
 
 **100% charts with negatives**: `stacked100` no longer clamps negatives — a
 negative segment renders below the zero line as its share of the (positive)

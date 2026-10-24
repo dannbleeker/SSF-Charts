@@ -55,7 +55,8 @@ function quartile(sorted: number[], p: number, method: "exclusive" | "inclusive"
 /**
  * Box-and-whisker chart, one box per category. Two datasheet modes:
  *  - Precomputed: rows named Min/Q1/Median/Q3/Max (+ optional Mean,
- *    Outlier …) carry the summary directly — whiskers run to Min/Max.
+ *    Outlier …) carry the summary directly — whiskers run to Min/Max. A group
+ *    is a summary only when it has all five of those rows.
  *  - Raw samples: every row is an observation; quartiles are computed
  *    (exclusive method) and whiskers use Tukey 1.5×IQR fences with
  *    outliers drawn as dots.
@@ -87,10 +88,24 @@ function boxplotBoxes(cfg: ChartConfig): {
   }
   const rowsOf = (g: string) => data.series.filter((srs) => groupOf(srs.name) === g);
   const find = (g: string, re: RegExp) => rowsOf(g).find((srs) => re.test(baseName(srs.name)));
-  const precomputed = SUMMARY_ROWS.some(([, re]) => data.series.some((srs) => re.test(baseName(srs.name))));
+  // A group is a five-number SUMMARY only when it carries all five rows. It was
+  // "any one row is named like one, and then the whole CHART is", and in raw-
+  // sample mode a row's name is whatever the observation is called: Anna, Ben,
+  // Max, Zoe, Ola switched the chart to summary mode, `boxFor` then wanted
+  // Min/Q1/Median/Q3/Max, found only the one, and drew no box in any category —
+  // axes and nothing else, with no message. Quarterly samples named Q1..Q4 hit
+  // the same switch with two of the five names. Asking for the full set is the
+  // one question a real summary always answers yes to and a stray name never
+  // does. The price is a half-typed summary (Median misspelt): its rows are now
+  // read as observations instead of drawing nothing.
+  //
+  // PER GROUP, because the rows of "| 2024" and "| 2025" are separate sheets that
+  // share a chart: one summary group used to flip every raw-sample group beside
+  // it to precomputed mode, where none of its rows could satisfy `find`.
+  const summaryGroups = new Set(groupNames.filter((g) => SUMMARY_ROWS.every(([, re]) => find(g, re))));
 
   const boxFor = (g: string, c: number): Box | null => {
-    if (precomputed) {
+    if (summaryGroups.has(g)) {
       const summary = {} as FiveNum;
       for (const [key, re] of SUMMARY_ROWS) {
         const v = find(g, re)?.values[c];

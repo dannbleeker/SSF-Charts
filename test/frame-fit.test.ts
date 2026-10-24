@@ -351,27 +351,23 @@ describe("every option in the sweep takes effect", () => {
  * so the rest of those charts is still measured, and kept honest by the test
  * after this one, which fails the day each stops overflowing.
  *
- * Both are the series legend of a mode the sweep had never drawn, and both are
- * the same mistake the sweep exists to catch:
+ * It is the series legend of a mode the sweep had never drawn, and the same
+ * mistake the sweep exists to catch:
  *
- *   - `tilemap.glyph`: `layoutTilemap` hangs the glyph legend from the grid's
- *     left edge and advances a chip, a gap and a measured name per series, never
- *     asking whether the next one fits. A third series puts its chip 157pt past
- *     the right edge of an 80x60 chart at 18pt; 18 of the 32 cells overflow.
  *   - `butterfly.split`: with the flanks stacked, `layoutButterfly` reserves
  *     header rows for the legend by `legendRowCount(…, valueW, width - 4)` and
  *     then draws it from `plot.x`, so the legend wraps onto more rows than it
  *     reserved and the last is drawn up to 55pt below the chart; 6 of 32.
  *
- * Neither shows at 480x300 or 960x540, the sizes a chart is normally placed at,
- * which is why this is recorded and not blocking. Fix the layout, delete the
+ * It does not show at 480x300 or 960x540, the sizes a chart is normally placed
+ * at, which is why this is recorded and not blocking. Fix the layout, delete the
  * entry, and the sweep covers it.
+ *
+ * (`tilemap.glyph` was the other: the glyph legend advanced a chip, a gap and a
+ * measured name per series along one row and never asked whether the next fit.
+ * It wraps now, so its entry is gone and the sweep holds the whole chart.)
  */
 const KNOWN_OPEN: Record<string, { nodes: RegExp; what: string }> = {
-  "tilemap.glyph": {
-    nodes: /^legend(-chip)?-\d+$/,
-    what: "the glyph legend runs off the right edge",
-  },
   "butterfly.split": {
     nodes: /^legend(-chip)?-\d+$/,
     what: "the stacked legend wraps below the chart",

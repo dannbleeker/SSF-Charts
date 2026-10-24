@@ -185,7 +185,14 @@ export function detectLayout(codes: string[]): "us" | "eu" | "europe" | null {
   if (us >= 0.9 && Math.max(eu, europe) >= 0.9) return null;
   // Otherwise most-specific first.
   if (us >= 0.9) return "us";
-  if (eu >= 0.9) return "eu";
+  // The tighter EU frame is for an EU-ONLY set, i.e. one the EU grid matches as
+  // well as Europe does. `layoutTilemap` keeps only the codes its grid has, so
+  // choosing "eu" for ten codes of which one is GB drew nine of them and
+  // dropped the tenth — tile, value and its share of the colour scale and
+  // legend — with nothing on the chart to say so, while Europe matched all ten.
+  // A code in neither grid (a typo) counts against both, so it cannot argue for
+  // the wider one.
+  if (eu >= 0.9 && eu >= europe) return "eu";
   if (europe >= 0.9) return "europe";
   return null;
 }

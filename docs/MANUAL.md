@@ -143,7 +143,7 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
 | Gantt | project plans | `Start`/`End`/`Milestone` rows; see [Gantt](#gantt) |
 | Combo | columns + line | mark a series with type "line"; secondary axis optional; columns can be stacked, clustered, or 100% |
 | Pie / Doughnut | simple shares | slices from 12 o'clock, clockwise; a doughnut is a real ring, so the slide behind its centre shows through; explode slices to highlight; `pie.breakout: [indices]` collapses categories into an "Other" slice detailed in a bar beside the pie (bar-of-pie) |
-| Boxplot | distributions | `Min`/`Q1`/`Median`/`Q3`/`Max` rows, or raw samples → automatic Tukey whiskers and outliers; suffix rows with `\| group` for side-by-side grouped boxes |
+| Boxplot | distributions | all five `Min`/`Q1`/`Median`/`Q3`/`Max` rows, or raw samples → automatic Tukey whiskers and outliers; suffix rows with `\| group` for side-by-side grouped boxes |
 | Radar | multi-dimension profiles | categories = spokes, series = translucent polygons; keep ≤ 3 series; with no fixed scale the rings follow the data, from zero (or the lowest negative value) up |
 | Heatmap | value matrices | series = rows, categories = columns, one global color scale (diverging when data spans zero); marginal row/column totals optional |
 | Tile map | values by geography | categories = region codes (US postal / ISO-2 / world regions); layout auto-detected |
@@ -377,7 +377,8 @@ count of how many of its options are currently on.
 - **Other bucket** (`otherBucket`): collapse a long tail of stack segments
   into one "Other" series, keeping the largest few.
 - **Calendar heatmap** (`heatmap.calendar`): lay a daily date series out as a
-  weekday × week grid with month labels (contributions view).
+  weekday × week grid with month labels (contributions view). Only the first
+  series is drawn, and the colour scale follows it alone.
 - **Butterfly stacked flanks** (`butterfly.split`): stack more than one
   series on each side of a butterfly chart.
 - **Radar per-spoke scales** (`radar.perSpoke`): normalize each spoke to its
@@ -401,7 +402,9 @@ count of how many of its options are currently on.
 - **Hex tile maps** (`tilemap.shape: "hex"`): draw the cartogram with
   hexagonal tiles instead of squares.
 - **Tilemap mini-glyphs** (`tilemap.glyph: "bars"`): a mini bar chart per
-  region from a multi-series datasheet.
+  region from a multi-series datasheet. The series legend under the grid wraps
+  onto more rows when the names do not fit one, and is left out when the room
+  for it would cost the tiles their bars.
 - **100% charts with negatives**: `stacked100` now shows negative segments
   below the zero line instead of clamping them away.
 - **Semi-circle gauge** (`doughnut` + `pie.semi`): a half-doughnut scorecard.
