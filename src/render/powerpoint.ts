@@ -1037,6 +1037,7 @@ export function _resetStallContextForTest(): void {
   lastAnsweredMs = 0;
   lastStall = null;
   shapesDrawnOnSlide.clear();
+  slidesWithALostChart.clear();
   resetHostFriction();
 }
 
@@ -2445,9 +2446,21 @@ function reportOrphanedShapes(
  * this recovers the update itself, which is the one place the refusal was still
  * being read as "the user deleted this chart".
  *
- * Returns the shapes it could re-acquire, keyed by the id that was asked for.
- * A shape genuinely absent from its slide is absent from the collection too, so
- * it is simply not in the map, and the caller drops it exactly as before.
+ * Returns the shapes it could re-acquire, keyed by the ENTRY that asked — never
+ * by shape id. PowerPoint numbers shapes per slide, so two charts on different
+ * slides routinely share an id (423 of the 469 archived decks that carry an
+ * inventory hold two `PowerChart` groups under one id), and a map keyed on the
+ * id let the later slide's shape overwrite the earlier one's: both charts then
+ * held the SAME proxy, one redraw deleted the other chart's group and left its
+ * own old one under the new, and drew at the other slide's position. A shape
+ * genuinely absent from its slide is absent from the collection too, so it is
+ * simply not in the map, and the caller drops it exactly as before.
+ *
+ * An ungrouped chart's PARTS come back with it. The collection that confirms
+ * the tagged shape lists every part of the chart too, and the by-id lookups
+ * that would have confirmed them died in the same refused sync — so without
+ * this the delete took the anchor alone and the rest of the chart stayed under
+ * every redraw, untracked, because the new parts tag names only the new shapes.
  *
  * ONE EXTRA SYNC, and only when something went unanswered. Slides are read
  * once each however many charts on them were refused, because the refusals
@@ -2460,22 +2473,22 @@ function reportOrphanedShapes(
  * safe way to add a step to a path whose other outcome is deleting someone's
  * chart.
  */
-async function reReadRefusedShapes(
+async function reReadRefusedShapes<E extends { it: { target: EditTarget }; old: PowerPoint.Shape }>(
   context: PowerPoint.RequestContext,
-  entries: { it: { target: EditTarget }; old: PowerPoint.Shape }[],
+  entries: E[],
   wholeResolveRefused = false,
-): Promise<Map<string, PowerPoint.Shape>> {
-  const out = new Map<string, PowerPoint.Shape>();
+): Promise<Map<E, { shape: PowerPoint.Shape; parts: (PowerPoint.Shape | undefined)[] }>> {
+  const out = new Map<E, { shape: PowerPoint.Shape; parts: (PowerPoint.Shape | undefined)[] }>();
   // A refused sync resolved NOTHING, so every chart in the batch is a candidate
   // — there is no way to tell from out here which lookup poisoned it, and the
   // others' proxies are just as unloaded.
   const refused = entries.filter((e) => (wholeResolveRefused || !hostAnswered(e.old)) && e.it.target.shapeId);
   if (!refused.length) return out;
-  const bySlide = new Map<string, string[]>();
+  const bySlide = new Map<string, E[]>();
   for (const e of refused) {
-    const ids = bySlide.get(e.it.target.slideId) ?? [];
-    ids.push(e.it.target.shapeId);
-    bySlide.set(e.it.target.slideId, ids);
+    const asked = bySlide.get(e.it.target.slideId) ?? [];
+    asked.push(e);
+    bySlide.set(e.it.target.slideId, asked);
   }
   trace("update", "a by-id lookup went unanswered — re-reading the slide instead", {
     charts: refused.length,
@@ -2494,9 +2507,12 @@ async function reReadRefusedShapes(
     for (const { slideId, shapes } of reads) {
       const items = loadedValue(() => shapes.items);
       if (!items?.length) continue;
-      for (const id of bySlide.get(slideId) ?? []) {
-        const hit = items.find((sh) => loadedValue(() => sh.id) === id);
-        if (hit) out.set(id, hit);
+      // Matched within THIS slide's own collection: an id means something only
+      // beside the slide it was read from.
+      const listed = (id: string) => items.find((sh) => loadedValue(() => sh.id) === id);
+      for (const e of bySlide.get(slideId) ?? []) {
+        const shape = listed(e.it.target.shapeId);
+        if (shape) out.set(e, { shape, parts: (e.it.target.partIds ?? []).map((id) => listed(id)) });
       }
     }
   } catch (err) {
@@ -2506,8 +2522,36 @@ async function reReadRefusedShapes(
   trace("update", "re-read recovered shapes a by-id lookup had refused", {
     asked: refused.length,
     recovered: out.size,
+    // The parts of ungrouped charts the same read listed, against the parts the
+    // chart claims. A short answer here is the host re-keying shapes it listed
+    // under other ids (see `deleteShapesById`) and leaves those parts behind.
+    partsAsked: refused.reduce((n, e) => n + (e.it.target.partIds?.length ?? 0), 0),
+    partsListed: [...out.values()].reduce((n, r) => n + r.parts.filter(Boolean).length, 0),
   });
   return out;
+}
+
+/**
+ * The parts of an ungrouped chart that are there to be deleted with it.
+ *
+ * A part the by-id lookup confirmed (`isLive`), else the one the slide's own
+ * collection listed under that id when the lookup was refused — appearing in the
+ * slide's collection is positive proof the shape exists, the same proof that
+ * re-acquires the tagged shape. A part neither source confirms is left alone:
+ * deleting a shape we cannot see risks taking something that is not ours, while
+ * a stray under the redraw is a visible, fixable outcome and a wrong delete is
+ * neither.
+ *
+ * `listed` is aligned with `parts` (both follow the chart's `partIds`), which is
+ * what keeps one part from being deleted twice through two proxies.
+ */
+function confirmedParts(parts: PowerPoint.Shape[], listed: (PowerPoint.Shape | undefined)[]): PowerPoint.Shape[] {
+  const there: PowerPoint.Shape[] = [];
+  parts.forEach((p, k) => {
+    const shape = isLive(p) ? p : listed[k];
+    if (shape) there.push(shape);
+  });
+  return there;
 }
 
 /**
@@ -2583,13 +2627,42 @@ export function targetWithNoTagResult(old: EditTarget, o: { drew: boolean; wreck
 export interface UpdateWreckage {
   /** The slide the chart was on — where a replacement has to go back. */
   slideId: string;
-  /** Where it sat, so the replacement lands in the same place. */
+  /**
+   * The FRAME ORIGIN the chart was being redrawn at, so the replacement lands in
+   * the same place — pass it as `left`/`top` to `insertSceneIntoSlide`.
+   *
+   * Not the position of the tagged shape, which is the group's bounding box or
+   * `created[0]` and sits off the origin by the scene's ink margin; see
+   * `frameOriginAt`.
+   */
   at: { left: number; top: number };
   /** The partial chart the failed redraw committed, by shape id. */
   strayIds: string[];
 }
 
 const WRECKAGE_KEY = "__powerchartWreckage";
+
+/**
+ * Slides on which this run has deleted a chart's shapes and not yet drawn it
+ * back — the one thing the slide-swap gate cannot read off the slide.
+ *
+ * `slideHoldsOnlyChart` is asked AFTER a failed redraw, and by then the chart
+ * being updated is gone and its litter swept. A lone `PowerChart` still on the
+ * slide is therefore a DIFFERENT chart — a second group, or a picture chart,
+ * which is one shape of that name — and the gate used to take it for the one
+ * being updated, so the swap replaced a slide that held a chart the user never
+ * touched with a generated one holding only the first. The slide cannot say
+ * which chart is which: nothing on a shape names the chart an update was for.
+ * Only the update knows, so it records the fact here.
+ *
+ * Module state rather than a parameter, for the reason `stopRequested` is: one
+ * pane, one host, one operation at a time, and the gate's caller already holds
+ * everything it is allowed to ask. Set where `wreck()` tags a failure that
+ * destroyed a chart; cleared when the next update on the slide starts, so a
+ * wreck that was dealt with (or a Ctrl-Z that undid it) cannot leave the slide
+ * refusing swaps for ever.
+ */
+const slidesWithALostChart = new Set<string>();
 
 const STOPPED_KEY = "__powerchartStopped";
 
@@ -2661,6 +2734,7 @@ function wreck(
   drawn: PowerPoint.Shape[],
 ): unknown {
   if (!destroyed) return err;
+  slidesWithALostChart.add(target.slideId);
   const strayIds: string[] = [];
   for (const s of drawn) {
     // Only the batches that COMMITTED have ids: `load("id")` resolves on the
@@ -2823,6 +2897,7 @@ export async function updateChartsInSlides(
   onFailed?: (item: { scene: Scene; target: EditTarget; opts?: InsertOptions }, err: unknown) => void,
 ): Promise<EditTarget[]> {
   if (!items.length) return [];
+  for (const it of items) slidesWithALostChart.delete(it.target.slideId);
   // A REFUSAL IN AN EARLIER BATCH SAYS NOTHING ABOUT THIS ONE — see
   // `forgetGroupReadRefusal`. Latched for the session, one refusal turned every
   // later update in the round into a redraw: 46 of them across the last 25
@@ -3061,9 +3136,16 @@ export async function updateChartsInSlides(
     // shape collection is POSITIVE proof the shape exists, and a stronger one
     // than a null-object check, which only ever reports what a by-id lookup
     // thought.
+    //
+    // Looked up by the ENTRY, not by its shape id: ids repeat across slides, and
+    // an id-keyed lookup handed a chart that was never refused — or was refused
+    // on its own slide — the proxy of whichever other slide's chart shared its
+    // number. See `reReadRefusedShapes`.
     const withOldSettled = withOld.map((e) => {
-      const again = recovered.get(e.it.target.shapeId);
-      return again ? { ...e, old: again, reacquired: true } : { ...e, reacquired: false };
+      const again = recovered.get(e);
+      return again
+        ? { ...e, old: again.shape, reacquired: true, listedParts: again.parts }
+        : { ...e, reacquired: false, listedParts: [] as (PowerPoint.Shape | undefined)[] };
     });
 
     // A GROUP REFUSED IN THIS BATCH CANNOT BE RE-ASKED IN THIS BATCH. It is
@@ -3201,7 +3283,8 @@ export async function updateChartsInSlides(
       // keep their old ones, which is exactly what the return below does for a
       // chart that was never reached.
       if (isStopRequested()) break;
-      const { it, old, parts, at } = entry;
+      const { it, old, parts, listedParts, at } = entry;
+      const frame = frameOriginAt(it.target, at);
       const opts: InsertOptions = {
         ...it.opts,
         // Which slide this redraw is aimed at. Read ONLY by the per-slide shape
@@ -3224,8 +3307,8 @@ export async function updateChartsInSlides(
         // was loaded and reuses it for every update, so a snapshot-based delta
         // reports no movement and puts a dragged chart back. Charts with no
         // usable origin tag fall back to the shape's own position.
-        left: it.target.origin ? it.target.origin.left + (at.left - it.target.origin.anchorLeft) : at.left,
-        top: it.target.origin ? it.target.origin.top + (at.top - it.target.origin.anchorTop) : at.top,
+        left: frame.left,
+        top: frame.top,
         altText: it.scene.desc,
         altTitle: it.scene.title,
       };
@@ -3282,12 +3365,15 @@ export async function updateChartsInSlides(
         // answer for is left alone: deleting a shape we cannot see risks
         // taking something that is not ours, and the redraw covering a stray
         // is a visible, fixable outcome where a wrong delete is neither.
-        let removed = 1;
-        for (const p of parts)
-          if (isLive(p)) {
-            p.delete();
-            removed++;
-          }
+        //
+        // CONFIRMED includes a part the slide's own collection listed, for a
+        // chart whose by-id lookups died in a refused sync. Counting only the
+        // lookups left the whole of such a chart under every redraw bar its
+        // anchor, and the new parts tag names only the new shapes — so the
+        // strays were permanent and grew with each refused edit.
+        const sibling = confirmedParts(parts, listedParts);
+        for (const p of sibling) p.delete();
+        const removed = 1 + sibling.length;
         await boundedSync(context, "deleting the chart being replaced");
         // Paired with `batch issued`'s timings, this is the whole cost of a
         // redraw. `removed` is what the host CONFIRMED and took, not what the
@@ -3385,7 +3471,7 @@ export async function updateChartsInSlides(
         // undefined every time — so it could not sweep, and left a half-drawn
         // chart on each stalled slide while reporting them empty. The
         // single-chart path never noticed because it only ever has failure #1.
-        const wrecked = wreck(err, deleted, it.target, at, drawn);
+        const wrecked = wreck(err, deleted, it.target, frame, drawn);
         if (firstFailure === undefined) firstFailure = wrecked;
         trace("draw", "chart update failed mid-batch", { index: i, error: errorText(err) });
         onFailed?.(it, wrecked);
@@ -3459,19 +3545,13 @@ export async function updateChartsInSlides(
       // The origin this pass actually rendered at, paired with where the tagged
       // shape landed — the same (origin, anchor) contract groupAndTagAll wrote to
       // the tag, so the caller's in-memory target and the on-slide tag agree.
-      const o = it.target.origin;
       return {
         slideId: it.target.slideId,
         shapeId: t.id,
         left: t.left,
         top: t.top,
         partIds: ri === undefined ? undefined : tagged[ri]?.partIds,
-        origin: {
-          left: o ? o.left + (at.left - o.anchorLeft) : at.left,
-          top: o ? o.top + (at.top - o.anchorTop) : at.top,
-          anchorLeft: t.left,
-          anchorTop: t.top,
-        },
+        origin: { ...frameOriginAt(it.target, at), anchorLeft: t.left, anchorTop: t.top },
         // Redrawn and located, but the config tag did not land — so the chart is
         // on the slide and cannot be re-opened. Same signal the insert path
         // carries, for the same reason.
@@ -9229,6 +9309,10 @@ async function deleteSlideByPosition(slideId: string): Promise<boolean> {
  * having first put back anything it managed to add. `deselected` tells the
  * caller which happened, so it knows whether the wait budget it just used was
  * the off-screen one.
+ *
+ * `fn` runs ONCE. Those fallbacks are for the SETUP failing; a redraw that dies
+ * is the caller's to recover from — with the error it threw — and is never run
+ * again here.
  */
 export async function withSlideDeselected<T>(slideIds: string[], fn: (deselected: boolean) => Promise<T>): Promise<T> {
   if (!supports("1.5")) return fn(false);
@@ -9239,6 +9323,23 @@ export async function withSlideDeselected<T>(slideIds: string[], fn: (deselected
   /** A slide this function ADDED purely to have somewhere to look. Removed in
    *  the `finally`; never shown to `fn`, and never the user's own. */
   let scratchId: string | null = null;
+  /**
+   * Whether the SETUP found nowhere to look, so `fn` has to run on the live
+   * canvas.
+   *
+   * A decision, not a call. `fn(false)` used to be made from inside the setup
+   * `try`, and that `try`'s `catch` ends in `fn(false)` too — so a redraw that
+   * died on the live canvas was caught by the setup's own handler, its error
+   * dropped, and the redraw run a SECOND time. By then the first attempt had
+   * deleted the chart and committed some of its replacement: the second resolved
+   * a dead shape id, returned null, and `updateChartResilient` (which is built to
+   * receive the first error with its `UpdateWreckage` attached) never reached
+   * its catch — no sweep, no slide swap, no picture floor, no Stop — and the
+   * pane told the user the chart was no longer on the slide, over a slide
+   * holding half of it. Only a SETUP failure may fall back; `fn`'s own failure
+   * belongs to the caller.
+   */
+  let liveCanvas = false;
   try {
     // Bounded, on the selection budget. This is the FIRST thing an in-place
     // update does, and it was two raw `PowerPoint.run`s sandwiching draw work
@@ -9280,27 +9381,32 @@ export async function withSlideDeselected<T>(slideIds: string[], fn: (deselected
       // Every slide in the deck is one we are about to draw on. Make a blank
       // one at the end, look at that instead, and take it away again after.
       scratchId = await addScratchSlide();
-      // The host swallowed the add: nothing landed, nothing to clean up, and
-      // the live canvas is still the only surface available.
-      if (!scratchId) return await fn(false);
-      if (!(await showSlide(scratchId))) {
+      if (!scratchId) {
+        // The host swallowed the add: nothing landed, nothing to clean up, and
+        // the live canvas is still the only surface available.
+        liveCanvas = true;
+      } else if (!(await showSlide(scratchId))) {
         // It landed but the host will not look at it — an unusable scratch
         // slide is litter, so take it back out before falling through.
         await deleteSlideById(scratchId);
         scratchId = null;
-        return await fn(false);
+        liveCanvas = true;
+      } else {
+        trace("host", "parked on a scratch slide", { scratchId });
       }
-      trace("host", "parked on a scratch slide", { scratchId });
     }
-    restore = moved.previous;
-    parkedOn = moved.parkedOn ?? scratchId;
+    if (!liveCanvas) {
+      restore = moved.previous;
+      parkedOn = moved.parkedOn ?? scratchId;
+    }
   } catch {
     // A host that will not tell us what is selected, or will not change it —
     // draw on the live canvas as before rather than refusing to draw at all.
     // Anything already added has to come back out on the way past.
     if (scratchId) await deleteSlideById(scratchId);
-    return fn(false);
+    liveCanvas = true;
   }
+  if (liveCanvas) return fn(false);
   try {
     return await fn(true);
   } finally {
@@ -9619,6 +9725,18 @@ export async function slideShapeNames(slideId: string): Promise<string[] | null>
  * "failed redraw, litter swept" case the empty branch was added for. A run
  * whose shapes are still sitting there unlisted reads non-zero and is refused.
  * Both halves come from the same subtraction.
+ *
+ * A LONE `PowerChart` IS THE CHART BEING UPDATED ONLY IF NONE WAS DESTROYED. The
+ * single-group branch dates from before an update deleted its chart first, and
+ * it never asked WHICH chart the one left was. It is asked after the failed
+ * redraw's litter is swept, so on a slide that held charts A and B a failed
+ * redraw of A leaves B alone — one group, or one picture, named `PowerChart` —
+ * and the gate authorised replacing the slide with a generated one holding only
+ * A. The user's note names notes, transitions and animation as the cost; a
+ * second chart is not on the list. The slide cannot say which is which, so the
+ * update's own record (`slidesWithALostChart`) decides: where a chart was
+ * destroyed, whatever one is left is not it. The empty branch needs no such
+ * record, because an empty slide has nothing else on it to lose.
  */
 export async function slideHoldsOnlyChart(slideId: string): Promise<boolean> {
   const names = await slideShapeNames(slideId);
@@ -9634,7 +9752,14 @@ export async function slideHoldsOnlyChart(slideId: string): Promise<boolean> {
     }
     return true;
   }
-  return names.length === 1 && names[0] === GROUP_NAME;
+  if (names.length !== 1 || names[0] !== GROUP_NAME) return false;
+  if (slidesWithALostChart.has(slideId)) {
+    trace("insert", "not offering the slide swap: the chart being updated was destroyed, so the one left is another", {
+      slideId,
+    });
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -12685,6 +12810,32 @@ async function tryInPlaceUpdate(
  */
 function frameOrigin(opts: InsertOptions): { dx: number; dy: number } {
   return { dx: opts.left ?? 60, dy: opts.top ?? 90 };
+}
+
+/**
+ * The frame origin a chart is redrawn at, given where its tagged shape sits NOW.
+ *
+ * The recorded origin (`CHART_ORIGIN_TAG`) shifted by however far the shape has
+ * moved from its recorded anchor — a dragged chart follows the drag, an
+ * untouched one lands exactly where it was. `at` is the shape's own `left`/`top`
+ * and is NOT an origin: for a grouped chart it is the group's bounding box, and
+ * ungrouped it is whatever `created[0]` is, both offset from the frame by the
+ * scene's ink margin. A chart with no usable origin tag falls back to `at`,
+ * which is the only number left.
+ *
+ * One reader for the three places that need it — the redraw's `opts`, the
+ * origin written back for the next update, and the position an
+ * `UpdateWreckage` hands the recovery. The third used to take `at` itself and so
+ * re-inserted every recovered chart displaced by the anchor offset (+285pt
+ * down, off the slide, for an untitled ungrouped stacked chart), writing that
+ * displaced origin into the recovered chart's own tag so it stuck.
+ */
+function frameOriginAt(target: EditTarget, at: { left: number; top: number }): { left: number; top: number } {
+  const o = target.origin;
+  return {
+    left: o ? o.left + (at.left - o.anchorLeft) : at.left,
+    top: o ? o.top + (at.top - o.anchorTop) : at.top,
+  };
 }
 
 /**
