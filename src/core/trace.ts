@@ -185,10 +185,41 @@ export function traceSubject(): Record<string, unknown> | undefined {
 }
 
 /**
+ * Be told that a run did SOMETHING, whether or not tracing is recording.
+ *
+ * Separate from `onTrace` because the two answer different questions. A watcher
+ * wants the entry, so it can only exist while entries are made. The pane's
+ * silence watchdog wants only the fact that a step happened — no payload, no
+ * stringification, nothing a live run pays for — and it needs that fact in
+ * EVERY pane, not just the harness one.
+ *
+ * It used to get it from the harness's `onTrace` subscriber, which was right
+ * while every pane ran the harness with tracing on. 03ba495 switched tracing off
+ * in a pane that did not ask for the harness and ea8c0ab stopped loading the
+ * subscriber there at all, so every pane a user opened said "PowerPoint has not
+ * answered for 60s" on any action that took a minute, while the host answered
+ * throughout. The round driver opens the harness pane, so no round could see it.
+ *
+ * One listener, replaced rather than accumulated, as with `onTrace`.
+ */
+let pulse: (() => void) | undefined;
+export function onTracePulse(cb: (() => void) | undefined): void {
+  pulse = cb;
+}
+
+/**
  * Record one step. A no-op — and specifically NOT a stringification — when
  * tracing is off, so call sites can be liberal without costing a live run.
  */
 export function trace(scope: string, message: string, data?: Record<string, unknown>): void {
+  // BEFORE the enabled check, and that position is the whole fix: see
+  // `onTracePulse`. It is one call and one timestamp, which is the price the
+  // "costs a live run nothing" promise above can afford.
+  try {
+    pulse?.();
+  } catch {
+    /* a broken listener must not cost the run its step */
+  }
   if (!enabled) return;
   // Copy the payload rather than holding the caller's object. A log is a
   // record of what was true AT THE MOMENT it was written; keeping the live

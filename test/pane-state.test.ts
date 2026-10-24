@@ -1209,6 +1209,57 @@ describe("the elapsed readout", () => {
     const { elapsedLabel } = await import("../src/taskpane/status");
     expect(elapsedLabel(200_000, 190_000)).toBe("200s · silent for 190s");
   });
+
+  /**
+   * THE PRODUCTION PANE, AND THE ONE CONFIGURATION THE ROUND DRIVER CANNOT BE.
+   *
+   * The silence clock was fed only by the testing panel's trace subscriber. That
+   * panel exists only in a pane opened with `?harness=1`, and the subscriber sees
+   * a step only while tracing records — which a pane nobody opted into never
+   * does. So on the manifest every user installs, "silent" meant "time since the
+   * action began": a host that had answered a second ago was reported dead at the
+   * sixty-second mark. Six live rounds went green on it, because the driver
+   * sideloads the harness manifest. `bootPane()` here opens WITHOUT the flag, and
+   * `setTracing(false)` is stated rather than assumed, so this test is the
+   * production configuration and not a superset of it.
+   */
+  it("does not call a host that has just answered silent, in a pane that is not tracing", async () => {
+    await bootPane();
+    const { startElapsed, stopElapsed } = await import("../src/taskpane/status");
+    const { setTracing, trace } = await import("../src/core/trace");
+    setTracing(false);
+    vi.useFakeTimers();
+    try {
+      startElapsed();
+      vi.advanceTimersByTime(59_000);
+      // The renderer took a step 30s before the readout is read.
+      trace("insert", "batch issued");
+      vi.advanceTimersByTime(30_000);
+      expect($("status-elapsed").textContent).toBe("89s");
+      expect($("host-note").textContent).not.toMatch(/has not answered/);
+    } finally {
+      stopElapsed();
+      vi.useRealTimers();
+    }
+  });
+
+  it("still calls a run silent once nothing has stepped for a minute", async () => {
+    await bootPane();
+    const { startElapsed, stopElapsed } = await import("../src/taskpane/status");
+    const { setTracing } = await import("../src/core/trace");
+    setTracing(false);
+    vi.useFakeTimers();
+    try {
+      startElapsed();
+      vi.advanceTimersByTime(61_000);
+      expect($("status-elapsed").textContent).toBe("61s · silent for 61s");
+      // Said ONCE, at the first tick that reaches the threshold — so it names 60s.
+      expect($("host-note").textContent).toMatch(/has not answered for 60s/);
+    } finally {
+      stopElapsed();
+      vi.useRealTimers();
+    }
+  });
 });
 
 /**

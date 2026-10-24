@@ -12,8 +12,9 @@
  * fact about the panel.
  *
  * A module both of them import instead of one of them owning it removes that.
- * `i18n.ts` imports nothing, so this file's only import cannot close a cycle,
- * and the dependency direction is now stated rather than inverted.
+ * `i18n.ts` and `core/trace.ts` import nothing from the pane, so neither of this
+ * file's two imports can close a cycle, and the dependency direction is now
+ * stated rather than inverted.
  *
  * ── KEEP IT THAT WAY ────────────────────────────────────────────────────────
  * `test/import-cycles.test.ts` deliberately ignores dynamic `import()`, so once
@@ -28,6 +29,7 @@
  * the DOM is allowed to say.
  */
 import { t } from "./i18n";
+import { onTracePulse } from "../core/trace";
 
 /**
  * The pane's live region. Declared here rather than beside the other DOM
@@ -156,10 +158,23 @@ export function setProgress(p: number | "busy" | null) {
  */
 let lastHostActivity = 0;
 
-/** A run just did something. Bumped per traced step. */
+/** A run just did something. Bumped per step the renderer takes. */
 export function noteHostActivity(now = Date.now()): void {
   lastHostActivity = now;
 }
+
+/**
+ * THE WATCHDOG'S OWN FEED, WIRED HERE BECAUSE THIS IS WHERE IT IS READ.
+ *
+ * `noteHostActivity` used to be fed only by the testing panel's trace
+ * subscriber, which exists only in a pane opened with `?harness=1` and only
+ * sees a step while tracing records. Every other pane therefore measured
+ * "silent" as "time since the action began", and called a host that was
+ * answering throughout dead at the sixty-second mark. `trace()` now pulses
+ * whether or not it records, and this is the one place that listens, so the
+ * strip no longer depends on which panel happens to be loaded.
+ */
+onTracePulse(() => noteHostActivity());
 
 /**
  * How long a run may go silent before the pane stops implying it is working.
