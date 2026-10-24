@@ -951,7 +951,11 @@ export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decora
       }
       const stats = trendStats(pts);
       if (stats) {
-        const label = `R² = ${stats.r2.toFixed(2)}${stats.p != null ? `, p ${formatP(stats.p)}` : ""}`;
+        // The chart's locale, for BOTH numbers. `toFixed` and the bare `formatP`
+        // were en-US, so a de-DE chart printed "R² = 0.31, p = 0.04" under axes
+        // that read "1.234,5" — two number systems on one chart.
+        const loc = cfg.numberFormat?.locale;
+        const label = `R² = ${formatNumber(stats.r2, { decimals: 2, locale: loc })}${stats.p != null ? `, p ${formatP(stats.p, loc)}` : ""}`;
         const endY = toY(at(x1));
         nodes.push({
           kind: "text",
@@ -999,7 +1003,8 @@ export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decora
         py = ny;
       }
       const names: Record<number, string> = { 2: "quadratic", 3: "cubic", 4: "quartic" };
-      const label = `R² = ${fit.r2.toFixed(2)} · ${names[fit.degree] ?? `deg ${fit.degree}`}`;
+      // Same locale as the linear caption above, for the same reason.
+      const label = `R² = ${formatNumber(fit.r2, { decimals: 2, locale: cfg.numberFormat?.locale })} · ${names[fit.degree] ?? `deg ${fit.degree}`}`;
       nodes.push({
         kind: "text",
         x: plot.x + plot.w - textWidth(label, fs * 0.9) - 4,

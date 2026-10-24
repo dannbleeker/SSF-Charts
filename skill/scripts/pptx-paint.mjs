@@ -158,6 +158,15 @@ const readHex = (c) => {
     return to2(r * sc) + to2(g * sc) + to2(b * sc);
   }
   if ((m = /^hsla?\(([^)]*)\)$/i.exec(raw))) {
+    // The hue is DEGREES, and `nums` keeps the digits and drops the letters after
+    // them — so `hsl(0.5turn 100% 50%)` (CSS cyan) was read as half a degree and
+    // drawn red, `3.14159rad` and `200grad` the same, and `1e2` split into 1 and
+    // 2 and shifted every component along. Same rule as `toRgb` in
+    // src/core/color.ts and the SVG allow-list: a hue that is not a plain number
+    // or `deg` is a paint nobody here can read, and UNDEFINED is this function's
+    // answer for that (`hex` supplies the black one level up).
+    const hue = /^\s*([^\s,/)]*)/.exec(m[1])?.[1] ?? "";
+    if (hue !== "" && !/^[+-]?[\d.]+(?:deg)?$/i.test(hue)) return undefined;
     const [hh = 0, ss = 0, ll = 0] = nums(m[1]);
     return hslToHex(hh, ss, ll);
   }

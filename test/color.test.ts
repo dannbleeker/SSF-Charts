@@ -246,6 +246,13 @@ describe("the preview sink and the pptx sink answer the same colour", () => {
   const UNREADABLE_FORMS = [
     "rgb(., ., .)",
     "hsl(., 50%, 50%)",
+    // A hue in a unit this engine does not convert. `nums` kept the digits and
+    // dropped the unit, so CSS cyan `0.5turn` was drawn red by both sinks; the
+    // paint grammar admits `deg` and nothing else, so these are unreadable, not
+    // a confident wrong hue.
+    "hsl(0.5turn 100% 50%)",
+    "hsl(3.14159rad 100% 50%)",
+    "hsl(200grad 100% 50%)",
     "",
     "not-a-color",
     // A hex of a LEGAL length with a stray character in it. `parseInt` read the

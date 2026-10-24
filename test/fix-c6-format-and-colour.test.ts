@@ -273,3 +273,51 @@ describe("formatP prints the p-value in the chart's locale (r1-38)", () => {
     expect(formatP(1)).toBe("= 1.00");
   });
 });
+
+/**
+ * r1-38, END TO END. `formatP` taking a locale proves nothing about the chart:
+ * the caption is composed in `layout/scatter.ts`, at two call sites, and until
+ * both pass the chart's locale a de-DE scatter printed comma axes beside
+ * `R² = 0.31, p = 0.07`. This drives `buildChart` the way a user's config does
+ * and reads the text node the caption lands in.
+ */
+describe("the scatter trend caption is printed in the chart's locale (r1-38)", () => {
+  // Scattered enough that the fit is weak and p lands in the "= 0.xx" branch.
+  const ys = [5, 2, 8, 1, 9, 3, 7, 4];
+  const cloud = (locale: string | undefined, degree?: number): ChartConfig =>
+    ({
+      kind: "scatter",
+      ...DEFAULT_SIZE,
+      ...(locale ? { numberFormat: { locale } } : {}),
+      ...(degree ? { scatter: { trendDegree: degree } } : {}),
+      data: {
+        categories: ys.map((_, i) => `p${i}`),
+        series: [
+          { name: "X", values: ys.map((_, i) => i + 1) },
+          { name: "Y", values: ys },
+          { name: "Trend", values: ys.map(() => 1) },
+        ],
+      },
+    }) as unknown as ChartConfig;
+  const caption = (c: ChartConfig): string => {
+    const n = buildChart(c).nodes.find((x) => x.name === "trend-stats");
+    expect(n, "no trend caption was drawn").toBeTruthy();
+    return (n as unknown as { text: string }).text;
+  };
+
+  it("uses the decimal comma for the straight fit's R² and p", () => {
+    const text = caption(cloud("de-DE"));
+    expect(text, text).toMatch(/^R² = \d,\d\d, p [<=] \d,\d+$/);
+    expect(text, text).not.toMatch(/\d\.\d/);
+  });
+
+  it("uses the decimal comma for a polynomial fit's R²", () => {
+    const text = caption(cloud("de-DE", 2));
+    expect(text, text).toMatch(/^R² = \d,\d\d · quadratic$/);
+  });
+
+  it("keeps the dot with no locale", () => {
+    expect(caption(cloud(undefined))).toMatch(/^R² = \d\.\d\d, p [<=] \d\.\d+$/);
+    expect(caption(cloud(undefined, 2))).toMatch(/^R² = \d\.\d\d · quadratic$/);
+  });
+});
