@@ -41,8 +41,20 @@ import { sourceFiles } from "./helpers/module-source";
  * `import type` and `import { type X }` are erased before anything runs, so a
  * type-only cycle cannot produce an undefined binding. Counting them would make
  * this fire on a shape that is harmless, which is how a guard gets switched off.
+ * The same goes for `export type { X } from` and `export { type X } from`.
  * Dynamic `import()` is skipped for the same reason — it resolves after module
  * init, which is the whole point of `src/render/lazy.ts`.
+ *
+ * ── AND WHAT IS COUNTED THAT LOOKS LIKE IT SHOULD NOT BE ────────────────────
+ * `export { a } from "./b"` and `export * from "./b"` are edges. The re-exporting
+ * module evaluates `./b` before its own body, exactly as an import would, so a
+ * cycle closed through one fails the same way — and the reasoning above for
+ * skipping type-only and dynamic edges ("erased", "resolves after init") covers
+ * neither. They were not read at all: the pattern matched lines that begin with
+ * `import`. That is the blind spot an extraction refactor walks into, because
+ * the tidy way to pull a helper out of `powerpoint.ts` is to leave
+ * `export { helper } from "./extracted"` behind so callers keep working, and
+ * if `extracted.ts` then imports `errorText` back, the cycle was invisible here.
  *
  * ── AND THE BLIND SPOT THAT SKIP CREATES ────────────────────────────────────
  * A dynamic edge is not counted, so it cannot COMPLETE a cycle here either. The
@@ -67,24 +79,61 @@ export function runtimeImports(file: string, read: (f: string) => string = (f) =
     .map((l) => l.replace(/\/\/.*$/, ""))
     .join("\n");
   const out: string[] = [];
+  // `import { type A, type B } from "x"` erases completely too. Only skip when
+  // EVERY named binding is type-only — one value binding keeps the edge.
+  const allTypes = (clause: string): boolean => {
+    const named = clause.match(/\{([\s\S]*)\}/);
+    if (!named) return false;
+    const parts = named[1]
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return parts.length > 0 && parts.every((p) => p.startsWith("type "));
+  };
   // `import … from "x"` and bare `import "x"`, but not `import type … from "x"`.
   for (const m of src.matchAll(/^\s*import\s+(?!type\s)([\s\S]*?)from\s*["']([^"']+)["']/gm)) {
     const clause = m[1];
     const spec = m[2];
     if (!spec.startsWith(".")) continue;
-    // `import { type A, type B } from "x"` erases completely too. Only skip when
-    // EVERY named binding is type-only — one value binding keeps the edge.
-    const named = clause.match(/\{([\s\S]*)\}/);
-    if (named) {
-      const parts = named[1]
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      if (parts.length && parts.every((p) => p.startsWith("type "))) continue;
-    }
+    if (allTypes(clause)) continue;
     out.push(resolveSpec(file, spec));
   }
+  // `export { a } from "x"` and `export * from "x"` / `export * as ns from "x"`
+  // evaluate "x" first, exactly as an import does. The clause is matched as
+  // `{ … }` or `*` and nothing looser: `export const a = 1;` has no `from`, and a
+  // lazy `[\s\S]*?` here would run on to the next `from "…"` in the file and
+  // invent an edge.
+  for (const m of src.matchAll(
+    /^\s*export\s+(type\s+)?(\{[^}]*\}|\*(?:\s+as\s+[\w$]+)?)\s*from\s*["']([^"']+)["']/gm,
+  )) {
+    if (m[1] || !m[3].startsWith(".") || allTypes(m[2])) continue;
+    out.push(resolveSpec(file, m[3]));
+  }
   return out;
+}
+
+/**
+ * The runtime import graph of `files` (repo-relative, forward slashes): each to
+ * the other scanned files it imports or re-exports from. An import of a node
+ * builtin or of `skill/scripts/pptx-paint.mjs` is a leaf, not an edge.
+ *
+ * Exported and given its reader so a cycle can be built from synthetic sources
+ * and shown to be found, rather than only shown absent from the real tree.
+ */
+export function importGraph(
+  files: string[],
+  read: (f: string) => string = (f) => readFileSync(f, "utf8"),
+): { graph: Map<string, string[]>; edges: number } {
+  const known = new Set(files.map((f) => f.split("\\").join("/")));
+  const graph = new Map<string, string[]>();
+  let edges = 0;
+  for (const f of files) {
+    const key = f.split("\\").join("/");
+    const to = runtimeImports(key, read).filter((t) => known.has(t));
+    graph.set(key, to);
+    edges += to.length;
+  }
+  return { graph, edges };
 }
 
 /** `"./lazy"` from `src/render/powerpoint.ts` → `src/render/lazy.ts`. */
@@ -168,16 +217,8 @@ describe("the module graph of src/", () => {
     // loop and a widened sweep.
     expect(files.length, "no source files found — the walk broke and this checks nothing").toBeGreaterThan(40);
 
-    const graph = new Map<string, string[]>();
-    let edges = 0;
-    for (const f of files) {
-      const key = f.split("\\").join("/");
-      // Only edges that land on another file we actually scanned. An import of
-      // `skill/scripts/pptx-paint.mjs` or a node builtin is a leaf, not an edge.
-      const to = runtimeImports(key).filter((t) => files.some((g) => g.split("\\").join("/") === t));
-      graph.set(key, to);
-      edges += to.length;
-    }
+    // Only edges that land on another file we actually scanned — see `importGraph`.
+    const { graph, edges } = importGraph(files);
     expect(edges, "no internal edges found — the specifier parser broke").toBeGreaterThan(40);
 
     /**
@@ -279,6 +320,54 @@ describe("the module graph of src/", () => {
     // `jszip` is not relative, the commented one is not code, and the dynamic
     // import resolves after init.
     expect(got).toEqual(["src/render/lazy.ts", "src/core/trace.ts"]);
+  });
+
+  it("reads a re-export as an edge, and skips the ones that are erased or are not re-exports", () => {
+    const fake = [
+      'export { polar } from "./geometry";',
+      'export * from "./everything";',
+      'export * as shapes from "./shapes";',
+      'export type { Scene } from "../core/scene";',
+      'export { type PolygonNode, type TextNode } from "../core/scene";',
+      'export { value, type Kind } from "./mixed";',
+      'export { thing } from "jszip";',
+      '// export { ghost } from "./ghost";',
+      "export const local = 1;",
+      "export { local as renamed };",
+      "export default local;",
+      // A later import must not be swallowed into the `export const` above it.
+      'import { used } from "./used";',
+    ].join("\n");
+    const got = runtimeImports("src/core/scene.ts", () => fake);
+    // The import comes first only because imports are read before re-exports.
+    expect(got).toEqual([
+      "src/core/used.ts",
+      "src/core/geometry.ts",
+      "src/core/everything.ts",
+      "src/core/shapes.ts",
+      "src/core/mixed.ts",
+    ]);
+  });
+
+  it("finds a cycle that one side closes through a re-export", () => {
+    // THE SHAPE OF AN EXTRACTION REFACTOR, which is what this file is for:
+    // `powerpoint.ts` keeps `export { helper } from "./extracted"` so callers are
+    // undisturbed, and `extracted.ts` reaches back for `errorText`. The same two
+    // modules written with a plain import were always caught.
+    const files = ["src/render/powerpoint.ts", "src/render/extracted.ts"];
+    const sources = (reexport: string): Record<string, string> => ({
+      "src/render/powerpoint.ts": reexport,
+      "src/render/extracted.ts": 'import { errorText } from "./powerpoint";',
+    });
+    const cycleThrough = (reexport: string) => findCycle(importGraph(files, (f) => sources(reexport)[f] ?? "").graph);
+
+    const closed = ["src/render/extracted.ts", "src/render/powerpoint.ts", "src/render/extracted.ts"];
+    expect(cycleThrough('export { helper } from "./extracted";')).toEqual(closed);
+    expect(cycleThrough('export * from "./extracted";')).toEqual(closed);
+    expect(cycleThrough('import { helper } from "./extracted";')).toEqual(closed);
+    // …and not for a re-export that is erased, which cannot hand anything an
+    // undefined binding.
+    expect(cycleThrough('export type { Helper } from "./extracted";')).toBeNull();
   });
 
   it("resolves a specifier the way the bundler does", () => {
