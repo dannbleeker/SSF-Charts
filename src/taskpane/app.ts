@@ -624,17 +624,67 @@ let sheetApi: { setSheet(next: SheetModel): void };
 let autoUpdateTimer: ReturnType<typeof setTimeout> | undefined;
 
 /**
- * An insert or update is talking to PowerPoint right now.
+ * Writes that rewrite a chart on the slide — Update, Insert, Same Scale,
+ * Explode — running now or waiting for their turn. See `inWriteTurn`.
  *
  * `guard()` disables the buttons a CLICK comes from, but the auto-update timer
  * calls `doInsert` directly and never sees that. See `maybeAutoUpdate`.
  */
-let insertInFlight = false;
+let writesPending = 0;
+
+/** The write at the back of the queue; the next one starts when it settles. */
+let writeTail: Promise<void> = Promise.resolve();
+
+const writeInFlight = (): boolean => writesPending > 0;
+
+/**
+ * Run `write` once every write started before it has settled — NEVER TWO WRITES
+ * TO ONE CHART AT ONCE, enforced where the writes start rather than by whoever
+ * remembers to ask.
+ *
+ * The rule used to be a boolean, set by `doInsert` alone and read by the
+ * auto-update timer alone, so it held in one direction only: the timer waited
+ * for a clicked Update, and nothing waited for anything else. Same Scale and
+ * Explode never set it; a click on Update never read it; and the timer is not a
+ * guarded action, so the Insert button stays live while an auto-update writes.
+ * Measured against the real renderer on the fake host, two updates to one target
+ * started together both succeed and leave TWO tagged copies of the chart on the
+ * slide (18 shapes where one chart has 9), and one started a few microtasks
+ * after the other resolves the shape id the first has just replaced, gets
+ * nothing back, and makes the pane say "That chart is no longer on the slide"
+ * about a chart that was written fine.
+ *
+ * A QUEUE, NOT A REFUSAL. A click on Update during an auto-update is an edit the
+ * user wants on the slide; dropping it loses it and refusing it makes the button
+ * look broken. The write that waited reads the pane — config AND edit target —
+ * only when its turn comes, so it writes to the target the write before it
+ * returned and not to the one that write had just replaced.
+ *
+ * A counter rather than a flag, for the same reason `hostWork` is one: a flag
+ * cleared by whichever write finishes first declares the slide idle while a
+ * second is still waiting on it.
+ */
+async function inWriteTurn<T>(write: () => Promise<T>): Promise<T> {
+  const queued = writesPending > 0;
+  writesPending++;
+  const turn = writeTail;
+  let pass!: () => void;
+  writeTail = new Promise<void>((resolve) => (pass = resolve));
+  try {
+    // Not awaited when nothing is ahead: an uncontended write starts in the same
+    // tick it always did, so only a write that actually has to wait pays for it.
+    if (queued) await turn;
+    return await write();
+  } finally {
+    writesPending--;
+    pass();
+  }
+}
 
 /**
  * How many pane actions are talking to PowerPoint right now.
  *
- * Broader than `insertInFlight`, which only covers writes and exists to stop
+ * Broader than `writeInFlight`, which only covers writes and exists to stop
  * two updates racing on the same chart. This one covers EVERY host action —
  * every `guard()`ed click plus the auto-update timer — because one background
  * listener needs to know not to add work of its own while the host is busy.
@@ -649,7 +699,7 @@ let hostWork = 0;
 /** A selection change arrived while the host was busy and was not acted on. */
 let selectionMissed = false;
 
-const hostBusy = (): boolean => hostWork > 0 || insertInFlight;
+const hostBusy = (): boolean => hostWork > 0 || writeInFlight();
 
 function hostWorkStarted(): void {
   hostWork++;
@@ -687,6 +737,75 @@ function applyConfig(cfg: ChartConfig, editTarget: EditTarget | null) {
   renderOptions();
   renderPreview();
   renderActionState();
+}
+
+/**
+ * Two edit targets name the same chart. BOTH halves are the identity.
+ *
+ * Shape ids are per slide on a real host — round 497's deck inventory holds
+ * `26:PowerChart` on five different slides, and Duplicate Slide keeps every id —
+ * so a shape id alone names a chart only within one slide. Every comparison of
+ * "is this the chart the pane has open" went through the shape id, which made a
+ * copy on another slide look like the original: the selection banner stayed
+ * hidden over it, and a failed Explode of it dropped the pane's target.
+ */
+function sameChart(a: EditTarget | null | undefined, b: EditTarget | null | undefined): boolean {
+  return !!a && !!b && a.slideId === b.slideId && a.shapeId === b.shapeId;
+}
+
+/**
+ * Whether the pane still holds what an action began with: that chart, or — for
+ * an action that began with none — no chart.
+ *
+ * AN ACTION THAT AWAITS THE HOST CANNOT ASSUME THE PANE STAYED WHERE IT WAS. An
+ * update takes seconds and up to tens of seconds on the web, nothing locks
+ * "Edit selected chart" or the banner's button meanwhile, and `withSlideDeselected`
+ * has by then moved the user's view to another slide — possibly one holding a
+ * chart they are about to open. So an action reads the target it works on BEFORE
+ * its first await, and asks this before it writes the pane's target back: the
+ * write is only the action's to make while the pane still shows its chart.
+ */
+function paneStillHolds(began: EditTarget | null): boolean {
+  return began ? sameChart(state.editTarget, began) : state.editTarget === null;
+}
+
+/**
+ * Let go of the edit target an action began with — if the pane still holds it.
+ *
+ * Every outcome that clears the target says the chart it names can no longer be
+ * edited from here, and that is a fact about THAT chart. Clearing whatever the
+ * pane holds instead turned a freshly loaded chart B into "Insert into slide":
+ * its next push put a duplicate of B on the slide instead of updating it.
+ */
+function dropTarget(began: EditTarget | null): void {
+  if (!paneStillHolds(began)) return;
+  state.editTarget = null;
+  renderActionState();
+}
+
+/**
+ * What the pane says once a Stop has taken effect. Two different things are true
+ * behind the one button.
+ *
+ * A stop that lands BEFORE a chart's old shapes are deleted leaves the chart
+ * exactly as it was, and "anything already drawn was kept" is right. A stop that
+ * lands AFTER leaves nothing: an update deletes the old chart and commits that
+ * before it draws the first new shape, and the sweep that keeps Stop from
+ * leaving debris under a half-drawn chart removes the half-drawn chart as well.
+ * That is documented behaviour (the manual, "Stopping a long operation": a chart
+ * caught mid-redraw is cleared and Ctrl+Z restores the original) and it is not
+ * what "kept" says. Measured against the real renderer on the fake host: a Stop
+ * after the first batch, and one during the delete's own sync, both ended with
+ * no shapes and no group on the slide, the note saying "kept" and the button
+ * still reading "Update chart".
+ *
+ * The error says which. `wreck()` in the renderer attaches the wreckage only
+ * once the delete has committed, so its presence is the proof the chart is gone.
+ */
+function stopNote(err?: unknown): string {
+  return err !== undefined && wreckageOf(err)
+    ? "Stopped — the chart was removed and not redrawn. Undo (Ctrl+Z) restores it."
+    : "Stopped — anything already drawn was kept.";
 }
 
 /** Miniature preview of a chart kind for the gallery (think-cell's Elements menu). */
@@ -1950,19 +2069,23 @@ function phaseNote(phase: InsertPhase, detail?: string) {
 }
 
 async function doInsert(asNew: boolean) {
-  insertInFlight = true;
   hostWorkStarted();
   try {
-    return await runInsert(asNew);
+    return await inWriteTurn(() => runInsert(asNew));
   } finally {
-    insertInFlight = false;
     hostWorkFinished();
   }
 }
 
 async function runInsert(asNew: boolean) {
   let cfg = currentConfig();
-  if (!asNew && state.editTarget) {
+  // The chart this action works on, read BEFORE its first await and carried
+  // through every one after it. `state.editTarget` is whatever the pane holds
+  // NOW, and the pane keeps moving while the host works — see `paneStillHolds`.
+  // Reading it after `await chartPicture` sent the config of the chart the
+  // action began with to whichever chart the user had loaded in the meantime.
+  const began = state.editTarget;
+  if (!asNew && began) {
     const scene = buildChart(cfg);
     const { png, warn } = await chartPicture(cfg, scene);
     // Adopt the target the update hands back. Every shape was replaced, so the
@@ -1970,16 +2093,26 @@ async function runInsert(asNew: boolean) {
     // shape id that no longer existed, get filtered out as "the user deleted
     // this chart", and do nothing — silently. With auto-update on, that meant
     // only the first debounced push ever landed.
-    const { next, swapped, duplicated, picture, recovered } = await updateChartResilient(scene, state.editTarget, {
+    const { next, swapped, duplicated, picture, recovered } = await updateChartResilient(scene, began, {
       tagData: JSON.stringify(cfg),
       pictureBase64: png,
+    }).catch((err: unknown) => {
+      // AN UPDATE THAT THROWS AFTER ITS DELETE HAS NO CHART LEFT TO COME BACK TO.
+      // `wreckageOf` is the proof: the renderer attaches it only once the old
+      // shapes' delete has committed, and `updateChartResilient` has swept what
+      // the redraw drew before it rethrows. The target still names the shape
+      // that delete removed, so the next push resolved a dead id and said "that
+      // chart is no longer on the slide" — after `guard` had said "Failed", or,
+      // for a Stop, that anything drawn was kept. A throw WITHOUT wreckage is a
+      // host that refused before touching the chart, whose target is still good.
+      if (wreckageOf(err)) dropTarget(began);
+      throw err;
     });
     if (duplicated) {
       // Both slides hold the chart: the rebuilt one and the original PowerPoint
       // would not remove. Nothing here can safely pick one — deleting the wrong
       // slide loses the user's notes or transitions — so name it and let them.
-      state.editTarget = null;
-      renderActionState();
+      dropTarget(began);
       note(
         "Rebuilt that slide, but PowerPoint would not remove the original — the chart is now on two slides. Delete whichever you don't want.",
         "err",
@@ -1989,8 +2122,7 @@ async function runInsert(asNew: boolean) {
     if (swapped) {
       // The chart is on a NEW slide, so the old target is dead. Say so rather
       // than leaving a stale target that makes every later push no-op.
-      state.editTarget = null;
-      renderActionState();
+      dropTarget(began);
       // Say what was LOST, not just what was done.
       //
       // A swap replaces the slide: the chart comes back, and anything the
@@ -2024,8 +2156,7 @@ async function runInsert(asNew: boolean) {
       // longer editable, and the `no-config` half is the one a real host
       // produced: four charts in one run lost their config tag and nothing
       // said so.
-      state.editTarget = null;
-      renderActionState();
+      dropTarget(began);
       note(
         next.lost === "no-config"
           ? "Redrawn, but PowerPoint would not save the chart's settings back onto it — it is no longer editable " +
@@ -2037,7 +2168,11 @@ async function runInsert(asNew: boolean) {
       return;
     }
     if (next) {
-      state.editTarget = next;
+      // Only while the pane still shows THIS chart. Adopting `next` over a chart
+      // the user opened mid-write re-pointed the pane, now showing B, at A's
+      // redrawn shape — and the next push, manual or the timer's, wrote B's
+      // config over A and never touched B.
+      if (paneStillHolds(began)) state.editTarget = next;
       /**
        * THREE FACTS, AND TWO OF THEM USED TO BE UNREACHABLE.
        *
@@ -2070,8 +2205,7 @@ async function runInsert(asNew: boolean) {
       // update destroyed it — the host just would not tag it, so there is no
       // target to keep editing from. Distinguishing this from "gone" is the
       // whole point: telling the user to insert it again would give them two.
-      state.editTarget = null;
-      renderActionState();
+      dropTarget(began);
       note("Redrawn as a picture — PowerPoint would not redraw it in place. Select the chart to keep editing.", "err");
       return;
     }
@@ -2080,8 +2214,7 @@ async function runInsert(asNew: boolean) {
     // stale target kept the button reading "Update chart", so every later push
     // (including every auto-update) no-opped just as silently. Say so, and fall
     // back to inserting a new chart.
-    state.editTarget = null;
-    renderActionState();
+    dropTarget(began);
     note("That chart is no longer on the slide — insert it again.", "err");
     return;
   }
@@ -2248,8 +2381,7 @@ async function runInsert(asNew: boolean) {
     note("Building a slide for it…", "busy");
     const landed = await chartOnItsOwnSlideAsFile(scene, cfg);
     if (landed === 1) {
-      state.editTarget = null;
-      renderActionState();
+      dropTarget(began);
       note("Added on a slide of its own, as editable shapes. Select it and this pane reloads its data.", "ok");
       return;
     }
@@ -2306,8 +2438,13 @@ async function runInsert(asNew: boolean) {
     { tagData: JSON.stringify(cfg), ...place, pictureBase64: png, ...(ownSlideId ? { slideId: ownSlideId } : {}) },
     phaseNote,
   );
-  state.editTarget = null;
-  renderActionState();
+  // Insert as new lets go of the chart it copied, so the next push cannot
+  // overwrite it — but only while the pane still shows that chart. A new chart
+  // takes seconds to draw; clearing whatever the pane holds when it ends turned
+  // a chart opened meanwhile into "Insert into slide", and its next push put a
+  // duplicate on the slide. A plain Insert began with no target, so it clears
+  // nothing.
+  dropTarget(began);
   // After the insert, never before: phaseNote would have overwritten it.
   //
   // A chart with no config tag is on the slide and is not an SSF chart: click
@@ -2408,8 +2545,13 @@ export function sameScaleNote(parts: { base: string; rescued?: string; degraded?
 /**
  * think-cell's Set Same Scale: pin every value-axis chart (in the deck, or
  * just the selected ones) to the union of their extents and re-render them.
+ *
+ * It rewrites charts, so it takes a turn like any other write — see
+ * `inWriteTurn`. Without one an auto-update pushed straight into the batch.
  */
-async function doSameScale(scope: "deck" | "selection" = "deck") {
+const doSameScale = (scope: "deck" | "selection" = "deck") => inWriteTurn(() => runSameScale(scope));
+
+async function runSameScale(scope: "deck" | "selection") {
   // A deck-wide scan that could not see the whole deck cannot be the basis for
   // "the deck now shares one scale" — that sentence is the entire feature, and
   // it was being printed in green over a scan the code already knew was short.
@@ -2470,38 +2612,65 @@ async function doSameScale(scope: "deck" | "selection" = "deck") {
    * the one that left the most behind.
    */
   const wreckage: UpdateWreckage[] = [];
-  const applied = await updateChartsInSlides(
-    rescaled.map((c, i) => ({
-      scene: c.scene,
-      target: c.target,
-      opts: { tagData: JSON.stringify(c.cfg), pictureBase64: pictures[i].png },
-    })),
-    (item, err) => {
-      const w = wreckageOf(err);
-      if (w?.strayIds.length) wreckage.push(w);
-      // A chart the USER stopped is not a chart the host refused. Its debris is
-      // still swept below — stopping mid-batch leaves the same partial chart a
-      // stall does — but naming it in "PowerPoint would not redraw…" would
-      // blame the host for the user's own decision.
-      if (isStopped(err)) return;
-      stalled.push(item.scene.title || "an untitled chart");
-    },
-  );
-  // Sweep AFTER the batch, never from inside the callback. `onFailed` fires
-  // within updateChartsInSlides' own request context, and `deleteShapesById`
-  // opens a fresh one on purpose — the context that just stalled is precisely
-  // the one that cannot be trusted to carry the repair.
-  if (wreckage.length) {
-    let swept = 0;
-    let strays = 0;
-    for (const w of wreckage) {
-      strays += w.strayIds.length;
-      swept += await deleteShapesById(w.slideId, w.strayIds);
-    }
-    console.warn(
-      `SSF Charts: same scale swept ${swept} of ${strays} shapes left by ${wreckage.length} stalled redraw(s)`,
+  /** Charts whose old shapes this batch deleted and whose redraw then failed. */
+  const destroyed: EditTarget[] = [];
+  /** The Stop that cut a redraw short, if one did — `guard` says what it cost. */
+  let stoppedRedraw: unknown;
+  let applied: EditTarget[];
+  try {
+    applied = await updateChartsInSlides(
+      rescaled.map((c, i) => ({
+        scene: c.scene,
+        target: c.target,
+        opts: { tagData: JSON.stringify(c.cfg), pictureBase64: pictures[i].png },
+      })),
+      (item, err) => {
+        const w = wreckageOf(err);
+        if (w) destroyed.push(item.target);
+        if (w?.strayIds.length) wreckage.push(w);
+        // A chart the USER stopped is not a chart the host refused. Its debris is
+        // still swept below — stopping mid-batch leaves the same partial chart a
+        // stall does — but naming it in "PowerPoint would not redraw…" would
+        // blame the host for the user's own decision.
+        if (isStopped(err)) {
+          if (w) stoppedRedraw ??= err;
+          return;
+        }
+        stalled.push(item.scene.title || "an untitled chart");
+      },
     );
+  } finally {
+    // Sweep AFTER the batch, never from inside the callback. `onFailed` fires
+    // within updateChartsInSlides' own request context, and `deleteShapesById`
+    // opens a fresh one on purpose — the context that just stalled is precisely
+    // the one that cannot be trusted to carry the repair.
+    //
+    // IN A `finally`, because the batch THROWS when every chart it tried failed
+    // (`updateChartsInSlides` — that is the single-chart contract
+    // `updateChartResilient` relies on), and a throw jumps past a sweep written
+    // after the call. That is the commonest Stop there is: pressed during the
+    // FIRST chart's redraw, when it is the only chart that was tried. Measured
+    // against the real renderer on the fake host, that left ten shapes of a
+    // half-drawn chart on the slide, the original deleted, and the pane saying
+    // anything drawn was kept.
+    if (wreckage.length) {
+      let swept = 0;
+      let strays = 0;
+      for (const w of wreckage) {
+        strays += w.strayIds.length;
+        swept += await deleteShapesById(w.slideId, w.strayIds);
+      }
+      console.warn(
+        `SSF Charts: same scale swept ${swept} of ${strays} shapes left by ${wreckage.length} stalled redraw(s)`,
+      );
+    }
+    // And the pane's chart, if the batch destroyed it: its target names the shape
+    // that delete removed, and a throw skips `followRescale` below.
+    for (const t of destroyed) dropTarget(t);
   }
+  // Before any of the early returns below: the pane's chart may have been
+  // redrawn under a new id whichever way this ends.
+  followRescale(rescaled, applied);
   // Charts the host silently declined to resolve at all.
   //
   // `updateChartsInSlides` drops those — its `live`/`alive` filters are early
@@ -2527,8 +2696,13 @@ async function doSameScale(scope: "deck" | "selection" = "deck") {
   // Stopped part-way: the charts that were rescaled keep their new scale and the
   // rest keep their old one, so claiming the deck is now on one scale would be
   // false. `guard()` posts the "Stopped" note; this just declines to overwrite
-  // it with a success message first.
-  if (isStopRequested()) return;
+  // it with a success message first. A Stop that landed MID-redraw took that
+  // chart with it, which "anything already drawn was kept" does not say, so the
+  // stop itself goes up and `guard` words it from what it carries.
+  if (isStopRequested()) {
+    if (stoppedRedraw) throw stoppedRedraw;
+    return;
+  }
   if (missed > 0) {
     note(
       "Same scale reached {n} of {total} charts — PowerPoint would not answer for the other {missed}. " +
@@ -2570,6 +2744,57 @@ async function doSameScale(scope: "deck" | "selection" = "deck") {
   note(said.text, said.status);
 }
 
+/**
+ * Bring the pane back in step with a Same Scale that rewrote the chart it has
+ * open.
+ *
+ * `runSameScale` read the targets it got back for a COUNT and nothing else, so
+ * the pane learned of neither thing the rescale did to its chart:
+ *
+ *  - The chart was REDRAWN, which gives it a new shape id (the rescale changes
+ *    the scene's node structure whenever the charts' extents differ much — the
+ *    ordinary case). The pane kept the old id, so its next Update resolved a
+ *    shape that was gone, wrote nothing, and said "That chart is no longer on the
+ *    slide — insert it again". `runInsert` and `runExplode` both adopt the target
+ *    they are handed back for exactly this reason, and say so in their comments;
+ *    this batch path was the one that did not.
+ *  - The chart now carries a `scale`, and the pane's copy of it did not. Landed
+ *    IN PLACE, the id survives and the next Update succeeds with a green "Done."
+ *    — by writing the pane's pre-rescale config back, which silently undid Same
+ *    Scale on the one chart the user was looking at. Only the scale is taken
+ *    over: the pane may hold edits the slide has not seen, and replacing its
+ *    config wholesale would throw them away.
+ *
+ * `applied` holds one target per chart the renderer resolved, in the order they
+ * were asked for, so an entry can be matched to its chart by position only when
+ * every chart came back. A chart the host dropped leaves a gap no id can bridge;
+ * the note then already says the deck is not on one scale, and the pane is left
+ * as it was rather than guessed at.
+ *
+ * Matched against what the pane holds NOW rather than when this started: the
+ * user may have opened another chart while it ran, and that chart's target is
+ * the stale one only if it was read before its redraw.
+ */
+function followRescale(rescaled: { target: EditTarget; cfg: ChartConfig }[], applied: EditTarget[]): void {
+  if (applied.length !== rescaled.length) return;
+  const i = rescaled.findIndex((c) => sameChart(c.target, state.editTarget));
+  if (i < 0) return;
+  const back = applied[i];
+  // Redrawn and not something the pane can come back to — the same two reasons
+  // `runInsert` lets go of a lost target. The old id names a shape this very
+  // batch deleted.
+  if (back.lost) {
+    dropTarget(rescaled[i].target);
+    return;
+  }
+  state.editTarget = back;
+  const scale = rescaled[i].cfg.scale;
+  state.scaleMin = scale?.min != null ? String(scale.min) : "";
+  state.scaleMax = scale?.max != null ? String(scale.max) : "";
+  renderOptions();
+  renderPreview();
+}
+
 async function doLoadSelection() {
   const found = await loadChartFromSelection();
   if (!found) {
@@ -2596,8 +2821,13 @@ async function doLoadSelection() {
  * Works on a shapes-mode chart too, where it is an idempotent redraw rather than
  * a special case worth refusing. Acts on the SELECTION, which need not be the
  * chart the pane is currently editing.
+ *
+ * It rewrites a chart, so it takes a turn like any other write — see
+ * `inWriteTurn`.
  */
-async function doExplode() {
+const doExplode = () => inWriteTurn(runExplode);
+
+async function runExplode() {
   const found = await loadChartFromSelection();
   if (!found) {
     note("Select an inserted chart first — Explode re-draws it as native shapes.", "err");
@@ -2668,11 +2898,11 @@ async function doExplode() {
   );
   if (!next) {
     // The picture is gone from the slide. Only clear the pane's edit target if
-    // it was pointing at this same shape — Explode works on the selection.
-    if (state.editTarget?.shapeId === found.target.shapeId) {
-      state.editTarget = null;
-      renderActionState();
-    }
+    // it was pointing at this same chart — Explode works on the selection. Same
+    // CHART means slide as well as shape id: ids repeat from slide to slide, and
+    // a copy of the loaded chart on another slide, after Duplicate Slide, has
+    // the loaded chart's id.
+    dropTarget(found.target);
     note("That chart is no longer on the slide.", "err");
     return;
   }
@@ -2686,8 +2916,10 @@ async function doExplode() {
     // target as `state.editTarget` — so the next push resolved a dead id, was
     // filtered out as "the user deleted this chart", and did nothing. With
     // auto-update on, every debounced push after it did nothing too.
-    state.editTarget = null;
-    renderActionState();
+    //
+    // Only if the pane held THIS chart: it was cleared whatever the pane held,
+    // and Explode works on the selection, which need not be the chart open there.
+    dropTarget(found.target);
     $("selection-banner").style.display = "none";
     note(
       next.lost === "no-config"
@@ -3056,6 +3288,15 @@ function maybeAutoUpdate() {
   const on = ($("auto-update") as HTMLInputElement | null)?.checked;
   if (!on || !state.editTarget || !isPowerPointHost()) return;
   autoUpdateTimer = setTimeout(() => {
+    // THE TARGET CAN HAVE GONE SINCE THIS WAS ARMED, and arming is the only
+    // place it was ever asked. A write that is running when an edit lands ends
+    // by clearing the target — a slide swap, a duplicate, a chart it lost track
+    // of, one that is gone, and every Insert as new — and none of them touch
+    // this timer, so it fired into a pane with nothing to update. `doInsert`
+    // then took its new-chart branch and put a chart on the slide that nobody
+    // asked for, over the note that was explaining what the write had done.
+    // The clear at the top of this function only covers the routes that call it.
+    if (!state.editTarget) return;
     // Never two writes to the same chart at once. This timer bypasses
     // `guard()`, so it does not see the disabled buttons a click would — and
     // one resilient update can now legitimately take tens of seconds (a 45s
@@ -3066,8 +3307,9 @@ function maybeAutoUpdate() {
     // no longer on the slide" about a chart that had just been written fine.
     //
     // Re-arm rather than drop: the edit still needs to reach the slide, it
-    // just has to wait its turn.
-    if (insertInFlight) {
+    // just has to wait its turn. Any write counts, not only an Update — Same
+    // Scale and Explode rewrite the very chart this would push to.
+    if (writeInFlight()) {
       maybeAutoUpdate();
       return;
     }
@@ -3090,10 +3332,14 @@ function maybeAutoUpdate() {
      * Named rather than borrowing "Failed: {error}", because there is no
      * clicked control to attribute it to and the user needs to know WHICH thing
      * failed. A stop is the user's own doing and stays silent, exactly as in
-     * `guard`.
+     * `guard` — unless it took the chart with it, which `guard` says and so
+     * does this: see `stopNote`.
      */
     void doInsert(false).catch((err: unknown) => {
-      if (isStopped(err)) return;
+      if (isStopped(err)) {
+        if (wreckageOf(err)) note(stopNote(err), "err");
+        return;
+      }
       trace("pane", "auto-update failed", { error: errorText(err) });
       note("Auto-update failed: {error}", "err", { error: errorText(err) });
     });
@@ -3176,7 +3422,14 @@ async function refreshSelectionBanner(): Promise<void> {
   try {
     const found = await loadChartFromSelection(SELECTION_WATCH_BUDGET_MS);
     const banner = $("selection-banner");
-    banner.style.display = found && found.target.shapeId !== state.editTarget?.shapeId ? "" : "none";
+    // Shown unless the selected chart IS the one the pane has open — slide and
+    // shape id both. This compared the shape id alone, and ids repeat across
+    // slides (Duplicate Slide keeps every one), so the copy on the next slide
+    // looked like the original and the banner, the pane's only cue that a
+    // different chart is selected, stayed hidden over it. Update then went to
+    // the first slide's chart with a green "Done." while the user watched the
+    // other one not change.
+    banner.style.display = found && !sameChart(found.target, state.editTarget) ? "" : "none";
   } catch {
     // A hiccup or a deadline. Leave the banner as it is rather than guessing:
     // hiding it loses a true offer, showing it makes a false one.
@@ -3462,7 +3715,7 @@ async function wireInsert() {
           // returning early (a deck run between items, Same Scale between
           // charts) rather than by throwing.
           if (isStopRequested()) {
-            note("Stopped — anything already drawn was kept.", "err");
+            note(stopNote(), "err");
           } else if (settledNotes === settledAt && owns) {
             // `owns`, because "Done." is a claim about the PANE and not about
             // this handler: posted by a nested action it says the work is
@@ -3475,7 +3728,7 @@ async function wireInsert() {
           // ("Failed: Stopped.") reads like the add-in broke.
           if (isStopped(err)) {
             trace("pane", "action stopped", { action, ms: Date.now() - startedAt });
-            note("Stopped — anything already drawn was kept.", "err");
+            note(stopNote(err), "err");
           } else {
             /**
              * THE STACK, FOR THE ONE CLASS OF FAILURE THIS TRACE CANNOT PLACE.

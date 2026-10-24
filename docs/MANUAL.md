@@ -80,7 +80,9 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
 5. **Re-edit later**: select the chart on the slide — the pane shows an
    "Edit it" banner. Or click **Edit selected chart** to load its data and
    options back into the pane, change anything, and **Update chart** to
-   replace it in place. Charts remember their configuration in the file.
+   replace it in place. Charts remember their configuration in the file. The
+   banner appears for every chart except the one already open in the pane —
+   including its copy on another slide after **Duplicate Slide**.
 
    Very occasionally PowerPoint draws the chart and then refuses to save its
    settings back onto it. The chart is on the slide and looks right; it just
@@ -88,6 +90,10 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
    reporting Done — insert it again if you need to keep editing it, or undo
    (Ctrl+Z) to get back the version that was editable.
 6. **Auto-update chart** pushes every pane edit to the slide live (debounced).
+   Writes to the slide take turns: a push, an **Update chart** click, **Same
+   scale** and **Explode** never run on the same chart at once — the later one
+   waits for the earlier to finish. A write always goes to the chart it started
+   from, even if you open another chart in the pane while it runs.
 7. Ctrl+Z / Ctrl+Y undo and redo pane edits.
 
 ## Chart types
@@ -397,7 +403,9 @@ count of how many of its options are currently on.
   It will refuse rather than half-do the job: if PowerPoint would not describe
   every slide, or would not answer for some of the charts it was asked to
   redraw, the pane says which and changes nothing rather than reporting a
-  shared scale the deck does not have.
+  shared scale the deck does not have. If the chart open in the pane is one of
+  them, the pane follows it to its redrawn shape and takes over the shared
+  axis scale, so the next **Update chart** does not undo it.
 - **Download SVG / Download PNG** (overflow menu) save the preview as a vector
   or a 2× raster image — handy for email or chat, where the native-shape output
   can't go. The real deliverable is still **Insert into slide** (editable shapes).
@@ -895,11 +903,16 @@ operation:
   complete, grouped and tagged, and is kept.
 - **Same scale** stops between charts. Charts already rescaled keep the new
   scale; the rest are untouched, so the deck is left on two scales — re-run it
-  to finish the job.
+  to finish the job. A chart a Stop catches mid-redraw is cleared exactly as a
+  single-chart redraw is (below), and the pane says so.
 - **Redrawing one chart** stops between batches. Because an update replaces
   every shape, a chart caught mid-redraw is left partly drawn — the pane clears
   what it had drawn so you are not left with debris under a half-chart, and
-  **Ctrl+Z** restores the original.
+  **Ctrl+Z** restores the original. The pane says so — *Stopped — the chart was
+  removed and not redrawn* — and goes back to **Insert into slide**, because
+  there is no chart left on the slide for **Update chart** to write to; the data
+  stays in the pane. A Stop that lands before the chart is touched leaves it
+  exactly as it was, and the pane says *anything already drawn was kept*.
 
 Stop never falls back to rebuilding the slide or drawing a picture. Those exist
 to get a stalled chart drawn some other way, which is the opposite of what you
