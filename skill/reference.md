@@ -64,6 +64,9 @@ Everything the SSF Charts engine accepts. All lengths in points (1pt = 1/72").
     valueLines?: ({mode:"mean"} | {mode:"value", value:number})[],
     connectors?: boolean,             // lines joining stacked-segment boundaries between columns
     callouts?: [{ text, category, series?, dx?, dy? }],  // speech-bubble comments on a value
+                                      // `series` (cagr / difference / callouts / variance) indexes
+                                      // data.series as written, Error / Target rows counted. A blank
+                                      // end draws no arrow, and the mean skips blank categories.
     bands?: [{ axis:"x"|"y", from, to, color?, label? }], // shaded background region
                                       // (y = value range; x = category indices;
                                       //  scatter/bubble: both axes in value units)

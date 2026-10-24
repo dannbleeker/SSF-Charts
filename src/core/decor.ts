@@ -60,6 +60,96 @@ function finerFormat(around: number[], value: number, fmt: ChartConfig["numberFo
 }
 
 /**
+ * Where series `si` tops out at category `c`, in value units — the level a
+ * SERIES-QUALIFIED decoration (a level arrow, a CAGR arrow, a callout) stands on.
+ *
+ * Three answers, and the caller needs all three:
+ *  - a number: the series has a mark here, drawn at `valueToY(level)`;
+ *  - `NaN`: the layout knows this series and has no place on this chart's value
+ *    scale for it (a combo's line on its own axis) — a level read as a number
+ *    would be drawn on the wrong scale;
+ *  - `undefined`: this layout publishes no levels, or the index is off the end
+ *    of them. The decoration keeps its category-wide anchor, which is what it
+ *    always did for those.
+ *
+ * ONE READER, because the difference arrow and the callout each carried their
+ * own copy of this guard and the CAGR arrow carried none, so the one decoration
+ * with no guard was the one that anchored a stacked series inside the series
+ * beneath it.
+ */
+function levelOf(a: LayoutAnchors, c: number, si: number | undefined): number | undefined {
+  return si != null && si >= 0 && a.valueToY != null ? a.seriesLevels?.[c]?.[si] : undefined;
+}
+
+/**
+ * Did anything get MEASURED at category `c`? — the question `columnValue`
+ * cannot answer, because every layout builds it with `?? 0`.
+ *
+ * An arrow reaching for a blank end read it as a measured zero and PRINTED
+ * "-100%" (or "+50") for a value nobody entered: `[50, 60, null]` with an
+ * arrow 0→2 was byte-identical to `[50, 60, 0]`. A blank is not a zero to
+ * compare against, so the arrow is not drawn — the same answer the column
+ * total gives (`total-3` is withheld, not printed as "0"), and for the same
+ * reason. Absent `columnHasData` means every category counts; see
+ * LayoutAnchors.
+ */
+const categoryMeasured = (a: LayoutAnchors, c: number) => a.columnHasData?.[c] ?? true;
+
+/**
+ * Does the end of a LEVEL arrow at category `c` stand on a measurement?
+ *
+ * Asked of the series itself when the layout publishes a level for the series
+ * the arrow names (`si` indexes `cfg.data.series`), and of the category when the
+ * arrow compares totals. A series with no place on this chart's scale (NaN, see
+ * `levelOf`) cannot be pointed at either.
+ */
+function levelEndMeasured(cfg: ChartConfig, a: LayoutAnchors, c: number, si: number | undefined): boolean {
+  const level = levelOf(a, c, si);
+  if (level === undefined) return categoryMeasured(a, c);
+  return Number.isFinite(cfg.data.series[si!]?.values[c]) && !Number.isNaN(level);
+}
+
+/**
+ * Where one end of a CAGR arrow is anchored, and whether it stands on a
+ * measurement. `si` names the series the rate is for, or nothing for the totals.
+ *
+ * Anchored on the value it PRINTS, for the reason spelled out on the difference
+ * arrow in `decorationNodes` — and when a series is named, the rate is that
+ * series' and the arrow used to sit on the drawn top of whichever series happened
+ * to be highest. Then on the MARK that value is drawn as: a series' own value is
+ * where its bar tops out only when it stands on the baseline (clustered, line);
+ * stacked, its segment sits on top of the series beneath it, so
+ * `valueToY(own value)` is a height at which the series has no ink at all, and the
+ * arrow, its head and its caption were drawn through the segments below — a
+ * rising arrow across a series that is flat. `levelOf` is the segment's top in
+ * every case and equals the own value wherever the two agree (clustered, line),
+ * so those charts do not move.
+ *
+ * MEASURED at both ends, or there is no growth to draw: a blank is not a zero to
+ * grow from or to. `cagr()` already refused the number ("CAGR n/a"), but the
+ * arrow was still drawn from the baseline of a category with no data, under a
+ * caption that said it had none. A series with no place on this chart's scale
+ * (NaN) is the same answer — an arrow measured on the wrong scale is not an
+ * arrow.
+ */
+function cagrEnd(
+  cfg: ChartConfig,
+  a: LayoutAnchors,
+  c: number,
+  si: number | undefined,
+): { y: number; measured: boolean } {
+  const sVals = si != null ? cfg.data.series[si]?.values : undefined;
+  if (!sVals)
+    return { y: a.valueToY ? a.valueToY(a.columnValue[c]) : a.columnTop[c], measured: categoryMeasured(a, c) };
+  const level = levelOf(a, c, si);
+  const at = level !== undefined && Number.isFinite(level) ? level : (sVals[c] ?? 0);
+  return {
+    y: a.valueToY ? a.valueToY(at) : a.columnTop[c],
+    measured: Number.isFinite(sVals[c]) && !Number.isNaN(level),
+  };
+}
+
+/**
  * think-cell's signature annotations, computed from layout anchors so they
  * work identically across chart types.
  */
@@ -121,12 +211,10 @@ export function decorationNodes(
     const vFrom = sVals ? (sVals[from] ?? 0) : a.columnValue[from];
     const vTo = sVals ? (sVals[to] ?? 0) : a.columnValue[to];
     const rate = cagr(vFrom, vTo, to - from);
-    // Anchored on the value it PRINTS, for the reason spelled out on the
-    // difference arrow below — this block carries the identical mismatch, and
-    // when `decor.cagr.series` names a series it is worse: the rate is that
-    // series' and the arrow sat on the drawn top of whichever series happened
-    // to be highest.
-    const cagrY = (c: number, v: number) => (a.valueToY ? a.valueToY(sVals ? v : a.columnValue[c]) : a.columnTop[c]);
+    // Where each end is anchored, and whether it stands on a measurement — see
+    // `cagrEnd`, which carries the reasons for both.
+    const fromEnd = cagrEnd(cfg, a, from, si);
+    const toEnd = cagrEnd(cfg, a, to, si);
     /** How far the arrowhead reaches back from its tip — see the SVG renderer. */
     const ARROW = 5;
     // Clear the column totals row and difference arrows when shown — but never
@@ -151,20 +239,20 @@ export function decorationNodes(
     // height at which this arrow fits — a small-multiples panel a few points
     // tall — and it is not drawn, like every other piece of chrome that cannot
     // be paid for.
-    const highest = Math.min(cagrY(from, vFrom), cagrY(to, vTo));
-    const lowest = Math.max(cagrY(from, vFrom), cagrY(to, vTo));
+    const highest = Math.min(fromEnd.y, toEnd.y);
+    const lowest = Math.max(fromEnd.y, toEnd.y);
     const liftMax = highest - ARROW * 1.8;
     const liftMin = lowest + ARROW * 1.8 - cfg.height;
     // A CONDITION ON THE BLOCK, never an early return. `decorationNodes` builds
     // one list for every decoration, so returning here would silently take the
     // difference arrow, the callouts and the bands with it — the same trap the
     // pie's slice loop records, one file over.
-    const arrowFits = liftMin <= liftMax;
+    const arrowFits = fromEnd.measured && toEnd.measured && liftMin <= liftMax;
     const lift = Math.max(liftMin, Math.min(wantLift, liftMax));
     const x1 = a.categoryX[from];
-    const y1 = cagrY(from, vFrom) - lift;
+    const y1 = fromEnd.y - lift;
     const x2 = a.categoryX[to];
-    const y2 = cagrY(to, vTo) - lift;
+    const y2 = toEnd.y - lift;
     const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
     if (arrowFits)
       nodes.push(
@@ -243,11 +331,23 @@ export function decorationNodes(
     decor.difference?.fromValueLine != null &&
     !!a.valueToY &&
     !!(decor.valueLines ?? (decor.valueLine ? [decor.valueLine] : []))[decor.difference.fromValueLine];
-  if (decor.difference && diffPair && (anchorsDiffer(diffPair.from, diffPair.to) || spansValueLine)) {
+  const diffSi = decor.difference?.series;
+  /** Does the layout publish a level for the named series? Else the arrow compares totals. */
+  const diffByLevel = diffPair != null && levelOf(a, diffPair.from, diffSi) !== undefined;
+  // Both ends must stand on a MEASUREMENT. The arrow reads `columnValue` (or a
+  // series level), which every layout builds with `?? 0`, so a blank end was
+  // drawn at the baseline and printed as a measured zero — "-100%" for
+  // `[50, 60, null]`, "+50" for `[null, 60, 50]`, indistinguishable from a typed
+  // 0. See `categoryMeasured` and `levelEndMeasured`. An arrow anchored at a value
+  // line has only one category end to check: its FROM end is the line, which is a
+  // number the author typed or the mean of what was measured, not a column that
+  // may be blank.
+  const diffMeasured =
+    diffPair != null &&
+    (spansValueLine || levelEndMeasured(cfg, a, diffPair.from, diffSi)) &&
+    levelEndMeasured(cfg, a, diffPair.to, diffSi);
+  if (decor.difference && diffPair && diffMeasured && (anchorsDiffer(diffPair.from, diffPair.to) || spansValueLine)) {
     const { from, to } = diffPair;
-    const si = decor.difference.series;
-    const useLevel =
-      si != null && a.seriesLevels != null && a.valueToY != null && si >= 0 && si < (a.seriesLevels[0]?.length ?? 0);
     // The pixel anchor and the number the arrow prints have to describe the same
     // mark, so take BOTH from `columnValue` wherever the layout publishes a
     // value→y map. `columnTop` is the drawn top, and the two part company more
@@ -266,10 +366,10 @@ export function decorationNodes(
     // layout publishes — and it is an identity wherever the two already agree,
     // which is every chart in the showcase.
     const anchorY = (c: number) => (a.valueToY ? a.valueToY(a.columnValue[c]) : a.columnTop[c]);
-    let vFrom = useLevel ? a.seriesLevels![from][si!] : a.columnValue[from];
-    let yFrom = useLevel ? a.valueToY!(vFrom) : anchorY(from);
-    const vTo = useLevel ? a.seriesLevels![to][si!] : a.columnValue[to];
-    const yTo = useLevel ? a.valueToY!(vTo) : anchorY(to);
+    let vFrom = diffByLevel ? levelOf(a, from, diffSi)! : a.columnValue[from];
+    let yFrom = diffByLevel ? a.valueToY!(vFrom) : anchorY(from);
+    const vTo = diffByLevel ? levelOf(a, to, diffSi)! : a.columnValue[to];
+    const yTo = diffByLevel ? a.valueToY!(vTo) : anchorY(to);
     // Anchor the arrow's start at a value line instead of a column.
     const vlIdx = decor.difference.fromValueLine;
     const vls = decor.valueLines ?? (decor.valueLine ? [decor.valueLine] : []);
@@ -411,13 +511,12 @@ export function decorationNodes(
   decor.callouts?.forEach((co, i) => {
     const c = Math.max(0, Math.min(a.categoryX.length - 1, co.category));
     const ax = a.categoryX[c];
-    const useLevel =
-      co.series != null &&
-      a.seriesLevels != null &&
-      a.valueToY != null &&
-      co.series >= 0 &&
-      co.series < (a.seriesLevels[c]?.length ?? 0);
-    const ay = useLevel ? a.valueToY!(a.seriesLevels![c][co.series!]) : a.columnTop[c];
+    // A callout is a comment, not a claim, so a series with no mark here (NaN —
+    // a line on its own axis) keeps its text and points at the column instead of
+    // being withheld the way a level ARROW is: the sentence is the author's, and
+    // the category is still the thing it is about.
+    const lv = levelOf(a, c, co.series);
+    const ay = lv !== undefined && Number.isFinite(lv) ? a.valueToY!(lv) : a.columnTop[c];
     /**
      * FITTED TO THE CHART, then dropped — a callout's text is the one string on
      * a chart that nothing else bounds.

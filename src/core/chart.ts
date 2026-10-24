@@ -427,6 +427,55 @@ function remapDecorations<T extends Partial<Decorations> | undefined>(decor: T, 
   };
 }
 
+/**
+ * A series index that no longer names a series. Out of range on purpose: every
+ * reader of a series index (`decor.ts`, the variance tier) already treats an
+ * index off the end as "no such series" — the arrows and callouts keep their
+ * category-wide anchor and the variance tier has nothing to compare — which is
+ * the honest answer for a series that was folded into Other, taken out as a
+ * carried row, or dropped by a pareto. Negative rather than `length`, so a later
+ * transform that GROWS the list cannot make it name something again.
+ */
+const NO_SERIES = -1;
+
+/**
+ * Carry the SERIES indices a decoration holds through a transform that removed
+ * or reordered series, the way `remapDecorations` carries the category ones.
+ *
+ * `cagr.series`, `difference.series`, `callouts[].series` and `variance.actual`
+ * / `.reference` are indices into `data.series` AS AUTHORED (types.ts), and
+ * three transforms rewrite that list before any layout reads them:
+ * `extractErrorRows` takes Error and Target rows out wherever they sit,
+ * `collapseOther` keeps the largest few and appends "Other", `applyPareto` keeps
+ * only `[bar, Cumulative %]`. Nothing remapped the indices, so with a Target row
+ * typed ABOVE the series a decoration named, the pane's own series spinner
+ * printed "+150%" for a level that grew 75%: the index now named the NEXT series
+ * down. Out of range it fell back to the totals without a word, and the variance
+ * tier lost both its series and vanished.
+ *
+ * `kept[newIndex]` is the OLD index of the series now at `newIndex`, or null for
+ * one the transform made up (the Other bucket, the cumulative line) — which
+ * nothing authored can have named. A series that did not survive maps to
+ * `NO_SERIES`.
+ */
+function remapSeriesDecorations<T extends Partial<Decorations> | undefined>(decor: T, kept: (number | null)[]): T {
+  if (!decor) return decor;
+  const at = (old: number) => {
+    const i = kept.indexOf(old);
+    return i < 0 ? NO_SERIES : i;
+  };
+  const named = <T extends { series?: number }>(o: T): T => (o.series == null ? o : { ...o, series: at(o.series) });
+  return {
+    ...decor,
+    ...(decor.callouts ? { callouts: decor.callouts.map(named) } : {}),
+    ...(decor.cagr ? { cagr: named(decor.cagr) } : {}),
+    ...(decor.difference ? { difference: named(decor.difference) } : {}),
+    ...(decor.variance
+      ? { variance: { ...decor.variance, actual: at(decor.variance.actual), reference: at(decor.variance.reference) } }
+      : {}),
+  };
+}
+
 /** Reorder categories (and every per-category array) by column total. */
 function sortCategories(cfg: ChartConfig): ChartConfig {
   if (!cfg.categorySort || !SORTABLE.includes(cfg.kind)) return cfg;
@@ -499,6 +548,9 @@ function collapseOther(cfg: ChartConfig): ChartConfig {
   return {
     ...cfg,
     data: { ...cfg.data, series: [...kept, { name: cfg.labels?.other ?? "Other", values: otherVals }] },
+    // The folded series have no index of their own any more, and the survivors
+    // moved up past them — see `remapSeriesDecorations`. Null is the bucket.
+    decorations: remapSeriesDecorations(cfg.decorations, [...series.flatMap((_, i) => (keep.has(i) ? [i] : [])), null]),
   };
 }
 
@@ -538,7 +590,9 @@ function applyPareto(cfg: ChartConfig): ChartConfig {
       ],
       hundredPercent: pick(cfg.data.hundredPercent),
     },
-    decorations: remapDecorations(cfg.decorations, order),
+    // Two series survive and only the bar was authored: every other index is
+    // gone, and 1 must not come to name the cumulative line the transform added.
+    decorations: remapSeriesDecorations(remapDecorations(cfg.decorations, order), [cfg.data.series.indexOf(bar), null]),
   };
 }
 
@@ -638,6 +692,11 @@ function extractErrorRows(cfg: ChartConfig): {
   const rows = ERROR_KINDS.includes(cfg.kind) ? cfg.data.series.filter((s) => ERROR_ROW.test(s.name.trim())) : [];
   const targetRow = cfg.data.series.find((s) => TARGET_ROW.test(s.name.trim()));
   if (!rows.length && !targetRow) return { cfg, errors: null, targets: null };
+  // The rows that stay, by their position in the list as authored: the rows
+  // taken out leave a gap, and every series below it moves up.
+  const kept = cfg.data.series.flatMap((s, i) =>
+    ERROR_ROW.test(s.name.trim()) || TARGET_ROW.test(s.name.trim()) ? [] : [i],
+  );
   const pick = (sign: "+" | "-") =>
     cfg.data.categories.map((_, c) => {
       for (const r of rows) {
@@ -652,8 +711,9 @@ function extractErrorRows(cfg: ChartConfig): {
       ...cfg,
       data: {
         ...cfg.data,
-        series: cfg.data.series.filter((s) => !ERROR_ROW.test(s.name.trim()) && !TARGET_ROW.test(s.name.trim())),
+        series: kept.map((i) => cfg.data.series[i]),
       },
+      decorations: remapSeriesDecorations(cfg.decorations, kept),
     },
     errors: rows.length ? { plus: pick("+"), minus: pick("-") } : null,
     targets: targetRow ? cfg.data.categories.map((_, c) => targetRow.values[c] ?? null) : null,

@@ -77,6 +77,20 @@ const FLIPPABLE = [/^combo-label-/, /^cagr-label$/];
  */
 const MAX_ANCHORED_TRAVEL = 2;
 
+/**
+ * Flippable labels whose bound BELOW is measured from their mark: a combo's point
+ * labels, which hang just above a marker they name.
+ *
+ * Not the CAGR caption, deliberately. Its mark is an ARROW, sloped, and the
+ * caption legitimately flips past the whole of it — 3.3 em of travel in the
+ * report that raised this, ending about one em under the arrow — while all this
+ * pass can see of the arrow is the caption's own box. A bound read off the
+ * caption would either refuse that flip or be no bound at all, and the flip is
+ * worth its 13 pairs. The report's sweep over 6000 random combo and stacked
+ * charts found it far from its arrow in 3 of ~230 flips, 45pt at the worst.
+ */
+const POINT_LABEL = /^combo-label-/;
+
 const canFlip = (name: string | undefined) => !!name && FLIPPABLE.some((re) => re.test(name));
 
 const movableRank = (name: string | undefined): number => {
@@ -172,10 +186,35 @@ export function resolveLabelCollisions(nodes: SceneNode[], canvasH?: number): vo
     // above stops it pushing them off the head.
     if (!clear && canvasH != null && canFlip(node.name)) {
       node.y = startY;
+      /**
+       * HOW FAR BELOW ITS MARK A POINT LABEL MAY LAND, which the climb above has a
+       * cap for and this loop had none.
+       *
+       * Ten steps of 0.55 em is 5.5 em, and the first text-clear spot was taken
+       * wherever it fell. A combo's "66" went from y 103 to 158 — 3.8 em under
+       * its own marker, inside the column beneath it and under that column's "68"
+       * — because the CAGR caption had flipped into the space beneath the marker
+       * first and the only clear spot left was past it. That is the failure the
+       * cap exists to prevent ("a label that far from its point is not labelling
+       * it"), reached by the other direction. About 1% of random default-font
+       * combos end with a point label two em or more under its marker.
+       *
+       * Measured from the MARK, not from where the label started: the label
+       * starts above its marker, so getting just under it already costs 1.7-2.2
+       * em, and the climb's own bound (travel from the start) would refuse the
+       * ordinary flip. The mark is read off the label's own box — `valign` says
+       * which edge faces it (a point label hangs above its marker, so its bottom).
+       * Refused, the label stays home like every other label that found no place,
+       * and `unplaceableComboLabels` decides whether it survives.
+       */
+      const home = tightBox(node);
+      const markY = node.valign === "bottom" ? home.y + home.h : node.valign === "top" ? home.y : home.y + home.h / 2;
+      const reach = POINT_LABEL.test(node.name ?? "") ? markY + node.fontSize * MAX_ANCHORED_TRAVEL : Infinity;
       for (let down = 0; down < 10; down++) {
         node.y += node.fontSize * 0.55;
         const cand = tightBox(node);
         if (cand.y + cand.h > canvasH) break;
+        if (cand.y > reach) break;
         if (!settled.some(cand, (s) => overlaps(cand, s))) {
           box = cand;
           clear = true;

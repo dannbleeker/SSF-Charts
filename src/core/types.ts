@@ -737,11 +737,26 @@ export interface LayoutAnchors {
    *
    * OPTIONAL, and absent means "every category counts" — the honest default for
    * the layouts that publish `columnValue` from something that is never blank
-   * (a boxplot's median, a candlestick's close). Only the column family offers
-   * `valueLines`, so only it needs to answer this.
+   * (a boxplot's median, a candlestick's close). Every layout that builds
+   * `columnValue` with `?? 0` has to answer, because the readers are not limited
+   * to the column family: `buildChart` draws `valueLines` on every kind that has
+   * a value map, and the difference and CAGR arrows read the same array. The
+   * line family (line, area, sparkline, slope, bump) answers alongside the
+   * columns.
    */
   columnHasData?: boolean[];
-  /** Per category: cumulative stack value after each series (for level arrows). */
+  /**
+   * Per category, per series IN THE CONFIG'S INDEXING (the one a decoration's
+   * `series` is written against): where that series tops out, in value units —
+   * the level a level arrow, a series CAGR or a callout anchors on. Stacked
+   * (columns, area) that is the cumulative value after the series; everywhere a
+   * series stands on the baseline (clustered, line) it is the series' own value.
+   *
+   * NaN: the series has no place on this chart's value scale (a combo's line on
+   * its own axis), so the decoration cannot be anchored on it. Absent: this
+   * layout publishes no levels, and a series-qualified decoration compares the
+   * category totals instead.
+   */
   seriesLevels?: number[][];
   /**
    * Where each series' right-margin name was ANCHORED — its last segment's

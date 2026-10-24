@@ -296,7 +296,11 @@ count of how many of its options are currently on.
 - **CAGR arrow** and **Difference arrow** between two categories (the
   difference arrow can compare totals, one series' level, or start from a
   value line).
-- **Value line**: at the mean (drawn as "Ø") and/or fixed values.
+- **Value line**: at the mean (drawn as "Ø") and/or fixed values. The mean is
+  of the categories that have data: an empty cell is left out of it, not averaged
+  in as a zero. The arrows above follow the same rule — one is not drawn to or
+  from a category with no data, because an empty cell is not a zero to compare
+  against.
 - **Segment order**: sheet / reversed / ascending / descending.
 - **Axis scale** min/max pinning and **Axis break** (compresses an
   out-of-scale range, clearly marked).

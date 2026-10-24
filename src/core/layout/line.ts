@@ -21,6 +21,7 @@ import {
   valueScale,
 } from "./frame";
 import { horizontalChrome, seriesLabelNodes, type LayoutResult } from "./column";
+import { columnHasData } from "./totals";
 
 /**
  * Slab count for a filled area/ribbon segment.
@@ -103,6 +104,60 @@ function splitBandRows(raw: ChartData): {
   return { data: { ...raw, series: raw.series.filter((s) => !isBandRow(s)) }, bandLow, bandHigh };
 }
 
+/**
+ * WHICH CATEGORIES `columnValue` IS A MEASUREMENT FOR, when it is the first
+ * series' value — the question every `?? 0` in the anchors below cannot answer.
+ *
+ * `decorations.valueLines: [{ mode: "mean" }]` averages `columnValue`, and a
+ * blank category arrived there as a zero AND as a denominator: a year-to-date
+ * line with six actual months and six blank ones printed "Ø 55" where the
+ * clustered column over the same data printed "Ø 110". `layoutColumns` has
+ * published the flag since `35840f6`; its comment said "the column family is the
+ * one that offers `valueLines`", which was never true — `buildChart` draws them
+ * on every kind with a value map, the pane offers the control on every kind, and
+ * the shipped "KPI trend (line)" template switches the mean on. So every
+ * `columnValue` in this file is paired with the flag, not just the one that was
+ * reported.
+ */
+const firstSeriesHasData = (data: ChartData): boolean[] =>
+  data.categories.map((_, c) => columnHasData(data.series.slice(0, 1), c));
+
+/**
+ * Levels for series that each stand on the baseline: a series' level is its own
+ * value, because nothing stacks on anything. What a level-qualified decoration
+ * (`difference.series`, `callouts[].series`, `cagr.series`) anchors on — see
+ * `LayoutAnchors.seriesLevels`. Indexed by the CONFIG's series list, band rows
+ * included, because that is the list the decoration's index was written against.
+ */
+const ownValueLevels = (data: ChartData): number[][] =>
+  data.categories.map((_, c) => data.series.map((s) => s.values[c] ?? 0));
+
+/**
+ * The levels `layoutLine` starts from, for the decorations that name a series
+ * (`difference.series`, `callouts[].series`, `cagr.series`).
+ *
+ * THIS LAYOUT PUBLISHED NONE, so on a line chart `series: 1` was ignored and the
+ * arrow compared series 0 — "+100%" for a flat series — and on an area chart
+ * every series below the top one was given the stack total. Lines stand on the
+ * baseline, so a line's level is its own value; an area stacks, so its level is
+ * the running sum, which the area loop fills in as it stacks. NaN until then, and
+ * for a row that draws no mark at all (a band row on an area chart) — see
+ * `levelOf` in `decor.ts`.
+ */
+const lineLevels = (cfg: ChartConfig, area: boolean): number[][] =>
+  area ? cfg.data.categories.map(() => cfg.data.series.map(() => NaN)) : ownValueLevels(cfg.data);
+
+/**
+ * `columnHasData` and `seriesLevels` for `layoutLine`'s anchors. An area's value
+ * is the stack's sum, which exists wherever ANY series has a cell; a line's is the
+ * first series' own, which exists only where that one does. Each answers for the
+ * number it sits beside.
+ */
+const measuredAnchors = (data: ChartData, area: boolean, seriesLevels: number[][]) => ({
+  columnHasData: area ? data.categories.map((_, c) => columnHasData(data.series, c)) : firstSeriesHasData(data),
+  seriesLevels,
+});
+
 /** Line and area charts over categories. Lines are 2pt with ≥3pt markers. */
 export function layoutLine(cfg: ChartConfig, style: ChartStyle, decor: Decorations): LayoutResult {
   if ((cfg.kind === "line" || cfg.kind === "area") && decor.sparkline) {
@@ -175,6 +230,9 @@ export function layoutLine(cfg: ChartConfig, style: ChartStyle, decor: Decoratio
   const nodes: SceneNode[] = chromeNodes(cfg, style, decor, frame, slots.centers, scale);
   const lastSegMid: (number | null)[] = data.series.map(() => null);
   const columnTop: number[] = data.categories.map(() => y0);
+  // Where each series tops out, for the decorations that name one — see
+  // `lineLevels`. An area fills its in below, as it stacks.
+  const seriesLevels = lineLevels(cfg, area);
 
   /** Shaded ribbon between two per-category value arrays (slab technique). */
   const ribbon = (lows: (number | null)[], highs: (number | null)[], fill: string, name: string) => {
@@ -249,6 +307,9 @@ export function layoutLine(cfg: ChartConfig, style: ChartStyle, decor: Decoratio
           lower[c] = negBase[c] + v;
           negBase[c] += v;
         }
+        // The stack's reach AFTER this series — the same sum the column layout
+        // publishes, so a level arrow on an area chart reads like one on a stack.
+        seriesLevels[c][cfg.data.series.indexOf(s)] = posBase[c] + negBase[c];
       }
       for (let c = 0; c < n - 1; c++) {
         // Approximate the trapezoid with a rect at the average height.
@@ -447,6 +508,7 @@ export function layoutLine(cfg: ChartConfig, style: ChartStyle, decor: Decoratio
       columnValue: area
         ? data.categories.map((_, c) => stackedPos[c] + stackedNeg[c])
         : data.categories.map((_, c) => data.series[0]?.values[c] ?? 0),
+      ...measuredAnchors(data, area, seriesLevels),
       baselineY: y0,
       plot: { x: frame.x, y: frame.y, w: frame.w, h: frame.h },
       valueToY: scale.toY,
@@ -589,6 +651,8 @@ function layoutSparkline(cfg: ChartConfig, style: ChartStyle, _decor: Decoration
       categoryWidth: data.categories.map(() => plot.w / Math.max(1, n)),
       columnTop: data.categories.map(() => plot.y),
       columnValue: data.categories.map((_, c) => data.series[0]?.values[c] ?? 0),
+      columnHasData: firstSeriesHasData(data),
+      seriesLevels: ownValueLevels(data),
       baselineY: plot.y + plot.h,
       plot,
       valueToY: toY,
@@ -811,6 +875,8 @@ function layoutSlope(cfg: ChartConfig, style: ChartStyle, decor: Decorations): L
       categoryWidth: data.categories.map(() => fs * 2),
       columnTop,
       columnValue: data.categories.map((_, c) => data.series[0]?.values[c] ?? 0),
+      columnHasData: firstSeriesHasData(data),
+      seriesLevels: ownValueLevels(data),
       baselineY: plot.y + plot.h,
       plot,
       valueToY: toY,
@@ -980,6 +1046,7 @@ function layoutBump(cfg: ChartConfig, style: ChartStyle, _decor: Decorations): L
       categoryWidth: data.categories.map(() => fs * 2),
       columnTop: data.categories.map(() => plot.y),
       columnValue: data.categories.map((_, c) => data.series[0]?.values[c] ?? 0),
+      columnHasData: firstSeriesHasData(data),
       baselineY: plot.y + plot.h,
       plot,
     },
@@ -1365,6 +1432,7 @@ function layoutLineHorizontal(cfg: ChartConfig, style: ChartStyle, decor: Decora
       categoryWidth: data.categories.map(() => slotH * 0.6),
       columnTop,
       columnValue: data.categories.map((_, c) => data.series[0]?.values[c] ?? 0),
+      columnHasData: firstSeriesHasData(data),
       baselineY: x0,
       plot: { x: frame.x, y: frame.y, w: frame.w, h: frame.h },
       // Published for the same reason the column and waterfall layouts publish

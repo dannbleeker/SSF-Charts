@@ -904,7 +904,15 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
         fill: color,
         name: `variance-bar-${c}`,
       });
-      const text = (d >= 0 ? "+" : "") + (mode === "percent" ? `${Math.round(d)}%` : formatNumber(d, fmt));
+      // The SIGN IS THIS LABEL'S OWN, so the chart's `forceSign` is switched off
+      // for the number: `fmt` carries it, `formatNumber` adds a "+" of its own to
+      // a positive value, and the two met as "++20" (and "++20€m" with a suffix).
+      // A signed delta is exactly where an author turns `forceSign` on. It also
+      // keeps the "+0" a zero delta has always printed, which `forceSign` alone
+      // would have turned into "0". Percent mode never calls `formatNumber`.
+      const text =
+        (d >= 0 ? "+" : "") +
+        (mode === "percent" ? `${Math.round(d)}%` : formatNumber(d, { ...fmt, forceSign: false }));
       nodes.push({
         kind: "text",
         x: centers[c] - slotLen / 2,
@@ -971,8 +979,10 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
       // WHICH OF THOSE ARE MEASUREMENTS. All three arrays above are built with
       // `?? 0`, so a category nobody filled in is a zero here, indistinguishable
       // from a measured one — and the mean value line averaged it in, and
-      // counted it in the denominator. See LayoutAnchors. The column family is
-      // the one that offers `valueLines`, so it is the one that has to answer.
+      // counted it in the denominator. See LayoutAnchors. Every layout that
+      // builds `columnValue` with `?? 0` has to answer, not only this one: the
+      // line family draws `valueLines` too (see `firstSeriesHasData`), and this
+      // comment used to say otherwise.
       columnHasData: data.categories.map((_, c) => columnHasData(data.series, c)),
       // What the right-margin names were ANCHORED to, before the spread moved
       // them. The combo re-lays this gutter with its own line names added, and
@@ -985,6 +995,36 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
       valueToX: H && !pct ? (v: number) => frame.x + qOf(v) : undefined,
     },
   };
+}
+
+/**
+ * A combo's `seriesLevels` IN THE CONFIG'S INDEXING, the one a decoration's
+ * `series` was written against, with the lines in it.
+ *
+ * The base layout was handed only the COLUMNS (`cols`), so the levels it
+ * publishes (`colLevels`) are indexed by that subset. `difference.series: 1` on a
+ * combo whose line is series 1 read past the end of it and fell back to the
+ * column total ("+100%" over a flat line), and with the line written FIRST the
+ * same index named a column — a different series' level, silently.
+ *
+ * A line's level is its own value where it shares the columns' scale. On a
+ * secondary or independent axis its value is not a height on the scale
+ * `valueToY` maps, so it gets NaN rather than a number that would be drawn in
+ * the wrong place — see `levelOf` in `decor.ts`. Sideways nothing is drawn.
+ */
+function comboSeriesLevels(
+  series: ChartConfig["data"]["series"],
+  cols: ChartConfig["data"]["series"],
+  colLevels: number[][],
+  linesShareScale: boolean,
+): number[][] {
+  const colAt = new Map(cols.map((s, i) => [s, i] as const));
+  return colLevels.map((row, c) =>
+    series.map((s) => {
+      const k = colAt.get(s);
+      return k !== undefined ? row[k] : linesShareScale ? (s.values[c] ?? 0) : NaN;
+    }),
+  );
 }
 
 /**
@@ -1158,6 +1198,9 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
   // slot, so a horizontal Pareto (`pareto: true` keeps `horizontal`) rendered
   // its bars correctly and its cumulative-% line at ninety degrees to them.
   const H = !!cfg.horizontal;
+  const linesShareScale = !H && !secondary && !independent;
+  if (anchors.seriesLevels)
+    anchors.seriesLevels = comboSeriesLevels(cfg.data.series, cols, anchors.seriesLevels, linesShareScale);
   // No value→q map on the base and no line axis at all → nothing to overlay.
   // Read the map that matches the ORIENTATION: `valueToY` is undefined on every
   // horizontal base, which used to drop each overlay series silently, while the
