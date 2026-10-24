@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readdirSync, readFileSync } from "fs";
 import { fileURLToPath } from "url";
+import ts from "typescript";
 
 /**
  * THE TWO PAGES A CERTIFICATION REVIEWER READS INSTEAD OF THE CODE.
@@ -65,6 +66,94 @@ function hostsShipped(): string[] {
     }
   }
   return [...apps].sort();
+}
+
+/**
+ * EVERY WAY A SOURCE FILE REACHES FOR `fetch`, read off the syntax tree.
+ *
+ * This used to be a regex, `fetch(` followed by a quote or a backtick, with a
+ * look-behind that skipped anything after a `//` on the same line. It saw only a
+ * call whose first argument is a string literal, which is the one shape the
+ * pane's own request happens to have and the LEAST common way to write a second
+ * one: `fetch(ENDPOINT, …)`, `fetch(new URL(…))`, `window.fetch(url)` and
+ * `const f = fetch` all slipped past it, and so did a template literal on a line
+ * that already held an `https://` string, whose `//` the look-behind took for a
+ * comment. The test header says the second request "will arrive in an ordinary
+ * feature PR" and that this "is what notices"; every one of those left it green.
+ *
+ * The tree has no comments or strings in it to confuse, so a call is a call:
+ *
+ *   - `fetch(…)`, `x.fetch(…)` and `x["fetch"](…)` are calls, reported with what
+ *     their first argument is — a literal's text, a template's leading text, or
+ *     the expression's own source for anything that is not a literal;
+ *   - any OTHER mention of `fetch` as a value (`const f = fetch`, `fetch.call`,
+ *     passing it on) is a reference, which is a call this cannot see the target
+ *     of and so cannot clear.
+ *
+ * `inline` is the markup case: the `<script>` bodies and `on…=` handlers of an
+ * `.html` file, parsed as script, because the old regex read those too.
+ */
+export function fetchSites(file: string, source: string, inline = false): string[] {
+  const bodies = inline
+    ? [
+        ...[...source.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]),
+        ...[...source.matchAll(/\bon[a-z]+="([^"]*)"/g)].map((m) => m[1]),
+      ]
+    : [source];
+  const sites: string[] = [];
+  for (const body of bodies) {
+    const sf = ts.createSourceFile(file, body, ts.ScriptTarget.ES2020, true);
+    const isFetchName = (n: ts.Node): boolean =>
+      (ts.isIdentifier(n) && n.text === "fetch") ||
+      (ts.isPropertyAccessExpression(n) && n.name.text === "fetch") ||
+      (ts.isElementAccessExpression(n) &&
+        ts.isStringLiteralLike(n.argumentExpression) &&
+        n.argumentExpression.text === "fetch");
+    const describeArg = (arg: ts.Expression | undefined): string => {
+      if (!arg) return "<no argument>";
+      if (ts.isStringLiteralLike(arg)) return arg.text;
+      if (ts.isTemplateExpression(arg)) return `${arg.head.text}\${…}`;
+      return `<${arg.getText(sf).slice(0, 60)}>`;
+    };
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && isFetchName(node.expression)) {
+        const callee = node.expression;
+        sites.push(`${file}: fetch(${describeArg(node.arguments[0])})`);
+        // The callee is accounted for; its arguments, and the `window` in
+        // `window.fetch(…)`, may hold more — but not the `.fetch` just reported.
+        node.arguments.forEach(visit);
+        if (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) visit(callee.expression);
+        return;
+      }
+      if (ts.isIdentifier(node) && node.text === "fetch" && isReference(node))
+        sites.push(`${file}: fetch referenced, not called`);
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+  }
+  return sites;
+}
+
+/** Is this `fetch` identifier a VALUE being used, rather than a name being declared or a member name? */
+function isReference(id: ts.Identifier): boolean {
+  const p = id.parent;
+  // `typeof globalThis.fetch` is erased before anything runs.
+  for (let up: ts.Node | undefined = p; up && !ts.isStatement(up); up = up.parent) if (ts.isTypeNode(up)) return false;
+  if (ts.isPropertyAccessExpression(p) && p.name === id) return true;
+  const declares =
+    (ts.isParameter(p) ||
+      ts.isVariableDeclaration(p) ||
+      ts.isPropertyAssignment(p) ||
+      ts.isPropertyDeclaration(p) ||
+      ts.isPropertySignature(p) ||
+      ts.isMethodDeclaration(p) ||
+      ts.isMethodSignature(p) ||
+      ts.isFunctionDeclaration(p) ||
+      ts.isBindingElement(p) ||
+      ts.isImportSpecifier(p) ||
+      ts.isExportSpecifier(p)) &&
+    p.name === id;
+  return !declares;
 }
 
 describe("the privacy and terms pages the store listing submits", () => {
@@ -144,9 +233,7 @@ describe("the privacy and terms pages the store listing submits", () => {
       const text = repoText(file);
       // Only the CALL matters; a comment discussing fetch is not a request. The
       // pane's one live call is `fetch(\`/build.json?t=${Date.now()}\`, …)`.
-      for (const [, target] of text.matchAll(/(?<!\/[/*].*)\bfetch\(\s*[`"']([^`"']*)/g)) {
-        fetches.push(`${file}: fetch(${target})`);
-      }
+      fetches.push(...fetchSites(file, text, file.endsWith(".html")));
       for (const [, api] of text.matchAll(/\b(XMLHttpRequest|sendBeacon|EventSource|new WebSocket)\b/g)) {
         others.push(`${file}: ${api}`);
       }
@@ -169,5 +256,58 @@ describe("the privacy and terms pages the store listing submits", () => {
     expect(fetches, "the disclosed /build.json request is gone from src/ — the policy still describes it").toHaveLength(
       1,
     );
+  });
+
+  /**
+   * THE GUARD ABOVE HAS TO BE ABLE TO FAIL ON A SECOND REQUEST IN ANY SPELLING.
+   * Each of these is a call the old regex let through; they are run through the
+   * same function the real test uses, so a regression in how it reads a call
+   * fails here by name instead of by the policy quietly going false.
+   */
+  it.each([
+    ["an identifier as the URL", 'const T = "https://c.example.com/e"; await fetch(T, { method: "POST" });'],
+    [
+      "a template on a line that already holds https://",
+      'const base = "https://c.example.com"; await fetch(`${base}/e`, { method: "POST" });',
+    ],
+    ["a URL object", 'await fetch(new URL("/e", "https://c.example.com"));'],
+    ["window.fetch", "await window.fetch(endpoint, { method: 'POST' });"],
+    ["globalThis.fetch", "await globalThis.fetch(endpoint);"],
+    ["a computed member", 'await self["fetch"](endpoint);'],
+    ["fetch with no argument", "await fetch();"],
+    ["a literal URL that is not build.json", 'await fetch("https://c.example.com/e");'],
+    ["fetch aliased", "const f = fetch; await f(endpoint);"],
+    ["fetch handed on", "send(fetch);"],
+    ["fetch.call", "await fetch.call(globalThis, endpoint);"],
+  ])("sees %s", (_name, code) => {
+    const sites = fetchSites("src/x.ts", code);
+    expect(sites, `${code} passed the network guard`).not.toEqual([]);
+    expect(
+      sites.some((s) => !/fetch\(\/build\.json/.test(s)),
+      `${code} was read as the disclosed request`,
+    ).toBe(true);
+  });
+
+  it("reads the disclosed request as exactly that, and prose and declarations as nothing", () => {
+    expect(fetchSites("src/x.ts", "await fetch(`/build.json?t=${Date.now()}`, { cache: 'no-store' });")).toEqual([
+      "src/x.ts: fetch(/build.json?t=${…})",
+    ]);
+    expect(
+      fetchSites(
+        "src/x.ts",
+        [
+          "// await fetch(url) is how the old version did it",
+          "/* fetch(`/elsewhere`) */",
+          "const msg = 'failed to fetch dynamically imported module';",
+          "const re = /failed to fetch/i;",
+          "function wrap(fetch: typeof globalThis.fetch) { return { fetch: 1 }; }",
+        ].join("\n"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("reads inline scripts and handlers in markup", () => {
+    const html = '<script src="./app.ts"></script><button onclick="fetch(url)">x</button><script>fetch(`/x`)</script>';
+    expect(fetchSites("src/p.html", html, true).sort()).toEqual(["src/p.html: fetch(/x)", "src/p.html: fetch(<url>)"]);
   });
 });
