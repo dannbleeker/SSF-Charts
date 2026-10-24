@@ -151,19 +151,63 @@ const linear = (channel: number): number => {
   const s = channel / 255;
   return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
 };
-const luminance = (hex: string): number => {
-  const h = hex.replace("#", "");
-  return (
-    0.2126 * linear(parseInt(h.slice(0, 2), 16)) +
-    0.7152 * linear(parseInt(h.slice(2, 4), 16)) +
-    0.0722 * linear(parseInt(h.slice(4, 6), 16))
-  );
+
+/** The two named colours this sheet could plausibly use for a field or its text. */
+const NAMED_COLORS: Record<string, string> = { white: "#ffffff", black: "#000000" };
+
+/**
+ * The sRGB channels of a colour this file can measure — `#rgb`, `#rrggbb`,
+ * opaque `rgb()` / `rgba()`, and the two names above — or null for anything
+ * else: `transparent`, `inherit`, `currentcolor`, a `var()` that resolved to
+ * nothing, anything with alpha, any other colour function.
+ *
+ * Null is the point. This used to read six-digit hex only, by slicing the string
+ * into pairs, so every other spelling came out as NaN, `contrast` returned NaN,
+ * and the gate's `ratio < 4.5` is FALSE for NaN: a pair it could not read was
+ * recorded as passing. `#fff` is one of ten such spellings already in
+ * `taskpane.css`, so an edit that put it on a typed-into control in the dark
+ * block — #dce9f7 on white, 1.23:1, the exact bug this file exists for — left
+ * all six tests green while the same colour spelled `#ffffff` failed.
+ */
+const parseColor = (value: string): [number, number, number] | null => {
+  const v = (NAMED_COLORS[value.trim().toLowerCase()] ?? value).trim().toLowerCase();
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/.exec(v);
+  if (hex) {
+    const full = hex[1].length === 3 ? [...hex[1]].map((c) => c + c).join("") : hex[1];
+    return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16)) as [number, number, number];
+  }
+  const fn = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)\s*(?:[,/]\s*1(?:[.]0+)?\s*)?\)$/.exec(v);
+  if (fn && [fn[1], fn[2], fn[3]].every((c) => Number(c) <= 255)) return [Number(fn[1]), Number(fn[2]), Number(fn[3])];
+  return null;
 };
-/** WCAG 2.x contrast ratio. */
+const luminance = (value: string): number => {
+  const rgb = parseColor(value);
+  if (!rgb) throw new Error(`cannot measure the colour "${value}"`);
+  return 0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2]);
+};
+/** WCAG 2.x contrast ratio. Throws for a colour `parseColor` cannot read, never returns NaN. */
 const contrast = (a: string, b: string): number => {
   const la = luminance(a);
   const lb = luminance(b);
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+};
+
+/**
+ * What is wrong with one resolved colour pair, or null if it clears 4.5:1.
+ *
+ * A pair that cannot be measured is a problem, reported with the colours so the
+ * fix is either to spell them measurably or to teach `parseColor` the form.
+ * `ratio >= 4.5` and not `!(ratio < 4.5)`: the two differ for NaN, and the
+ * second is the spelling that waved one through.
+ */
+const pairProblem = (color: string, background: string): string | null => {
+  let ratio: number;
+  try {
+    ratio = contrast(color, background);
+  } catch (err) {
+    return `${(err as Error).message} (${color} on ${background})`;
+  }
+  return ratio >= 4.5 ? null : `${color} on ${background} = ${ratio.toFixed(2)}:1`;
 };
 
 /** Does `:root` tell the UA this page has a dark rendering? */
@@ -272,12 +316,41 @@ describe("pane inputs are readable in both Office themes", () => {
     for (const scheme of ["light", "dark"] as const) {
       for (const { el, file } of allControls) {
         const { color, background } = resolved(el, scheme);
-        const ratio = contrast(color, background);
-        if (ratio < 4.5)
-          failures.push(`${scheme}: ${file}: ${name(el)} ${color} on ${background} = ${ratio.toFixed(2)}:1`);
+        const problem = pairProblem(color, background);
+        if (problem) failures.push(`${scheme}: ${file}: ${name(el)} ${problem}`);
       }
     }
     expect(failures).toEqual([]);
+  });
+
+  // THE GATE ABOVE HAS TO BE ABLE TO FAIL ON A COLOUR IT IS HANDED IN ANY
+  // SPELLING. These are the pairs a stylesheet edit would produce for a control
+  // in the dark block, run through the same check; the first spellings are white,
+  // so #dce9f7 on any of them is the bug this file exists for.
+  it.each(["#fff", "#FFF", "white", "rgb(255, 255, 255)", "rgb(255 255 255)", "rgba(255, 255, 255, 1)"])(
+    "reads %s as the white it is, and fails the pane's ink on it",
+    (spelling) => {
+      expect(contrast(spelling, "#ffffff")).toBeCloseTo(1, 5);
+      expect(pairProblem("#dce9f7", spelling), `${spelling} was not measured`).toContain("= 1.23:1");
+    },
+  );
+
+  it.each([
+    "transparent",
+    "inherit",
+    "currentcolor",
+    "",
+    "var(--no-such-token)",
+    "rgba(255, 255, 255, 0.5)",
+    "hsl(0 0% 100%)",
+  ])("refuses to pass a pair it cannot measure (%j)", (spelling) => {
+    expect(pairProblem("#dce9f7", spelling)).toMatch(/cannot measure/);
+    expect(pairProblem(spelling, "#12202f")).toMatch(/cannot measure/);
+  });
+
+  it("still passes the pane's real pairs", () => {
+    expect(pairProblem("#dce9f7", "#12202f")).toBeNull();
+    expect(pairProblem("#12202f", "#fff")).toBeNull();
   });
 
   it("measures the two pairs the fix turns on, so the numbers are on the record", () => {
