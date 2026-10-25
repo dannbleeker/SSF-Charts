@@ -76,4 +76,46 @@ describe("the local gate", () => {
     // Coverage is the biggest gap: `npm test` does not enforce CI's thresholds.
     expect(NOT_COVERED.join(" "), "the coverage gap is not named").toMatch(/coverage/i);
   });
+
+  it("lists what CI runs that it does not, read from the workflow and not from memory", () => {
+    // THE LIST WAS WRITTEN FROM MEMORY AND CHECKED AGAINST NOTHING (r3-78). It
+    // left out the suite-shrink floor, the visual gate and Microsoft's manifest
+    // validator, and named "the Playwright e2e job", which no workflow has. The
+    // assertions above pass against a list trimmed to one "coverage" entry, so
+    // the very claim the gate exists to keep honest was the one nothing checked.
+    //
+    // WHAT CI RUNS is read out of ci.yml: every `npm run X`, `node scripts/X.mjs`
+    // and `npx X` on a line that is not a comment. A step the gate runs itself is
+    // exempt; every other has to be named in the printed list.
+    const names = new Set<string>();
+    for (const raw of readFileSync(".github/workflows/ci.yml", "utf8").split("\n")) {
+      const line = raw.trim();
+      if (line.startsWith("#")) continue;
+      for (const m of line.matchAll(/npm run ([a-z:-]+)/g)) names.add(m[1]);
+      for (const m of line.matchAll(/node scripts\/([a-z-]+)[.]mjs/g)) names.add(m[1]);
+      for (const m of line.matchAll(/npx (?:--yes )?([a-z-]+)/g)) names.add(m[1]);
+    }
+    expect(
+      names.size,
+      "the workflow parse found almost nothing, so every check below would pass vacuously",
+    ).toBeGreaterThan(10);
+
+    // How the list SAYS a command, where that is not the command's own name: CI
+    // builds the deck with the script `npm run showcase` wraps, and installs a
+    // browser only for the visual gate that follows it.
+    const said: Record<string, string> = { "build-showcase": "showcase", "playwright-core": "visible-charts" };
+    const word = (name: string) => (said[name] ?? name).toLowerCase();
+    const listed = NOT_COVERED.join("\n").toLowerCase();
+
+    const unnamed = [...names].filter((n: string) => !GATE_STEPS.includes(n) && !listed.includes(word(n)));
+    expect(unnamed, "CI runs these and the gate neither runs them nor says it skips them").toEqual([]);
+
+    // AND THE OTHER DIRECTION: an entry that matches nothing CI runs is a step
+    // that does not exist, which is how "the Playwright e2e job" read as a
+    // reason to trust a green gate.
+    const invented = NOT_COVERED.filter(
+      (entry: string) => ![...names].some((n) => entry.toLowerCase().includes(word(n))),
+    );
+    expect(invented, "these entries name no step in ci.yml").toEqual([]);
+  });
 });

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "fs";
 import { execFileSync } from "child_process";
+// @ts-expect-error — plain .mjs tool, no types.
+import { roundNumberOf } from "../scripts/round-pools.mjs";
 
 /**
  * §0's health table must still reproduce at the round it is anchored to.
@@ -160,13 +162,30 @@ function statedRows(md: string): { anchor: number; rows: Row[] } {
   return { anchor, rows };
 }
 
+/**
+ * Is this round newer than the one §0 is anchored to?
+ *
+ * THE WHOLE NUMBER IN THE NAME, not its first three characters: `1004-x.json` is
+ * round 1004, and `Number(f.slice(0, 3))` counted it as round 100, so a table
+ * anchored at 1003 took in a round newer than itself (r3-48, the same cut r1-61
+ * removed from the pooled readers). Latent until the archive reaches round 1000.
+ */
+function newerThan(f: string, anchor: number): boolean {
+  return roundNumberOf(f) > anchor;
+}
+
+/** The newest round in a listing of the rounds directory. */
+function highestRound(listing: string[]): number {
+  return Math.max(...listing.filter((x) => /^\d+-/.test(x)).map((f) => roundNumberOf(f)));
+}
+
 function derive(anchor: number, eras: Eras) {
   const acc: Record<string, { rounds: number; green: number; ok: number; total: number }> = {};
   // Rounds whose build git cannot place, which belong to neither row of the
   // table and used to be counted in PRE-fix — see `fixEras`.
   const unplaced: string[] = [];
   for (const f of readdirSync("rounds").filter((x) => /^\d+-/.test(x))) {
-    if (Number(f.slice(0, 3)) > anchor) continue;
+    if (newerThan(f, anchor)) continue;
     let j;
     try {
       j = JSON.parse(readFileSync(`rounds/${f}`, "utf8"));
@@ -227,12 +246,23 @@ describe("§0's health table", () => {
     // when the archive already held 417. Honest arithmetic, misleading
     // currency. This does not demand the anchor be the newest round — rounds
     // land faster than tables are rewritten — only that it exists.
-    const highest = Math.max(
-      ...readdirSync("rounds")
-        .filter((x) => /^\d+-/.test(x))
-        .map((f) => Number(f.slice(0, 3))),
-    );
+    const highest = highestRound(readdirSync("rounds"));
     expect(anchor, "§0 is anchored to a round that has not happened").toBeLessThanOrEqual(highest);
+  });
+
+  it("reads a round number past 999 as the number it is", () => {
+    // NO ROUND 1000 EXISTS YET, so the archive cannot show this; a listing can.
+    // The archive is at about round 505 and the driver pads to three digits and
+    // never truncates, so `1000-x.json` is a few hundred rounds away. With the
+    // three-character cut the newest file of this listing read as 100, the
+    // highest round as 999, and a table anchored at 1003 failed "is anchored to
+    // a round the archive actually reached" for a table that was right.
+    const listing = ["998-a.json", "999-b.json", "1000-c.json", "1003-d.json", "1004-e.json", "predictions.json"];
+    expect(highestRound(listing)).toBe(1004);
+    expect(
+      listing.filter((f) => /^\d+-/.test(f) && !newerThan(f, 1003)),
+      "a round newer than the anchor was counted into the table",
+    ).toEqual(["998-a.json", "999-b.json", "1000-c.json", "1003-d.json"]);
   });
 });
 

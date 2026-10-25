@@ -81,7 +81,26 @@ import {
 // was added to the two that are pinned and not to this one. A prediction reading
 // that answer would have judged a question "put and answered" when the harness
 // never asked it.
-import { NEVER_ASKED as NOT_ASKED_ANSWERS, UNINFORMATIVE_ANSWERS } from "./host-baseline.mjs";
+import { NEVER_ASKED as NOT_ASKED_ANSWERS, RENAMED_ANSWERS, UNINFORMATIVE_ANSWERS } from "./host-baseline.mjs";
+
+/**
+ * An archived answer in today's words.
+ *
+ * `NOT_ASKED_ANSWERS` and `UNINFORMATIVE_ANSWERS` name only today's spellings, so
+ * a reader that bins a sheet's answers raw lets the pre-rename word through as a
+ * real answer. `which-end-a-short-read-drops` said `all` and `none` in the 87
+ * rounds before 2026-09-01 — `not-a-short-read` and `none-of-ours` now, both
+ * uninformative — and `probeFlipsWithinBuild` listed it as a probe that flipped
+ * within a build (builds 55630e7 and 557b10e) while `passPositionBias` split one
+ * answer across four rows. r2-58 mapped the samples in `host-regimes` and said so
+ * in its commit; these two readers of the same archive were not looked at (r3-46).
+ *
+ * Mapped on read and never written back: a captured sheet is evidence. A reader
+ * that GROUPS or COMPARES answers goes through this; `judgePrediction` does not,
+ * because it matches one staked pattern against rounds made after the stake, and
+ * no prediction in `rounds/predictions.json` names a renamed question.
+ */
+const inTodaysWords = (id, word) => RENAMED_ANSWERS[id]?.[word] ?? word;
 
 /**
  * Verdicts, worst first — the order they are printed and counted in.
@@ -1462,7 +1481,7 @@ export function probeFlipsWithinBuild(logs) {
     const sha = String(log?.build ?? "").split(" ")[0];
     if (!sha || !Array.isArray(answers)) continue;
     if (!byBuild.has(sha)) byBuild.set(sha, []);
-    byBuild.get(sha).push(Object.fromEntries(answers.map((a) => [a.id, a.answer])));
+    byBuild.get(sha).push(Object.fromEntries(answers.map((a) => [a.id, inTodaysWords(a.id, a.answer)])));
   }
   const flips = new Map();
   let builds = 0,
@@ -2994,10 +3013,13 @@ export function passPositionBias(logs, minN = MIN_RATE_N, minDelta = 5) {
   for (const log of logs ?? []) {
     for (const row of log?.hostAnswers?.answers ?? []) {
       for (const s of row.samples ?? []) {
-        if (NOT_ASKED_ANSWERS.has(s.answer)) continue;
+        // Today's word, so an old capture's `all` and today's `not-a-short-read`
+        // are ONE answer here and not two rows with opposite shifts.
+        const answer = inTodaysWords(row.id, s.answer);
+        if (NOT_ASKED_ANSWERS.has(answer)) continue;
         if (!per.has(row.id)) per.set(row.id, { p1: new Map(), later: new Map() });
         const side = per.get(row.id)[s.pass <= 1 ? "p1" : "later"];
-        side.set(s.answer, (side.get(s.answer) ?? 0) + 1);
+        side.set(answer, (side.get(answer) ?? 0) + 1);
       }
     }
   }
@@ -3604,6 +3626,11 @@ function reportFreshVsEstablished(logs) {
   console.log(
     `    freshly added, empty      ${String(f.fresh).padStart(3)} chart(s), ${String(f.freshGrouped).padStart(3)} grouped = ${rateOrSilence(f.freshGrouped, f.fresh)}`,
   );
+  // A chart whose first batch went out before its slide was named reads
+  // `onSlide: 0` whatever the slide held, so it is placed from the next batch
+  // (`priorOnSlideByChart`) and, when that cannot, counted in neither row.
+  if (f.unresolved)
+    console.log(`    + ${f.unresolved} chart(s) in neither row: their slide was not yet named when they were drawn`);
   // THE CURRENT RATE, because the pooled one is known to be unreadable and this
   // report said so in prose and printed it anyway: "pooled over 39 rounds that
   // predate the retry, so it will climb slowly and should not be read as the

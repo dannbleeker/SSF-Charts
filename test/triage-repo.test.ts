@@ -124,15 +124,47 @@ function toolModulesTheGateReads(gate: string): string[] | undefined {
 }
 
 /**
- * The trace messages one tool module compares against a string literal.
+ * The trace messages one tool module compares against a literal, in every form
+ * the tool modules write that comparison.
+ *
+ * IT USED TO READ TWO OF THEM, `message === "x"` and `m === "x"`, and the tools
+ * write at least five. A message matched any other way was invisible: reword it
+ * in `src/` and the sweep stayed green while the detector keyed to it reported
+ * zero for good (r3-47). Measured on the claim `no-queue-trace-is-dead`: its one
+ * job is to go STALE when the trace line it watches fires again, and once the
+ * emitter was reworded a round carrying the new wording left it reading "last
+ * round 065, 439 rounds ago" instead of STALE. A dozen fragments in `claims.mjs`
+ * and as many again in `round-pools.mjs` and `triage.mjs` were in this position.
+ *
+ * The forms, each of which is a real matcher in the tool today:
+ *   message === "x"   e.message !== "x"   String(e.message ?? "") !== "x"
+ *   m === "x"         m !== "x"
+ *   m.startsWith("x")
+ *   /^x/.test(String(e.message ?? ""))    /x/.test(m)
+ *
+ * A REGEX COUNTS ONLY WHEN IT IS PLAIN TEXT (letters, digits, spaces and a few
+ * marks, optionally anchored with ^). That is an exact fragment of the message,
+ * so the source must contain it verbatim. One with a metacharacter in it
+ * (`scenario (passed|FAILED)`, `in.place|updated`) is not a literal and is left
+ * out rather than guessed at; that is the one limit of this sweep.
  *
  * Deliberately backslash-free: a regex written through a heredoc has been
  * corrupted here before, and a mangled one matches nothing while looking fine.
  */
 function messageLiterals(source: string): Set<string> {
   const found = new Set<string>();
-  for (const m of source.matchAll(/(?:e[.])?message *=== *"([^"]+)"/g)) found.add(m[1]);
-  for (const m of source.matchAll(/[^A-Za-z]m === "([^"]+)"/g)) found.add(m[1]);
+  const forms = [
+    /message(?: *[?][?] *"")?[)]? *[!=]== *"([^"]+)"/g,
+    /[^A-Za-z]m *[!=]== *"([^"]+)"/g,
+    /(?:[^A-Za-z]m|msg|message)[.]startsWith[(]"([^"]+)"[)]/g,
+    /[/]([A-Za-z0-9^][A-Za-z0-9 '#:,<>=-]*)[/]i?[.]test[(](?:String[(])?(?:e[?]?[.]message|message|msg|m)\b/g,
+  ];
+  for (const form of forms)
+    for (const m of source.matchAll(form)) {
+      // A leading ^ is the regex's anchor, not part of the message.
+      const text = m[1].startsWith("^") ? m[1].slice(1) : m[1];
+      if (text) found.add(text);
+    }
   return found;
 }
 
@@ -200,12 +232,17 @@ describe("a detector keyed to a message that no longer exists", () => {
       );
   });
 
-  it("would notice a message only the pooled readers key on being reworded", () => {
+  it("would notice a message only the pooled readers or the claims key on being reworded", () => {
     // THE SWEEP HAS TO BE ABLE TO FAIL ON THE FILE THE READERS NOW LIVE IN. The
     // loop above is green because every message is emitted, which would be just
     // as true of a sweep that read the wrong file; so reword each message that
     // `round-pools.mjs` matches on and `triage.mjs` does not, in a copy of the
-    // source, and require the sweep to flag it. The two files are read here
+    // source, and require the sweep to flag it. The same for `claims.mjs`, which
+    // is a file of matchers (r3-47: it was excluded on the ground that it matches
+    // no message, and `no-queue-trace-is-dead` then read ok after its trace line
+    // was reworded, the one thing it exists to notice). A claims victim has to be
+    // one NEITHER of the other modules carries, or the test would pass for a
+    // sweep that never read `claims.mjs` at all. The files are read here
     // directly and not through the sweep's own file list: a victim list taken
     // from the list under test shrinks with it, and the test would then pass for
     // the very narrowing it exists to catch. The messages are derived, not named,
@@ -213,15 +250,21 @@ describe("a detector keyed to a message that no longer exists", () => {
     const literalsOf = (f: string) =>
       messageLiterals(readFileSync(new URL(`../scripts/${f}`, import.meta.url), "utf8"));
     const inTriage = literalsOf("triage.mjs");
-    const pooledOnly = [...literalsOf("round-pools.mjs")].filter((m) => !inTriage.has(m));
+    const inPools = literalsOf("round-pools.mjs");
+    const pooledOnly = [...inPools].filter((m) => !inTriage.has(m));
+    const claimsOnly = [...literalsOf("claims.mjs")].filter((m) => !inTriage.has(m) && !inPools.has(m));
     expect(
       pooledOnly.length,
       "round-pools.mjs matches on no message of its own — the extractors have stopped working",
     ).toBeGreaterThan(0);
+    expect(
+      claimsOnly.length,
+      "claims.mjs matches on no message of its own — the extractors have stopped working",
+    ).toBeGreaterThan(0);
 
     const swept = sweptMessages();
     const live = app();
-    for (const victim of pooledOnly) {
+    for (const victim of [...pooledOnly, ...claimsOnly]) {
       expect(deadMessages([victim], live), `"${victim}" is not emitted, so rewording it proves nothing`).toEqual([]);
       const reworded = live.split(victim).join("a reworded message");
       expect(
@@ -229,6 +272,44 @@ describe("a detector keyed to a message that no longer exists", () => {
         `the sweep did not notice "${victim}" being reworded — it is not reading the file whose reader keys on it`,
       ).toContain(victim);
     }
+  });
+
+  it("reads a message however the tool modules compare it", () => {
+    // THE EXTRACTOR IS AN INSTRUMENT TOO. The test above proves the sweep notices
+    // what the extractor finds; this proves the extractor finds each form, so a
+    // narrowing of one regex cannot hide behind the others still matching. Every
+    // line is a form that occurs in the tool modules today.
+    const sample = [
+      'if (e.message === "equal literal") a();',
+      'if (String(e.message ?? "") !== "unequal literal") continue;',
+      'if (m === "bound equal") b();',
+      'msgs.some((m) => m.startsWith("starts with literal"));',
+      "if (/^anchored plain text/.test(String(e.message))) c();",
+      'if (!/unanchored plain text/.test(String(e.message ?? ""))) continue;',
+      "if (/^a hyphen-and, comma's colon: kept/.test(m)) d();",
+    ].join("\n");
+    expect([...messageLiterals(sample)].sort()).toEqual(
+      [
+        "anchored plain text",
+        "bound equal",
+        "equal literal",
+        "a hyphen-and, comma's colon: kept",
+        "starts with literal",
+        "unanchored plain text",
+        "unequal literal",
+      ].sort(),
+    );
+
+    // A regex with a metacharacter is not a literal fragment of anything, and a
+    // string that is not compared to a message is not a message.
+    const notMessages = [
+      "if (/scenario (passed|FAILED)/.test(String(e.message))) break;",
+      "if (/in.place|updated/i.test(String(e.message ?? ''))) continue;",
+      "if (/5010/.test(JSON.stringify(entries[k].data))) hit();",
+      'if (png.startsWith("<image stripped")) skip();',
+      'const name = "just a string";',
+    ].join("\n");
+    expect([...messageLiterals(notMessages)]).toEqual([]);
   });
 });
 
@@ -271,11 +352,13 @@ describe("the unread-signal detector knows every file the tool is made of", () =
      * Modules that hold no trace-message literal and are deliberately left out.
      * Each one is a judgement, so each one is named: `is-main.mjs` is a
      * twenty-line entry-point check, `host-baseline.mjs` is the probe's answer
-     * sheet, `claims.mjs` is a table of claims and `verify-deck.mjs` reads OOXML.
-     * None of them matches on a trace message. Add a file here only after
+     * sheet and `verify-deck.mjs` reads OOXML. None of them matches on a trace
+     * message, and the second half of this test READS them to check: this list
+     * used to say the same of `claims.mjs`, a table of message matchers,
+     * and nothing could contradict it (r3-47). Add a file here only after
      * checking that, not to make this pass.
      */
-    const noMessages = new Set(["is-main.mjs", "host-baseline.mjs", "claims.mjs", "verify-deck.mjs"]);
+    const noMessages = new Set(["is-main.mjs", "host-baseline.mjs", "verify-deck.mjs"]);
 
     // Every `./*.mjs` the two tools import, plus the gate itself. Read out of
     // their imports rather than copied here, so a new tool module is caught the
@@ -292,5 +375,15 @@ describe("the unread-signal detector knows every file the tool is made of", () =
         "list it reads. Every message those modules look for will be reported as read by nothing, which looks " +
         "exactly like a finding.",
     ).toEqual([]);
+
+    // THE EXCLUSIONS ARE CHECKED, not trusted. "None of them matches on a trace
+    // message" was a sentence in a comment, it was false of `claims.mjs`, and it
+    // kept that module out of both lists until a verifier read the file.
+    for (const f of noMessages)
+      expect(
+        [...messageLiterals(readFileSync(new URL(`../scripts/${f}`, import.meta.url), "utf8"))],
+        `${f} is listed as matching no trace message, and it matches these: take it out of the exclusions and ` +
+          "into the list rounds-gate.mjs reads",
+      ).toEqual([]);
   });
 });

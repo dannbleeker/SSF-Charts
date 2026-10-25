@@ -25,6 +25,11 @@
  * refute is a slogan.
  */
 
+// `round-pools.mjs` imports nothing, so reading the report's own pooled counts
+// from here cannot make the cycle that `MIN_EVENTS` below is declared to avoid
+// (`triage.mjs` imports THIS file).
+import { poolFreshVsEstablished, roundLabelOf, roundNumberOf } from "./round-pools.mjs";
+
 /** Every round's `updated only the shapes that changed` rows, flattened. */
 function updateRows(logs) {
   const rows = [];
@@ -34,7 +39,7 @@ function updateRows(logs) {
       const d = e.data ?? {};
       if (!d.chart || typeof d.ms !== "number") continue;
       const [i, n] = String(d.chart).split("/").map(Number);
-      rows.push({ round: String(log.roundName ?? "").slice(0, 3), i, n, changed: d.changed, of: d.of, ms: d.ms });
+      rows.push({ round: roundLabelOf(log.roundName), i, n, changed: d.changed, of: d.of, ms: d.ms });
     }
   }
   return rows;
@@ -85,32 +90,22 @@ export const CLAIMS = [
     says: "A chart on a freshly added slide groups, so it keeps its config.",
     measured: "2026-08-25, 36 of 36 over eight rounds — it was 1 of 74 on 2026-08-15",
     check(logs) {
-      let fresh = 0;
-      let grouped = 0;
-      for (const log of recent(logs)) {
-        const onSlide = new Map();
-        const isGrouped = new Set();
-        const decided = new Set();
-        for (const e of log?.trace?.entries ?? []) {
-          const d = e.data ?? {};
-          if (!d.chart) continue;
-          if (typeof d.onSlide === "number" && !onSlide.has(d.chart)) onSlide.set(d.chart, d.onSlide);
-          if (/^grouped the chart/.test(String(e.message))) {
-            isGrouped.add(d.chart);
-            decided.add(d.chart);
-          }
-          if (/^not grouping/.test(String(e.message))) decided.add(d.chart);
-        }
-        for (const [chart, n] of onSlide) {
-          if (!decided.has(chart) || n > 0) continue;
-          fresh++;
-          if (isGrouped.has(chart)) grouped++;
-        }
-      }
+      // THE REPORT'S OWN READER, not a copy of it. This body used to repeat
+      // `poolFreshVsEstablished`'s first-batch rule line for line, so when the
+      // placeholder `onSlide: 0` of a chart whose slide had not been named yet
+      // was taken out of the report (r2-56 / r3-45) it stayed here. A chart's
+      // first batch is issued before the slide is named, and over the archive
+      // 818 of the 2,413 charts read as "fresh" were those rows: they group
+      // 99.6% of the time against 86.5% for a slide that really was empty.
+      // Pooled, they could hold this claim above 90% while the real rate had
+      // fallen to 85% (17 of 20, shown in `test/fix-k7-harness-gaps-and-docs`).
+      const { fresh, freshGrouped: grouped, unresolved } = poolFreshVsEstablished(recent(logs));
       // Under twenty it cannot say either way — the same bar the rate report uses.
       if (fresh < 20) return { ok: null, actual: `only ${fresh} fresh-slide chart(s) in the window` };
       const pct = Math.round((100 * grouped) / fresh);
-      return { ok: pct >= 90, actual: `${grouped}/${fresh} = ${pct}%` };
+      // The charts left out are said, so a smaller denominator is not a surprise.
+      const held = unresolved ? ` (${unresolved} more not counted: their slide was never named in the trace)` : "";
+      return { ok: pct >= 90, actual: `${grouped}/${fresh} = ${pct}%${held}` };
     },
   },
   {
@@ -205,14 +200,24 @@ export const CLAIMS = [
     measured: "2026-08-25, last seen round 065",
     check(logs) {
       let last = null;
+      let newest = -Infinity;
       for (const log of logs ?? []) {
+        // THE WHOLE NUMBER IN THE NAME, not its first three characters (r1-61,
+        // settled in the pooled readers and missed here): round 1000 is
+        // `1000-x.json`, which `.slice(0, 3)` read as 100 while the trace stayed
+        // silent since round 065, so the gap read 35 and this printed STALE for
+        // rounds 1000 to 1059. A file with no round number in its name is not a
+        // round and is skipped, not counted as round 0.
+        const n = roundNumberOf(log?.roundName);
+        if (!Number.isFinite(n)) continue;
+        newest = Math.max(newest, n);
         for (const e of log?.trace?.entries ?? []) {
-          if (/could not even be queued/.test(String(e.message))) last = String(log.roundName ?? "").slice(0, 3);
+          if (/could not even be queued/.test(String(e.message)) && n >= (last?.n ?? -Infinity))
+            last = { n, label: roundLabelOf(log.roundName) };
         }
       }
-      const newest = Number(String((logs ?? [])[logs.length - 1]?.roundName ?? "").slice(0, 3));
-      const gap = last == null ? Infinity : newest - Number(last);
-      return { ok: gap > 40, actual: last == null ? "never seen" : `last round ${last}, ${gap} rounds ago` };
+      const gap = last == null ? Infinity : newest - last.n;
+      return { ok: gap > 40, actual: last == null ? "never seen" : `last round ${last.label}, ${gap} rounds ago` };
     },
   },
   {

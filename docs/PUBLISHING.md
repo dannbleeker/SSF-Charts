@@ -167,6 +167,12 @@ built HEAD when they built its parent. `gh run rerun` does not help: it
 republished `bbfcf5b` with a fresh timestamp (12:45Z), which reads as a
 successful redeploy and is the most confusing outcome available.
 
+`scripts/await-deploy.mjs` keyed on that column too, until 2026-10-25, and
+printed "is live" for `dcf21b4` while the site served `bbfcf5b`. It now names a
+`workflow_run` deploy by the `HEAD is now at <sha>` line in its build log, and
+answers "replaced" (exit 2) when a later deploy published another commit on top
+of the one it waited for.
+
 **The escape is `workflow_dispatch`**, which `pages.yml` declares and which
 checks out the ref you name:
 
@@ -953,26 +959,35 @@ calls and 121 catalogue entries with no internal vocabulary leaking.
 
 ## Known constraints to keep in mind
 
-- Requirement sets: shapes need PowerPointApi **1.4+** (Win 2207+, Mac
-  16.62+, web; not iPad); grouping 1.8, re-edit tags 1.3, pie rotation 1.10,
-  theme colors 1.10. The pane degrades gracefully below each. **This paragraph
-  said otherwise until 2026-09-01** — that below 1.10 the pie family "inserts
-  with no slices at all" — and that stopped being true when the warn-and-picture
-  decision shipped on 2026-08-31. A chart carrying marks the host cannot draw
-  now inserts as a **picture**, complete, with a message naming what would
-  otherwise be missing; where no picture is possible it still draws and still
-  says what is absent; and Explode refuses on the same test rather than handing
-  back the version that cannot be drawn. Measured then: 18 of 123 shipped charts
-  lose ink below 1.10 and 8 lose their subject entirely (pie 4/4, doughnut 2/2,
-  sunburst 2/2). Diagonal lines used to fail there too, drawn as flat
-  rectangles, and that was fixed on 2026-08-30.
+- Requirement sets: the manifests require PowerPointApi **1.10+** — Microsoft 365
+  on Windows from Version 2601, Mac 16.105+, and the web; not iPad, and not
+  volume-licensed/LTSC Office (SETTLED 2026-09-13, item 3 above, with the
+  reasoning beside the number in `manifest.xml`). The finer sets all sit at or
+  below it: grouping 1.8, re-edit tags 1.3, pie rotation 1.10, theme colors
+  1.10. A host under 1.10 is not offered the add-in, so none of them is a
+  runtime question on an admitted host and the pane has nothing to degrade to.
+  **This paragraph said the floor was 1.4 ("Win 2207+, Mac 16.62+") and that the
+  pane "degrades gracefully below each" until 2026-10-25** — it was written for
+  the world before the raise, and nothing re-read it when the raise landed. The
+  degrading was real while the floor allowed it. Until 2026-09-01 this said that
+  below 1.10 the pie family "inserts with no slices at all", which stopped being
+  true when the warn-and-picture decision shipped on 2026-08-31: a chart
+  carrying marks the host cannot draw inserted as a **picture**, complete, with a
+  message naming what would otherwise be missing, and Explode refused on the same
+  test. Measured then: 18 of 123 shipped charts lose ink below 1.10 and 9 lose
+  their subject entirely (every pie, doughnut and sunburst, and the radial-bar
+  radar). The raise to 1.10 on 2026-09-13 made that path unreachable. Diagonal
+  lines used to fail below it too, drawn as flat rectangles, and that was fixed
+  on 2026-08-30.
 
-  It still matters for a submission, but as something to describe rather than
-  fear. Microsoft's validator confirms this add-in is tested on PowerPoint on
-  the web, on Windows (Microsoft 365), and on Mac (2019+ and Microsoft 365) —
-  exactly where 1.10 is most often absent. Both prod manifests validate clean:
+  For a submission the floor is something to describe rather than fear: item 3
+  above says why a lower one would enlarge what Microsoft certifies. Microsoft's
+  validator confirmed, on 2026-09-01 and before the raise, that this add-in is
+  tested on PowerPoint on the web, on Windows (Microsoft 365), and on Mac (2019+
+  and Microsoft 365). Both prod manifests validated clean:
   `npx office-addin-manifest validate manifest-prod.xml` and the same for
-  `manifest-excel-prod.xml`, run 2026-09-01, "The manifest is valid".
+  `manifest-excel-prod.xml`, "The manifest is valid"; the `manifest` job in
+  `ci.yml` runs it on all four manifests.
 - Pages is static HTTPS — exactly what an add-in needs; no server code, no
   auth, no cost. If the repo must stay private instead, any static HTTPS
   host works (Azure Static Web Apps free tier, Cloudflare Pages) — only the

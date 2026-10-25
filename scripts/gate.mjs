@@ -28,10 +28,18 @@
  * PATH is what `npm run` does, minus the nesting.
  *
  * WHAT IT DELIBERATELY SKIPS, printed on success so it can never be mistaken
- * for the whole of CI: coverage thresholds, the vite build, the manifest check,
- * the skill build, deck verification and OOXML validation, and the Playwright
- * e2e. Skipping them is a choice about speed; hiding that they were skipped
- * would be a lie about scope, which is the thing this file exists to stop.
+ * for the whole of CI: coverage thresholds, the suite-shrink floor, the vite
+ * build, the manifest check, the skill build, deck currency, verification and
+ * OOXML validation, the visual gate that rasterises every sample chart in a
+ * browser, and Microsoft's manifest validator (a job of its own). Skipping them
+ * is a choice about speed; hiding that they were skipped would be a lie about
+ * scope, which is the thing this file exists to stop.
+ *
+ * THE LIST IS CHECKED AGAINST `.github/workflows/ci.yml` (`test/gate.test.ts`).
+ * It named "the Playwright e2e job", which no workflow has ever had, and left
+ * out three steps CI does run: two of them in the required `test` job, so a
+ * pusher reading the list could see a green gate and a red required check
+ * (r3-78). A list of what CI runs that is written from memory drifts from CI.
  */
 import { spawnSync } from "child_process";
 import { readFileSync } from "fs";
@@ -55,7 +63,18 @@ export const NOT_COVERED = [
   // rewrites it, so any layout change has to `npm run showcase` and commit the
   // result. A green local gate says nothing about it.
   "`npm run showcase` — CI fails if examples/showcase.pptx is stale after a layout change",
-  "the Playwright e2e job",
+  // THE SUITE-SHRINK FLOOR. It reads the coverage run's results, so it cannot
+  // run here at all, and the failure it exists for is invisible to this gate:
+  // delete or `.skip` tests and everything above stays green while CI goes red.
+  "scripts/test-count.mjs — CI fails if the suite has shrunk below its recorded floor",
+  // THE VISUAL GATE, plus the browser install it needs. It is in the required
+  // `test` job. This entry used to read "the Playwright e2e job"; the only
+  // Playwright in CI is the browser this step drives.
+  "scripts/visible-charts.mjs — CI rasterises every sample chart in a browser and fails on one with no ink",
+  // A separate job, not a required check (the validator is a call to a Microsoft
+  // service, and an outage there must not block a merge), so a red here is a
+  // thing to look at rather than a wall. Still run by CI, still not run here.
+  "office-addin-manifest validate — the separate `manifest` job (not a required check)",
 ];
 
 /** The command CI runs for a step, straight from package.json. */

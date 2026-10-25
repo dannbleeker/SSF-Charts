@@ -900,7 +900,13 @@ if (isMain(import.meta.url, process.argv[1])) {
     // here would make this file "read" it and the entry would vanish from the
     // report — a detector silenced by its own postmortem. The first draft of
     // this comment did exactly that, and the same diff caught it.
-    const src = ["./triage.mjs", "./round-pools.mjs", "./rounds-gate.mjs"]
+    //
+    // `claims.mjs` IS ONE OF THEM, and was left out on the stated ground that it
+    // matches no trace message: it matches a dozen, mostly by regex, and two are
+    // quoted whole nowhere else. `test/triage-repo.test.ts` now extracts the
+    // regex and startsWith forms as well as the equality ones and holds this
+    // list to every module that has any (r3-47).
+    const src = ["./triage.mjs", "./round-pools.mjs", "./claims.mjs", "./rounds-gate.mjs"]
       .map((f) => readFileSync(new URL(f, import.meta.url), "utf8"))
       .join("\n");
     const unread = unreadSignals(rounds[rounds.length - 1], src);

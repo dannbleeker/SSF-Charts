@@ -14,19 +14,21 @@ section and `skill/reference.md`.
    button and menu (direct entries for the most common chart types) plus an
    **Insert element** menu (Harvey ball, checkbox, process flow, KPI tile,
    table) that opens the pane on the Elements tab with that element highlighted.
-2. Requirements: PowerPoint on Windows 2207+, Mac 16.62+, or the web
-   (PowerPointApi 1.4+). Grouping needs 1.8+, chart re-editing (tags) 1.3+,
-   pies 1.10+ (shape rotation), deck-theme colors 1.10+. Marker symbols need
-   only 1.4 — they are preset geometry, not rotated shapes. Most missing
-   capabilities degrade gracefully: grouping, tags and theme colours are simply
-   skipped and the chart still inserts.
+2. Requirements: PowerPoint with the **PowerPointApi 1.10+** requirement set —
+   Microsoft 365 on Windows from **Version 2601**, **Mac 16.105** or later, or
+   PowerPoint on the web. The manifest asks for 1.10, so PowerPoint only offers
+   the add-in on a host that has it. **Volume-licensed/LTSC Office and iPad
+   cannot run it** (Microsoft lists 1.6 and later as *not available* there, so
+   no update brings them into range), and neither can Windows builds before
+   2601 or Macs before 16.105: update PowerPoint, or use PowerPoint on the web.
 
-   **The pie family is the exception, and it is a hard one.** Pie, doughnut,
-   sunburst and gauge are built from rotated shapes, and there is no way to
-   build them without rotation. Below **1.10** they insert with their title,
-   legend and labels and **no slices at all**. If you are on a build without
-   1.10 — most desktop Office before 2026, and volume-licensed/LTSC builds —
-   use a bar or column chart instead. The pane records the refusal in its trace.
+   1.10 is the floor because it is where every chart arrives whole. Grouping
+   needs 1.8 (below it a chart is about forty loose shapes), chart re-editing
+   (tags) 1.3, and shape rotation 1.10: pie, doughnut, sunburst, gauge, radial
+   bars and CAGR arrows are built from rotated shapes and cannot be drawn
+   without it. Deck-theme colors need 1.10 too. Every host the add-in installs
+   on has all of these, so nothing is skipped or swapped for a picture on
+   account of the host's version.
 3. No host? The pane also runs as a plain web page (`npm run dev` →
    `localhost:3000`) with everything except insertion, plus a demo gallery.
 
@@ -285,7 +287,7 @@ area-matched to the circle they replace, so a bubble's "area tracks Size"
 survives: without that a group drawn as stars would read as a quarter the
 magnitude of the same value drawn as squares. Available: `circle`, `square`,
 `diamond`, `triangle`, `plus` — all PowerPoint preset geometry, so they stay
-filled and editable in the deck on any 1.4+ host, and each reproduces its
+filled and editable in the deck, and each reproduces its
 preset exactly, so the preview and the deck agree on the ink. (A five-point
 star and an X are deliberately absent: their presets reshape themselves in
 ways the preview cannot reproduce, which would make the preview disagree with
@@ -1048,10 +1050,11 @@ numbers Excel stores:
 
 ## Troubleshooting
 
-- **Charts insert ungrouped** — host below PowerPointApi 1.8; everything
-  still works, shapes just aren't grouped.
-- **Pie slices missing** — host below 1.10 (no shape rotation).
-- **"Theme unavailable"** — host below 1.10.
+- **The add-in does not appear under My Add-ins, or the upload is refused** —
+  PowerPoint is below PowerPointApi 1.10: Windows before Version 2601, Mac
+  before 16.105, volume-licensed/LTSC Office, or iPad. Nothing in the pane can
+  change that; update PowerPoint or use PowerPoint on the web (see
+  *Requirements* under Getting started).
 - **Chart not recognized for editing** — it must carry the SSF Charts tag;
   charts inserted before tagging existed can't be re-opened.
 - **"Part of SSF Charts … could not be loaded"** — either the connection

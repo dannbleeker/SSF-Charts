@@ -78,6 +78,39 @@ describe("the add-in manifests", () => {
     }
   });
 
+  /**
+   * THE MANUAL AND THE PUBLISHING RUNBOOK HAVE TO STATE IT TOO (r3-53).
+   *
+   * The test above read the README alone, so when the floor went 1.4 -> 1.10 on
+   * 2026-09-13 the README was corrected and guarded and the other two kept
+   * saying "Windows 2207+, Mac 16.62+, PowerPointApi 1.4+" and "most missing
+   * capabilities degrade gracefully" for six weeks, through dozens of edits to
+   * the manual. The manual is what a user opens after the README, and it told
+   * a reader on Windows 2512 that the add-in would work; the manifest then
+   * refused it, which the user blames on the product.
+   *
+   * The pattern is the README's: a `PowerPointApi N.N+` is a CLAIM about the
+   * floor, and every claim must equal the manifest's. A finer set named without
+   * a plus ("grouping needs 1.8") is a fact about the API, not a floor.
+   */
+  it.each(["docs/MANUAL.md", "docs/PUBLISHING.md"])(
+    "keeps %s's stated PowerPointApi floor equal to the manifest's",
+    (doc) => {
+      const floor = /<Set\s+Name="PowerPointApi"\s+MinVersion="([\d.]+)"/.exec(read("manifest.xml"))?.[1];
+      const text = read(doc);
+      const claims = [...text.matchAll(/PowerPointApi\s+\*{0,2}(\d+\.\d+)\+/g)].map((m) => m[1]);
+      expect(claims.length, `${doc} no longer states a PowerPointApi floor at all`).toBeGreaterThan(0);
+      for (const claimed of claims) {
+        expect(claimed, `${doc} claims PowerPointApi ${claimed}+ but manifest.xml requires ${floor}.`).toBe(floor);
+      }
+    },
+  );
+
+  it.each(["README.md", "docs/MANUAL.md"])("does not give %s's reader the builds of the old floor", (doc) => {
+    // 2207 and 16.62 are where PowerPointApi 1.4 began; the floor is 2601 and 16.105.
+    expect(read(doc)).not.toMatch(/Windows\s+2207|Mac\s+16\.62/);
+  });
+
   it("gives all four manifests the same version, so a bump cannot land on half of them", () => {
     const versions = Object.fromEntries(
       MANIFESTS.map((name) => [name, /<Version>([^<]+)<\/Version>/.exec(read(name))?.[1]]),

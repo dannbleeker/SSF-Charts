@@ -818,30 +818,44 @@ export function poolGroupVsTag(logs) {
  * `onSlide` is the shape count the DRAW recorded for the slide before it began,
  * which is why this pools over rounds that were archived long before anyone
  * thought to ask.
+ *
+ * A CHART'S FIRST BATCH IS NOT ALWAYS A READING, and this function still binned
+ * it as one after `poolDrawCostCurve` and `stallsByOccupancy` had stopped (r2-56
+ * fixed the first and its commit wrote "reported, not changed" of this reader;
+ * r3-45 is the follow-through). The first batch is issued before the host has
+ * named the slide, so it reads the count stored under the `(visible)` sentinel
+ * and says `onSlide: 0` whatever the slide held. 818 of the 2,413 archived
+ * "freshly added, empty" charts were those placeholders, and 410 of the 818 were
+ * on a slide this run had already drawn on — the "slide already had shapes" row
+ * was short by exactly that many and the fresh row long. `priorOnSlideByChart`
+ * reads the true count back off the next batch where it can, and a chart it
+ * cannot place is counted in `unresolved` instead of in either column.
  */
 export function poolFreshVsEstablished(logs) {
-  const out = { established: 0, establishedGrouped: 0, fresh: 0, freshGrouped: 0 };
+  const out = { established: 0, establishedGrouped: 0, fresh: 0, freshGrouped: 0, unresolved: 0 };
   for (const log of logs) {
     const entries = log?.trace?.entries;
     if (!Array.isArray(entries)) continue;
-    const onSlide = new Map();
     const grouped = new Set();
     const decided = new Set();
     for (const e of entries) {
       const d = e.data ?? {};
       if (!d.chart) continue;
-      // The FIRST batch's reading: what was on the slide before this chart.
-      if (typeof d.onSlide === "number" && !onSlide.has(d.chart)) onSlide.set(d.chart, d.onSlide);
       if (/^grouped the chart/.test(String(e.message))) {
         grouped.add(d.chart);
         decided.add(d.chart);
       }
       if (/^not grouping/.test(String(e.message))) decided.add(d.chart);
     }
-    for (const [chart, n] of onSlide) {
+    for (const [chart, n] of priorOnSlideByChart(entries)) {
       // Only charts whose grouping was DECIDED. A chart the round never reached
       // has no outcome to attribute to its slide.
       if (!decided.has(chart)) continue;
+      // Neither column: a slide nobody named is not "freshly added, empty".
+      if (n === null) {
+        out.unresolved++;
+        continue;
+      }
       if (n > 0) {
         out.established++;
         if (grouped.has(chart)) out.establishedGrouped++;
@@ -852,6 +866,53 @@ export function poolFreshVsEstablished(logs) {
     }
   }
   return out;
+}
+
+/**
+ * How many shapes THIS RUN had already drawn on the slide each chart landed on,
+ * read off the chart's own `batch issued` lines — a number, or null when the
+ * trace cannot say.
+ *
+ * Every reader of a chart's "first batch" has to settle the same trap. A draw's
+ * first batch is issued before the slide is named, so it carries
+ * `onSlideKey: "(visible)"` and a placeholder `onSlide` of 0, and
+ * `poolDrawCostCurve` and `stallsByOccupancy` each leave such a batch out of
+ * their per-batch bins; this is the per-chart form, shared by
+ * `poolFreshVsEstablished` and the `fresh-slides-group` claim so the two cannot
+ * disagree. A SENTINEL KEY IS NOT A SMALL NUMBER, so the value is never read
+ * when the key is the sentinel, whatever it says (a single-batch draw banks
+ * under the sentinel for good, so the shared count can be above 0 and still name
+ * no slide). A row with no `onSlideKey` at all is read as written: the absence
+ * says nothing about which kind it is, and no archived round lacks one.
+ *
+ * THE TRUE COUNT IS ON THE NEXT BATCH. The draw moves its first batch's shapes
+ * onto the real key the moment the host names it, so the second batch reads
+ * `prior + first.upTo`. Subtracting recovers `prior`: across the archive 407 of
+ * the 818 sentinel-keyed charts were on a slide with nothing drawn on it and 410
+ * on one this run had already drawn on.
+ * A draw that fits one batch, a second batch that is still on the sentinel, or
+ * numbers that do not subtract to a count have no such reading: null.
+ */
+export function priorOnSlideByChart(entries) {
+  const batches = new Map();
+  for (const e of entries ?? []) {
+    const d = e?.data ?? {};
+    if (!d.chart || typeof d.onSlide !== "number") continue;
+    const seen = batches.get(d.chart);
+    if (!seen) batches.set(d.chart, [d]);
+    else if (seen.length < 2) seen.push(d);
+  }
+  const prior = new Map();
+  for (const [chart, [first, second]] of batches) {
+    if (first.onSlideKey !== "(visible)") {
+      prior.set(chart, first.onSlide);
+      continue;
+    }
+    const named = second && typeof second.onSlideKey === "string" && second.onSlideKey !== "(visible)";
+    const recovered = named && typeof first.upTo === "number" ? second.onSlide - first.upTo : NaN;
+    prior.set(chart, recovered >= 0 ? recovered : null);
+  }
+  return prior;
 }
 
 /**
