@@ -3174,16 +3174,28 @@ none is a task yet: each is an owner call or a measurement.
    on the live host: it compares there (`checked.sizes: 8` on 29 of 29
    geometry-writing in-place updates, rounds 498, 500 and 501), so the group-box
    path above is a fallback that stays closed wherever the members answer, as
-   they do there. Not measured on the live host, and these are the open questions: what a REAL group resize does to the members' reported
-   sizes; whether the group's own width and height arrive in the resolve sync; and
-   whether the scene-derived group extent is the live group's for scatter and
-   bubble charts (the four matches on record, clustered 480x300, 780x420 and 168x80
-   and waffle 320x220, are rect-bearing kinds). No round has resized a chart; `an
-   edit after the person resizes a chart` does, and its detail and the `host`
-   object on the update's trace lines (raw readings of the first member and the
-   group, how many shapes answered each field, the group's drawn, live and ratio —
-   recorded whenever the group's size was read, whether or not the box is acted
-   on) say what the host returns for one.
+   they do there.
+   **MEASURED ON THE LIVE HOST, rounds 502 and 503 (`504ed8c`), 2026-10-25.** On
+   all 12 in-place updates of round 502 the `host` object reads: every member
+   answers its name, width and height (24 of 24 and 16 of 16); the group's own
+   width and height arrive in the resolve sync (480x299 for a 480x300 clustered
+   chart, 168x79 for a 168x80 one); member ids ascend in draw order (12 of 12); and
+   the group-box detector measures a ratio of exactly [1,1] on every unresized
+   chart, so it cannot false-positive on those kinds. And a REAL resize, which no
+   round had ever done, passed in round 503: `an edit after the person resizes a
+   chart` drew 300x179pt, resized the group through Office.js to 600x358pt (the
+   members followed the group), edited, and the redraw came back at 600x359pt in
+   one scale with its 8 bars matching the layout at that size. Round 502's run of
+   the same scenario threw `PowerPoint did not respond while drawing shapes 1-10 of
+   24 (45s)` on its own chart draw, the known host stall (office-js#5022; 1 stalled
+   of 37 draws in that stretch), and says nothing about the question. Still open:
+   a corner other than the top-left, a one-axis stretch and a resize of a scatter,
+   bubble or other rect-free chart have not been run live; the scene-derived group
+   extent is confirmed live only for rect-bearing kinds (clustered, waffle) and the
+   scatter and bubble ratios will appear on the trace the first time such a chart
+   is updated; and whether a reorder inside the group can be seen from the listing
+   order (ids ascend 12 of 12 on charts nobody reordered; no round has reordered
+   one).
 3. **A copied ungrouped chart's tie-break (r2-19).** When two anchors name the same
    parts, the older (lower numeric shape id) owns them and an unorderable id means
    nobody does. Residuals: a copy edited this way leaves its own old parts under
@@ -3278,9 +3290,17 @@ none is a task yet: each is an owner call or a measurement.
    known is what a RESIZED group reports of its members, whether the group's own
    width and height arrive in the resolve sync, and (for the group-box fallback in
    2) whether the scene-derived group extent is the live one for scatter and bubble
-   charts. `group-members-report-geometry` asks the second of an untouched group on
-   the scratch slide; the scenario in 2 asks the first two of a resized chart on a
-   real slide, and the trace's drawn, live and ratio measure the third.
+   charts. **All three are now answered on the live host (rounds 502-503; see 2):**
+   a resized group's members follow it, the group's own size arrives, and the
+   scene-derived extent equals the live group for the kinds measured.
+   `group-members-report-geometry` answered `threw`, detail `members via
+   same-batch`, in both rounds, which is the answer the other group probes give
+   for a group read through the scratch slide (`group-of-existing-shape-readable`,
+   `group-children-via-getcount`); it contradicts the update path's own readings
+   on a real slide (24 of 24 members answered), so it is an answer about the
+   probe's ROUTE and not about the host's members, and its partner, the scenario,
+   is the evidence. The question stays `pending` and resample-marked; do not read
+   its `threw` as "members do not report geometry".
 10. **Judgement calls to review.** Insert batch puts every chart on its own new
     slide, the first included. A blank row that overwrites a series row becomes a
     stack separator while one a paste appends is seeded as a series, and clearing a
