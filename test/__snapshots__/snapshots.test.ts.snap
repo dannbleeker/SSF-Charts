@@ -459,19 +459,18 @@ exports[`SVG snapshots > sample doughnut 1`] = `
 <title>Revenue split</title>
 <desc>doughnut chart. 1 data series: Revenue. 4 categories: EMEA, Americas, APAC, Other.</desc>
 <text x="0" y="12" font-size="12" fill="#0b0b0b" text-anchor="start" font-weight="600" data-name="title">Revenue split</text>
-<path d="M 240 161 L 240 44 A 117 117 0 0 1 352.62 192.73 Z" fill="#2a78d6" stroke="#ffffff" stroke-width="1" data-name="slice-0"/>
+<path d="M 240 44 A 117 117 0 0 1 352.62 192.73 L 301.94 178.45 A 64.35 64.35 0 0 0 240 96.65 Z" fill="#2a78d6" stroke="#ffffff" stroke-width="1" data-name="slice-0"/>
 <line x1="334.07" y1="89.77" x2="338.46" y2="86.45" stroke="#52514e" stroke-width="0.75" data-name="leader-0"/>
 <text x="339.65" y="89.14" font-size="10" fill="#0b0b0b" text-anchor="start" data-name="label-0">EMEA 29%</text>
-<path d="M 240 161 L 352.62 192.73 A 117 117 0 0 1 134.67 211.93 Z" fill="#1baf7a" stroke="#ffffff" stroke-width="1" data-name="slice-1"/>
+<path d="M 352.62 192.73 A 117 117 0 0 1 134.67 211.93 L 182.07 189.01 A 64.35 64.35 0 0 0 301.94 178.45 Z" fill="#1baf7a" stroke="#ffffff" stroke-width="1" data-name="slice-1"/>
 <line x1="250.36" y1="278.54" x2="250.84" y2="284.02" stroke="#52514e" stroke-width="0.75" data-name="leader-1"/>
 <text x="250.97" y="289.12" font-size="10" fill="#0b0b0b" text-anchor="start" data-name="label-1">Americas 38%</text>
-<path d="M 240 161 L 134.67 211.93 A 117 117 0 0 1 185.63 57.4 Z" fill="#eda100" stroke="#ffffff" stroke-width="1" data-name="slice-2"/>
+<path d="M 134.67 211.93 A 117 117 0 0 1 185.63 57.4 L 210.1 104.02 A 64.35 64.35 0 0 0 182.07 189.01 Z" fill="#eda100" stroke="#ffffff" stroke-width="1" data-name="slice-2"/>
 <line x1="127.94" y1="124.04" x2="122.71" y2="122.32" stroke="#52514e" stroke-width="0.75" data-name="leader-2"/>
 <text x="121.29" y="125.45" font-size="10" fill="#0b0b0b" text-anchor="end" data-name="label-2">APAC 24%</text>
-<path d="M 240 161 L 185.63 57.4 A 117 117 0 0 1 240 44 Z" fill="#008300" stroke="#ffffff" stroke-width="1" data-name="slice-3"/>
+<path d="M 185.63 57.4 A 117 117 0 0 1 240 44 L 240 96.65 A 64.35 64.35 0 0 0 210.1 104.02 Z" fill="#008300" stroke="#ffffff" stroke-width="1" data-name="slice-3"/>
 <line x1="211.76" y1="46.43" x2="210.44" y2="41.09" stroke="#52514e" stroke-width="0.75" data-name="leader-3"/>
 <text x="210.09" y="43.23" font-size="10" fill="#0b0b0b" text-anchor="end" data-name="label-3">Other 8%</text>
-<ellipse cx="240" cy="161" rx="64.35" ry="64.35" fill="#ffffff" data-name="hole"/>
 <text x="240" y="165.68" font-size="13" fill="#0b0b0b" text-anchor="middle" font-weight="600" data-name="hole-label">286</text>
 </svg>"
 `;

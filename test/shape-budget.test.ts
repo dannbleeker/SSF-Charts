@@ -67,7 +67,13 @@ const BUDGET: Record<string, number> = {
   // repay attention; this is what attending to it was worth.
   violin: 97,
   line: 226,
-  combo: 164,
+  // 165, from 164, on 2026-10-25: "Revenue mix (stacked area) + margin %" now
+  // names its margin line. An upright combo with an area base never drew the
+  // line's name at all (a bug-hunt finding), so this is the one text shape
+  // that was missing. Five other showcase combos and the Pareto rose by the
+  // same one shape for the same reason; none is near the 400-500 that crashed
+  // the host.
+  combo: 165,
   tilemap: 146,
   area: 123,
   waffle: 107,
@@ -78,11 +84,17 @@ const BUDGET: Record<string, number> = {
   gantt: 68,
   boxplot: 62,
   pie: 56,
-  doughnut: 55,
+  // 54, from 55, on 2026-10-25: a doughnut's slices are real ring segments now
+  // instead of pie wedges with an opaque disc laid over the middle, so the
+  // disc ("hole") is gone. The only budget in this table that went DOWN, and it
+  // had to: a budget above the real figure fails.
+  doughnut: 54,
   butterfly: 53,
   stacked: 47,
   bubble: 46,
-  clustered: 40,
+  // 41, from 40, on 2026-10-25: "Pareto chart (defect causes)" now names its
+  // cumulative-% line, the one shape its combo rewrite never drew.
+  clustered: 41,
   candlestick: 35,
   stacked100: 33,
   mekko: 32,
@@ -92,8 +104,16 @@ const BUDGET: Record<string, number> = {
   funnel: 20,
 };
 
-/** The whole deck, so a rise spread thinly across many charts still shows. */
-const TOTAL_BUDGET = 6375;
+/**
+ * The whole deck, so a rise spread thinly across many charts still shows.
+ *
+ * 6385, from 6375, on 2026-10-25, and the +10 was attributed chart by chart
+ * against the engine at 949e27c rather than absorbed: six charts +1 each (the
+ * series name that was never drawn), the owner-lane Gantt +5 (unowned tasks
+ * now sit under a header of their own instead of inside the last owner's
+ * lane), and the doughnut -1 (no covering disc).
+ */
+const TOTAL_BUDGET = 6385;
 
 function measure(): { byKind: Map<string, number>; total: number; worst: Map<string, string> } {
   const items = JSON.parse(readFileSync("examples/showcase.json", "utf8")) as ChartConfig[];
