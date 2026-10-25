@@ -9,6 +9,96 @@ fact would produce a document nobody could trust.
 
 ## Unreleased
 
+**123 defects from two read-only bug hunts, fixed.** Every one was reproduced
+before it was touched and every fix carries a test that fails without it. This
+is what a person using the add-in will notice; `docs/BACKLOG.md` ("The two bug
+hunts of 2026-10-19") lists what each fix left undone.
+
+### Updating a chart no longer damages other charts
+
+- A failed update that falls back to rebuilding the slide no longer replaces a
+  slide that still holds a **second chart**, and recovering after PowerPoint
+  refuses to read a shape no longer deletes a chart on **another slide** that
+  happens to carry the same shape number.
+- Editing a chart you have **resized** no longer leaves some shapes stretched and
+  others at the original size. When the shapes on the slide no longer match what
+  was drawn, the edit redraws the chart instead of writing over it. (It redraws
+  at the size the chart was drawn; keeping your size through an edit is still
+  open.)
+- Edits after **Bring to Front inside a chart group**, or after **copying an
+  ungrouped chart** on the same slide, no longer write onto the wrong shapes.
+- The origin, alt text, transparency and outline of a chart are kept true after
+  a fast in-place edit.
+- Update, Same scale, Explode and the auto-update now **take turns**. Loading
+  another chart while an update is running no longer sends the update's data to
+  it, and the "Edit selected chart" banner tells two charts with the same shape
+  number on different slides apart.
+- **Same scale** sees a chart you have grouped with a shape of your own.
+- A stopped Update now says the chart was removed and that Ctrl+Z restores it,
+  and the pane no longer keeps pointing at the deleted shape.
+- **Insert batch** puts each chart on its own slide and skips (and names) a
+  config it cannot read, instead of stacking every chart on the same spot or
+  stopping at the first bad one. **Table from datasheet** prints what a formula
+  computes, not the formula.
+- The "PowerPoint has not answered for 60s" warning no longer appears on a
+  pane that is being answered.
+
+### Data comes in as the sheet shows it
+
+- Excel: a percent cell arrives as the number it shows (3.5% is 3.5), hidden and
+  filtered rows are skipped, blank rows and columns around a selection are
+  trimmed, `[h]:mm` durations are no longer read as dates, a workbook on the
+  1904 date system gives the right dates, and a date-formatted header keeps the
+  text Excel shows.
+- Datasheet: accounting negatives like `(1,234.50)` and currency cells paste as
+  numbers, an Alt+Enter line break is visible and survives an edit, pasting a
+  single Excel cell lands at the caret, Ctrl+Z in a text box undoes the text and
+  not the datasheet, unticking *Datamark axis* gives back the axis the chart had,
+  and `MIN`/`MAX` over a text cell or a circular reference now agree wherever the
+  cell sits.
+- A Gantt's *% Complete* is read per row, so a task typed as 1% is drawn 1%.
+- `04/31/2026` is refused as a date instead of becoming 1 May, and a line chart
+  whose date labels do not increase in the order you typed them is drawn in that
+  order instead of jumping back.
+
+### Charts draw what the data says
+
+- The **mean line** and the difference and CAGR arrows no longer count a blank as
+  zero (line, area, sparkline and slope included), a decoration's `series` index
+  names the series it says, and a variance label no longer prints `++20`.
+- **Every series is named** on line, area and combo charts, including a series
+  with no value in the last category and the line of a combo with a secondary
+  axis, a Pareto, or an area base. A combo's line name is placed where nothing
+  else is.
+- **Small and negative data** is drawn by what it is: butterfly, radar, funnel,
+  violin, cascade and the pie's variable radius no longer treat 1 as a minimum
+  in the data's own units, a radar reaches below zero, a negative bubble is
+  drawn as an outline, and a horizontal waterfall's outside label is no longer
+  cut to four characters.
+- A **doughnut** is a real ring: the hole is transparent, so it no longer shows a
+  white disc on a slide that is not white.
+- A **tile map** picks the grid that matches most of your codes (GB, NO and CH
+  are no longer dropped from a mostly-EU set), a **boxplot** decides raw samples
+  against summary rows per group, a **calendar heatmap** takes its scale from the
+  row it draws, and the tile map's glyph key wraps instead of running off the
+  chart.
+- A Gantt's tasks with no owner sit under a header of their own, a smoothed line
+  stays inside its data, a rank of 0 stays on the chart, and folding series into
+  *Other* no longer prints a total of 0 for a category with no data.
+- Colours: `background: "transparent"` is read as the slide behind it, a hex typo
+  is no longer turned into a different colour, and an `hsl()` hue in a unit the
+  engine cannot convert is refused instead of drawn as the wrong hue.
+- A scatter's trend caption follows the chart's locale (`R² = 0,31`, not `0.31`
+  beside comma axes).
+- Long agenda titles fit the slide, and agenda slides in one set share a font
+  size.
+
+### The preview and the generated deck match the add-in
+
+- The SVG preview reads `RGB(…)` and `hsl(210deg …)` colours, draws a line break
+  as two lines, and the generated deck keeps a dark slide background, alt text
+  and a full-ring wedge without a seam.
+
 ## 0.6.1 — 2026-09-13
 
 **This release changes who can install SSF Charts, and that is the whole

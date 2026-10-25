@@ -3116,6 +3116,95 @@ What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
 
+### The two bug hunts of 2026-10-19: 123 defects found and fixed, and what each fix left undone — 2026-10-25
+
+Two read-only hunts over `949e27c` found 63 and then 60 distinct defects, the
+second over eleven angles the first had not read. A verifier reproduced each one
+(or confirmed it by reading, where only the live host could run it) and a second
+checked it against this file, the tests and the comments; all 123 survived. They
+were fixed in the commits `19b9417`..`f152696` and the follow-ups after them,
+every behaviour change with a regression test that fails without it. That claim
+was then checked independently rather than taken from the fixers: with the
+pre-fix renderer, pane and Excel-bridge sources put back, 205 of those lanes' 288
+new tests went red (178 on a real assertion, 28 because they test a helper that
+did not exist yet) and the 83 controls stayed green.
+
+**One of them was mine.** `03ba495` and `ea8c0ab` (the Testing panel moved behind
+`?harness=1` and loaded lazily) cut the only feed of the status strip's silence
+watchdog, so every production pane called a host that was answering "silent" at
+60s. Six live rounds went green on it because the driver sideloads the harness
+manifest. Fixed in `19b9417` by feeding the strip from `trace()` itself.
+
+**What the fixes left undone.** None of these is on §1's counted list, because
+none is a task yet: each is an owner call or a measurement.
+
+1. **`contrastInk` was left as it is (r1-37). Owner's call.** Its 0.35 cut sits on
+   APCA's equal-contrast point, and against `#0b0b0b` ink the WCAG 2.x crossover
+   is L = 0.187, so fills between the two get white ink at the lower WCAG ratio:
+   `#1baf7a` 2.82 against 6.99 for black, `#e87ba4` 2.69 against 7.31, `#eb6834`
+   3.20 against 6.15, `#e34948` 3.95 against 4.98, `#898781` 3.59 against 5.48.
+   APCA rates white better on every one of them. Options: keep it; move the cut to
+   0.187 (re-inks five of the eight default hues and puts dark ink on the blue,
+   where APCA is poor); or flip to dark only where white falls under 3:1 WCAG
+   (L <= 0.30, which flips `#1baf7a` and `#e87ba4` only). The hybrid is a
+   one-constant change plus a snapshot regeneration, and is the recommendation.
+2. **A resize survives only half (r2-2).** An in-place edit now reads each rect's
+   live width and height back and, when the edit would write geometry and a rect is
+   more than 1pt off the scene, redraws instead of mixing two scales. A recolour or
+   retitle writes no geometry and keeps the stretched chart. What is not built is
+   the preferred form: the redraw keeping the person's size, which needs the pane's
+   config to adopt the live group size. Today that redraw returns to the size the
+   chart was drawn at (Ctrl+Z restores).
+3. **A copied ungrouped chart's tie-break (r2-19).** When two anchors name the same
+   parts, the older (lower numeric shape id) owns them and an unorderable id means
+   nobody does. Residuals: a copy edited this way leaves its own old parts under
+   the new drawing, and a loose chart copied to another slide whose ids were
+   renumbered can still name unrelated shapes. Alternatives: bind the anchor id
+   into the parts tag at draw time, or a geometric check of parts against the
+   stored scene.
+4. **Label line breaks (r1-22).** The preview now draws two lines where
+   PowerPoint does, but the layout still sizes every label box as one line, so a
+   two-line label overflows its box in the deck and the add-in, and the preview
+   clips a top-anchored second line. The fix belongs in `src/core` (grow the box by
+   line count). The live path's handling of CR, NEL and U+2028 was not verified.
+5. **Sub-1 data still clamped in three places (r1-9).** `butterfly`, `radar` and
+   `cascade` no longer floor their range at 1. The combo sites in `column.ts`
+   (`Math.max(stackMax, lineMax, 1)` and the waterfall-overflow branches), the
+   multiples radar's global scale in `chart.ts`, and the tile map's glyph maximum
+   (`maxOf(glyphVals, 1)`) still do.
+6. **Other spellings of a transparent canvas (r1-4).** The `transparent` keyword
+   reads as the slide behind it everywhere. `none`, `off-white`, `rgba(0,0,0,0)` and
+   `#0000` are resolved for the scale functions but the direct
+   `lerpColor(style.background, …)` sites still mix toward grey or black (boxplot,
+   sunburst and violin paints differ in the sample sweep).
+7. **Sibling knock-outs (r2-35).** The doughnut's disc is gone; hollow forecast
+   markers (`line.ts`) and the axis-break band (`frame.ts`) still fill with
+   `style.background`.
+8. **Two product overflows the repaired guards now see.** The frame and overlap
+   sweeps' options were given the data they need to take effect
+   (`test/helpers/sweep-options.ts`) and that exposed, in `KNOWN_OPEN`: the
+   butterfly's split-mode
+   legend wrapping up to 55pt below a tiny chart, and a boxplot with raw
+   observations and `showMean` adding 53 overlaps that `BUDGET` has no row for
+   (the boxplot is declared UNPREPARED in the overlap budget until it does).
+9. **Not measured on the live host.** The in-place applier now writes transparency
+   and `lineFormat.visible` unconditionally; whether `setSolidColor` resets an old
+   transparency and whether setting a line colour reveals a hidden outline are
+   still unanswered by any probe, so the fix is defensive and idempotent. The size
+   guard in 2 relies on the host reading a member's width and height back: the
+   `sizes` count in the next round's trace says whether it compared anything, and
+   the share of updates taken in place should not fall.
+10. **Judgement calls to review.** Insert batch puts every chart on its own new
+    slide, the first included. A blank row that overwrites a series row becomes a
+    stack separator while one a paste appends is seeded as a series, and clearing a
+    series row drops its colour and combo type (as the Row button does). A single
+    plain cell pasted goes to the browser's default. A negative bubble is drawn as
+    an outline. A Gantt's unowned tasks take the header `labels.other`. A
+    half-typed boxplot summary (four of five rows) is read as observations. An
+    `hsl()` hue in `turn`, `rad` or `grad` is unreadable, not converted. Mekko
+    segment labels still ignore `labelContent`. `round.mjs --check` and a
+    `no-run-button` refusal now run no battery and hold the previous session place.
+
 ### Grouping refusals are NOT rare — the "usually 0" baseline is a median, and a quarter of rounds refuse. CLOSED 2026-09-29
 
 The 2026-09-27 entry here asked one question — does the next cycle's 16:9 pair
@@ -5700,6 +5789,21 @@ answering.
 ---
 
 **DIAGNOSED AND DELIBERATELY NOT PATCHED: the dual-axis gutter.**
+
+> **PARTLY OVERTAKEN, 2026-10-25 (`510a9fc`).** The decision below stands for
+> what it was about: the secondary strip is still not merged into the series-name
+> pass, and no tick number was traded for a name. But an upright combo that has a
+> secondary axis, a Pareto or an area base used to draw its LINE's name nowhere at
+> all (a bug-hunt finding), and drawing it again put 90 new overlapping pairs into
+> the sweep. Those names are now placed by `uprightNameSlot` /
+> `nearestClearCentre` (`collide.ts`, `column.ts`) into the nearest stretch that
+> is clear of the ticks, the title and the names already drawn, and the sweep is
+> back at its budget (785). The numbers in the next paragraph are the 2026-08-29
+> measurement, kept as history, not as today's figures. One judgement is recorded
+> with the fix: at four ten-series dual-axis frames (120x90 and 300x60 at 10pt,
+> 300x60 and 160x120 at 18pt) some line names are left out where the strip is
+> full — three become one or two — which is milder than the merged gutter's verdict
+> (it drops every name) and is a name chosen to be left out.
 
 **MEASURED PROPERLY 2026-08-29, and the answer is: leave it alone.** The "30
 pairs" below is not what this costs, and the trade for fixing it is far worse
