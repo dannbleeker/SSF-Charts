@@ -620,7 +620,7 @@ describe("the rotation toggle keeps the decorations that mean something", () => 
         (n) => n.kind === "line" && /^line-/.test(n.name ?? "") && (n as { dash?: number[] }).dash,
       );
       const hollow = scene.nodes.filter(
-        (n) => /^marker-/.test(n.name ?? "") && (n as { fill?: string }).fill === "#ffffff",
+        (n) => /^marker-/.test(n.name ?? "") && (n as { fill?: string }).fill === "none",
       );
       const divider = scene.nodes.filter((n) => n.name === "forecast-divider");
       expect(dashed.length, `horizontal=${horizontal}: forecast segments are not dashed`).toBe(2);

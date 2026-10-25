@@ -21,8 +21,11 @@ describe("forecast styling on lines", () => {
     expect(segs.find((l) => l.name === "line-0-3")!.dash).toEqual([4, 3]);
     const solid = s.nodes.find((n) => n.name === "marker-0-1") as RectNode;
     const hollow = s.nodes.find((n) => n.name === "marker-0-2") as RectNode;
-    expect(solid.fill).not.toBe("#ffffff");
-    expect(hollow.fill).toBe("#ffffff");
+    expect(solid.fill).not.toBe("none");
+    // Hollow is no fill, not a fill in the canvas colour (r2-35): the knock-out was a
+    // white patch on any slide that is not the chart's own background.
+    expect(hollow.fill).toBe("none");
+    expect(hollow.stroke).toBe(solid.fill);
     expect(s.nodes.some((n) => n.name === "forecast-divider")).toBe(true);
   });
 

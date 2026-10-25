@@ -1,4 +1,5 @@
 import type { ChartStyle, Decorations } from "./types";
+import { layoutBackground } from "./color";
 
 /**
  * Default series palette: the validated brand-neutral categorical set from the
@@ -41,6 +42,23 @@ export const DEFAULT_STYLE: ChartStyle = {
   neutral: "#898781",
   background: "#ffffff",
 };
+
+/**
+ * The style a layout is handed: the defaults under the chart's own `style`, with
+ * `background` resolved to what a layout can lay itself out against.
+ *
+ * `background` goes through `layoutBackground`, so every spelling of "no canvas"
+ * (`transparent`, `none`, a zero-alpha `rgba()`/`#0000`/`hsla()`, a typo, an empty
+ * string) reads the same way at the dozen direct `lerpColor(style.background, …)`
+ * sites in the layouts — see there for what it answers and why. The CANVAS paint
+ * is not read from this style, so the chart's own `style.background` still decides
+ * what the SVG and the slide are filled with.
+ */
+export function resolveStyle(over?: Partial<ChartStyle>): ChartStyle {
+  const style: ChartStyle = { ...DEFAULT_STYLE, ...over };
+  style.background = layoutBackground(style.background);
+  return style;
+}
 
 export const DEFAULT_DECOR: Decorations = {
   segmentLabels: true,

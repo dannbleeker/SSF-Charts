@@ -1,7 +1,7 @@
 import type { ChartConfig, ChartData, ChartKind, ChartStyle, Decorations } from "./types";
 import type { Scene } from "./scene";
 import { maxOf, minOf } from "./agg";
-import { DEFAULT_DECOR, DEFAULT_STYLE, seriesColor } from "./style";
+import { DEFAULT_DECOR, DEFAULT_STYLE, resolveStyle, seriesColor } from "./style";
 import { layoutColumns, layoutCombo } from "./layout/column";
 import { layoutWaterfall, waterfallExtent } from "./layout/waterfall";
 import { layoutMekko } from "./layout/mekko";
@@ -889,7 +889,7 @@ function buildMultiples(rawCfg: ChartConfig): Scene | null {
   const dataSeries = cfg.data.series.filter((s) => !CARRIED_ROW.test(s.name.trim()));
   if (dataSeries.length < 2) return null;
 
-  const style: ChartStyle = { ...DEFAULT_STYLE, ...cfg.style };
+  const style: ChartStyle = resolveStyle(cfg.style);
   const fs = style.fontSize;
   const n = dataSeries.length;
   // WHOLE columns. A fraction survived `Math.max`/`Math.min` untouched and went
@@ -980,7 +980,7 @@ function buildMultiples(rawCfg: ChartConfig): Scene | null {
     return { min, max };
   };
 
-  // Shared scale across panels; radar (no valueExtent) pins 0..global max.
+  // Shared scale across panels; radar (no valueExtent) pins the global data range.
   //
   // NOT FOR A TABLE OF SPARKLINES, where each row is one KPI and the rows are
   // routinely unlike units — the shipped "KPI sparklines" slide sets signups in
@@ -991,15 +991,18 @@ function buildMultiples(rawCfg: ChartConfig): Scene | null {
   let scale = cfg.scale;
   if (!cfg.decorations?.sparkline && (scale?.min == null || scale?.max == null)) {
     const exts = dataSeries.map((s, si) => panelExtent(s, si));
+    // The fallback range (a radar has no `valueExtent`) is the data's own, not 0..max
+    // floored at 1: that clamped any multiples radar of fractions onto a 0..1 web
+    // (rings 0.5 / 1.0 for data of 0.2-0.4, against 20 / 40 for the same numbers
+    // x100; the single radar lost the floor in 47aa582). `|| 1` is the all-zero guard
+    // the floor was taken for — a pinned 0..0 would divide by zero in every panel's
+    // `toR`. The min is the data minimum (0 for non-negative data), so a negative
+    // value is not clamped onto the centre of its panel as the single radar's was
+    // before r1-11.
+    const allVals = dataSeries.flatMap((s) => s.values.filter((v): v is number => v != null));
     const global = exts.every((e) => e != null)
       ? { min: Math.min(...exts.map((e) => e!.min)), max: Math.max(...exts.map((e) => e!.max)) }
-      : {
-          min: 0,
-          max: maxOf(
-            dataSeries.flatMap((s) => s.values.filter((v): v is number => v != null)),
-            1,
-          ),
-        };
+      : { min: minOf(allVals, 0), max: maxOf(allVals, 0) || 1 };
     scale = { min: scale?.min ?? global.min, max: scale?.max ?? global.max };
   }
 
@@ -1103,7 +1106,10 @@ export function buildChart(rawCfg: ChartConfig): Scene {
   const a11y = { title: cfg.title, desc: describeChart(cfg) };
   const errors = extracted.errors;
   const targets = extracted.targets;
-  const style: ChartStyle = { ...DEFAULT_STYLE, ...cfg.style };
+  // `resolveStyle` reads every spelling of "no canvas" as one answer for the maths
+  // in the layouts below; the SVG and the slide still take their canvas from
+  // `cfg.style.background` itself.
+  const style: ChartStyle = resolveStyle(cfg.style);
   const decor: Decorations = { ...DEFAULT_DECOR, ...cfg.decorations };
 
   // Widen the auto scale so error bars and target ticks stay inside the plot.

@@ -1100,7 +1100,15 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
           cfg.data.categories.map((_, c) => cols.reduce((a, s) => a + Math.min(0, s.values[c] ?? 0), 0)),
           0,
         );
-  const sharedFloor = lineMin < colMin ? niceTicks(lineMin, Math.max(stackMax, lineMax, 1))[0] : undefined;
+  //
+  // NO FLOOR OF 1 on any of the shared/secondary ranges below. `stackMax` and
+  // `lineMax` are seeded at 0 already and `niceTicks(0, 0)` answers [0, 1], so an
+  // all-zero combo has its guard; a `1` on top forced every combo whose data is
+  // BELOW 1 onto a 0..1 axis: a 0.2 segment under a line topping out at 0.6 drew 55pt
+  // tall where the same numbers x100 drew 91pt, and a secondary strip read 0.0 / 0.5 /
+  // 1.0 against 0 / 40 / 60. The unit set the picture. butterfly, radar and cascade
+  // lost the same floor in 47aa582.
+  const sharedFloor = lineMin < colMin ? niceTicks(lineMin, Math.max(stackMax, lineMax))[0] : undefined;
   // Waterfall columns reach their running cumulative total, not the per-category
   // positive sum, so `stackMax` understates them; track the cumulative peak so a
   // shared-axis line taller than it isn't clipped off the top of the plot.
@@ -1141,16 +1149,19 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
     columnsKind === "waterfall" && !secondary && !independent && cfg.scale?.min == null && lineMin < wf.min;
   // Overflow keeps its exact prior form (snapshot-neutral); underflow only adds a
   // min. When both fire, one niceTicks over the combined range keeps ticks aligned.
+  // None of the three takes a floor of 1 any more (see `sharedFloor`): each only
+  // fires with a line that actually reaches past the waterfall, so the range is
+  // never empty, and a line below 1 is stretched to its own top, not to 1.
   const wfScale =
     waterfallLineOverflow && waterfallLineUnderflow
       ? (() => {
-          const t = niceTicks(Math.min(lineMin, wf.min), Math.max(lineMax, wf.max, 1));
+          const t = niceTicks(Math.min(lineMin, wf.min), Math.max(lineMax, wf.max));
           return { ...cfg.scale, min: t[0], max: t[t.length - 1] };
         })()
       : waterfallLineOverflow
-        ? { ...cfg.scale, max: niceTicks(0, Math.max(lineMax, wf.max, 1)).pop() }
+        ? { ...cfg.scale, max: niceTicks(0, Math.max(lineMax, wf.max)).pop() }
         : waterfallLineUnderflow
-          ? { ...cfg.scale, min: niceTicks(Math.min(lineMin, wf.min), Math.max(lineMax, wf.max, 1))[0] }
+          ? { ...cfg.scale, min: niceTicks(Math.min(lineMin, wf.min), Math.max(lineMax, wf.max))[0] }
           : cfg.scale;
   const colCfg: ChartConfig = {
     ...cfg,
@@ -1168,7 +1179,7 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
               : {
                   ...cfg.scale,
                   min: cfg.scale?.min ?? sharedFloor,
-                  max: niceTicks(0, Math.max(stackMax, lineMax, 1)).pop(),
+                  max: niceTicks(0, Math.max(stackMax, lineMax)).pop(),
                 },
   };
   /**
@@ -1242,7 +1253,11 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
     // secondary axis at 0 mapped a negative point below the plot floor. For an
     // all-positive line min(0, lineMin) is 0, so the domain and mapping are
     // unchanged (byte-identical); only a negative overlay is rescued.
-    const ticks2 = niceTicks(Math.min(0, lineMin), Math.max(1, lineMax), 5);
+    //
+    // The top is the line's own maximum (seeded 0, so `niceTicks(0, 0)` = [0, 1]
+    // still guards an all-zero line). It was `Math.max(1, lineMax)`, which put a
+    // line of fractions on a 0.0 / 0.5 / 1.0 strip — see the shared scale above.
+    const ticks2 = niceTicks(Math.min(0, lineMin), lineMax, 5);
     const min2 = ticks2[0];
     const max2 = ticks2[ticks2.length - 1];
     const plot = anchors.plot;

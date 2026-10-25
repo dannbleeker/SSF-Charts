@@ -457,6 +457,20 @@ export function breakMarkerNodes(frame: Frame, scale: ValueScale, style: ChartSt
       y: yHigh,
       w: frame.w + Math.min(2, left) + Math.min(2, right),
       h: yLow - yHigh,
+      // LEFT AS A KNOCK-OUT ON PURPOSE (the r2-35 sweep of `fill: style.background`).
+      // The doughnut's disc and the forecast markers had a real hollow to draw
+      // instead, `fill: "none"`; this one has not. The band is an OCCLUDER: it exists
+      // to hide the part of every column, segment, connector and label that crosses
+      // the cut, and none of those nodes knows about the cut — an empty fill would
+      // draw the bars straight through it. A real gap means splitting every rect that
+      // spans [yHigh, yLow] in `layoutColumns` and `layoutWaterfall` (and dropping the
+      // labels and connectors inside it), or a clip node the scene does not have
+      // (rect, polygon, line, text, ellipse, wedge, chevron, symbol, arrowhead).
+      // Either is an owner's call, not a one-line swap, so what it costs is recorded
+      // instead: on a slide that is not the chart's own canvas colour this shows as
+      // a patch, and on a TRANSPARENT chart `style.background` is the keyword, which
+      // every sink draws as no fill — so the cut hides nothing there and the two
+      // zigzag lines are all that marks it.
       fill: style.background,
       name: "axis-break",
     },

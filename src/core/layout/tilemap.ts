@@ -201,12 +201,16 @@ export function layoutTilemap(cfg: ChartConfig, style: ChartStyle, decor: Decora
     });
   }
   const glyphVals = glyph ? [...seriesVals.values()].flat().filter((v): v is number => v != null) : [];
-  const glyphMax = maxOf(glyphVals, 1);
+  // Floored at 0, not 1: a floor of 1 in data units made a map of shares typed as
+  // 0.05-0.4 draw its tallest mini-bar at 40% of the room the same numbers x100 get
+  // (the unit set the picture; butterfly, radar and cascade lost the same floor in
+  // 47aa582). The all-zero guard is the span's `|| 1` below, where it divides.
+  const glyphMax = maxOf(glyphVals, 0);
   // The mini-bar scale spans zero: a negative value draws BELOW the tile's zero
   // line instead of clamping to zero height, which was pixel-identical to "no
   // change". All-positive data keeps glyphMin = 0, i.e. the original scale.
   const glyphMin = Math.min(0, minOf(glyphVals, 0));
-  const glyphSpan = glyphMax - glyphMin;
+  const glyphSpan = glyphMax - glyphMin || 1;
 
   // Fit uniform square tiles into the plot area.
   const cols = Math.max(...Object.values(layout).map(([c]) => c)) + 1;

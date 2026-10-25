@@ -480,6 +480,18 @@ export function layoutLine(cfg: ChartConfig, style: ChartStyle, decor: Decoratio
         // Marker: small square with a background ring so crossings stay legible.
         // A per-cell color override highlights the point (max/min/last…) with
         // a larger, recolored marker. Forecast points render hollow.
+        //
+        // HOLLOW IS `fill: "none"`, not a fill in `style.background`. The knock-out
+        // painted a 4.8pt patch in the chart's canvas colour, which is the slide's
+        // only where the author set the two equal: on a slide of any other colour
+        // (or a picture) every forecast point was a white square with a coloured
+        // edge; only a transparent chart already got the hollow, by accident, because
+        // its "background" is no fill. `none` is the hollow the IBCS plan/budget bars
+        // already use (`markPaint`), drawn by all three sinks (svg `fill="none"`,
+        // Office.js `fill.clear()`, pptx `type: "none"`). The cost is that the dashed
+        // forecast segment now shows through the ring instead of stopping at it, which
+        // is what a hollow marker looks like everywhere else and what a transparent
+        // chart already drew.
         const cellColor = s.colors?.[c];
         // Shrunk where the frame's edge is closer than the marker's own half
         // extent, and dropped below a point of it — see `markInFrame`.
@@ -491,7 +503,7 @@ export function layoutLine(cfg: ChartConfig, style: ChartStyle, decor: Decoratio
             y: pt.y - r,
             w: r * 2,
             h: r * 2,
-            fill: forecast && !cellColor ? style.background : (cellColor ?? color),
+            fill: forecast && !cellColor ? "none" : (cellColor ?? color),
             stroke: forecast && !cellColor ? color : style.background,
             strokeWidth: 1,
             name: `marker-${si}-${c}`,
@@ -1517,7 +1529,8 @@ function layoutLineHorizontal(cfg: ChartConfig, style: ChartStyle, decor: Decora
             y: pt.y - r,
             w: r * 2,
             h: r * 2,
-            fill: forecast && !cellColor ? style.background : (cellColor ?? color),
+            // Hollow = no fill, as in the upright emitter above (see there for why).
+            fill: forecast && !cellColor ? "none" : (cellColor ?? color),
             stroke: forecast && !cellColor ? color : style.background,
             strokeWidth: 1,
             name: `marker-${si}-${c}`,

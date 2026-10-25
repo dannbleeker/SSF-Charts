@@ -390,12 +390,59 @@ const relLuminance = (hex: string): number => {
  * read as a canvas verdict, and a luminance of 0.216 laid the chart out for a
  * dark slide.
  *
- * Applied in the helpers below, which take `background` as a plain string.
- * Layouts that mix toward `style.background` directly with `lerpColor` get the
- * `transparent` keyword right through `toRgb`, but not these other spellings.
+ * Applied in the helpers below, which take `background` as a plain string, and
+ * once for every layout by `layoutBackground`, which `resolveStyle` runs where
+ * the style is built — the direct `lerpColor(style.background, …)` sites need no
+ * edit of their own.
  */
-const canvasOf = (background: string): string =>
-  toRgb(background) === UNREADABLE || alphaOf(background) === 0 ? "#ffffff" : background;
+const canvasOf = (background: string): string => {
+  const laid = layoutBackground(background);
+  return laid === "transparent" ? "#ffffff" : laid;
+};
+
+/**
+ * `style.background` as the LAYOUTS read it: one answer for every spelling of "no
+ * canvas", resolved once where the style is built (`resolveStyle`).
+ *
+ * WHY ONCE. A layout reads `style.background` two ways. Colour maths mixes toward
+ * it (`lerpColor(style.background, fill, 0.22)` in the boxplot, violin, sunburst,
+ * treemap, scatter, line ribbons, column marks), and a paint IS it (the hairline
+ * between segments, the hollow of a forecast marker). `toRgb` has to answer
+ * something for a paint it cannot read, and the answer is the mid grey that
+ * `contrastInk` needs for INK — so a background it could not read, or one with no
+ * alpha, laid every one of those mixes out against grey and then dark. 7ab702a
+ * taught `toRgb` the `transparent` KEYWORD and gave the helpers in this file
+ * `canvasOf`; the other spellings (`rgba(0,0,0,0)`, `#0000`, `#00000000`,
+ * `hsla(…, 0)`, `none`, a typo, an empty string) were still grey at every direct
+ * site, and a sweep of the sample kinds drew 14 paints differently from
+ * `transparent` (boxplot 4, sunburst 7, violin 3). Editing the two dozen call sites
+ * in a dozen layouts was the wrong shape for a fix that is one fact about one string.
+ *
+ * WHAT IT ANSWERS, so the maths reads one canvas and the paints change as little as
+ * they can:
+ *  - a colour that draws something → itself, byte for byte;
+ *  - a paint that draws nothing (any form with zero alpha, and `none`, the SVG
+ *    word for it) → the `transparent` keyword. `toRgb` reads that as the white
+ *    slide behind it and `alphaOf` as 0, so the maths sees a light canvas and a
+ *    stroke or fill painted in it stays invisible in every sink, exactly as
+ *    `rgba(0,0,0,0)` was. White-with-no-alpha would do the same, but the keyword
+ *    is already what the sinks and the layouts guard on;
+ *  - a paint no sink can read (`off-white`, `""`, junk, a non-string) → `#ffffff`,
+ *    which is what the canvas itself is drawn as for it (`paintOr`'s and
+ *    `hexOr`'s fallback). A separator in the canvas's colour is the default
+ *    chart's look; the sinks' own fallback for a stroke is black.
+ *
+ * The CANVAS PAINT is not touched. The pane and the deck read `cfg.style.background`
+ * from the config (`canvasColor` in the pane, `backgroundOf` in the deck), not
+ * from the style a layout was handed, so a transparent chart stays transparent in
+ * the SVG and on the slide.
+ */
+export function layoutBackground(background: unknown): string {
+  const c = paintText(background);
+  if (/^none$/i.test(c)) return "transparent";
+  if (toRgb(c) === UNREADABLE) return "#ffffff";
+  return alphaOf(c) === 0 ? "transparent" : (background as string);
+}
 
 /**
  * A background panel/zone tint (weekend shading, marginal-total strips, scatter
