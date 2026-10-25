@@ -22,9 +22,10 @@ hunts of 2026-10-19") lists what each fix left undone.
   happens to carry the same shape number.
 - Editing a chart you have **resized** no longer leaves some shapes stretched and
   others at the original size. When the shapes on the slide no longer match what
-  was drawn, the edit redraws the chart instead of writing over it. (It redraws
-  at the size the chart was drawn; keeping your size through an edit is still
-  open.)
+  was drawn, the edit redraws the chart instead of writing over it, and the
+  redraw **keeps the size you gave it** (and writes that size into the chart's
+  config). A chart whose shapes the host will not report sizes for still redraws
+  at the size it was drawn.
 - Edits after **Bring to Front inside a chart group**, or after **copying an
   ungrouped chart** on the same slide, no longer write onto the wrong shapes.
 - The origin, alt text, transparency and outline of a chart are kept true after
@@ -72,9 +73,10 @@ hunts of 2026-10-19") lists what each fix left undone.
   else is.
 - **Small and negative data** is drawn by what it is: butterfly, radar, funnel,
   violin, cascade and the pie's variable radius no longer treat 1 as a minimum
-  in the data's own units, a radar reaches below zero, a negative bubble is
-  drawn as an outline, and a horizontal waterfall's outside label is no longer
-  cut to four characters.
+  in the data's own units (nor do combo charts, small-multiples radars and the
+  tile map's mini-bars), a radar reaches below zero, a negative bubble is drawn
+  as an outline, and a horizontal waterfall's outside label is no longer cut to
+  four characters.
 - A **doughnut** is a real ring: the hole is transparent, so it no longer shows a
   white disc on a slide that is not white.
 - A **tile map** picks the grid that matches most of your codes (GB, NO and CH
@@ -85,9 +87,19 @@ hunts of 2026-10-19") lists what each fix left undone.
 - A Gantt's tasks with no owner sit under a header of their own, a smoothed line
   stays inside its data, a rank of 0 stays on the chart, and folding series into
   *Other* no longer prints a total of 0 for a category with no data.
-- Colours: `background: "transparent"` is read as the slide behind it, a hex typo
-  is no longer turned into a different colour, and an `hsl()` hue in a unit the
+- Colours: `background: "transparent"` (and `none`, `rgba(0,0,0,0)`, `#0000` and
+  the other spellings of no canvas) is read as the slide behind it, a hex typo is
+  no longer turned into a different colour, and an `hsl()` hue in a unit the
   engine cannot convert is refused instead of drawn as the wrong hue.
+- A **line break in a label** (Alt+Enter in a datasheet cell) is measured by its
+  widest line and boxed as many lines tall on the category and value axes, the
+  legend and the series names, so a two-line label is no longer cut or left
+  overflowing its box. Other chart kinds' labels still box a break as one line.
+- Forecast markers are drawn as rings instead of a patch in the chart's colour, a
+  **mekko** honours *label content*, a sideways lollipop's or dumbbell's label no
+  longer sits on its own stem, a **butterfly** legend that cannot fit its chart
+  is left out instead of running off the foot, and a **boxplot** with raw
+  observations and the mean shown fits the mean marker to its slot.
 - A scatter's trend caption follows the chart's locale (`R² = 0,31`, not `0.31`
   beside comma axes).
 - Long agenda titles fit the slide, and agenda slides in one set share a font

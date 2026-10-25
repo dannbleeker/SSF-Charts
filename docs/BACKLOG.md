@@ -3194,19 +3194,41 @@ none is a task yet: each is an owner call or a measurement.
    series name, plus the title and footnote. A unit with a break that would rise
    off the canvas is dropped, as one that would print on the title already is.
    The live path's handling of CR, NEL and U+2028 was not verified.
-5. **Sub-1 data still clamped in three places (r1-9).** `butterfly`, `radar` and
-   `cascade` no longer floor their range at 1. The combo sites in `column.ts`
-   (`Math.max(stackMax, lineMax, 1)` and the waterfall-overflow branches), the
-   multiples radar's global scale in `chart.ts`, and the tile map's glyph maximum
-   (`maxOf(glyphVals, 1)`) still do.
-6. **Other spellings of a transparent canvas (r1-4).** The `transparent` keyword
-   reads as the slide behind it everywhere. `none`, `off-white`, `rgba(0,0,0,0)` and
-   `#0000` are resolved for the scale functions but the direct
-   `lerpColor(style.background, …)` sites still mix toward grey or black (boxplot,
-   sunburst and violin paints differ in the sample sweep).
-7. **Sibling knock-outs (r2-35).** The doughnut's disc is gone; hollow forecast
-   markers (`line.ts`) and the axis-break band (`frame.ts`) still fill with
-   `style.background`.
+5. **Sub-1 data clamped at 1 (r1-9). Fixed 2026-10-25 (`18fafbb`).** `butterfly`,
+   `radar` and `cascade` had gone in `47aa582`; this finished the rest: six sites in
+   `column.ts` (the combo's shared range, the three waterfall overflow and underflow
+   branches, the shared max and the secondary axis), the multiples radar's fallback
+   scale in `chart.ts` (whose min was also pinned at 0, so a negative value clamped
+   onto the panel centre, the bug `47aa582` fixed in the single radar) and the tile
+   map's glyph maximum. Each guard that divides keeps its all-zero case. A combo
+   segment of 0.2 drew 54.8pt against 91.3pt for the same data times 100; the two
+   now agree to six decimals.
+6. **Other spellings of a transparent canvas (r1-4). Fixed 2026-10-25 (`18fafbb`).**
+   Resolved once, not per call site: `layoutBackground` in `color.ts`, applied by
+   `resolveStyle` when `buildChart` and `buildMultiples` build their style. A
+   zero-alpha form or `none` becomes the `transparent` keyword; a paint no sink can
+   read becomes `#ffffff`; a readable colour is returned byte for byte. `toRgb`
+   keeps its mid grey, which is the INK answer. The canvas paint itself is not read
+   from this style, so a transparent chart stays transparent in the SVG and the
+   deck. Before it, 14 sample paints differed from `transparent` for each spelling
+   (boxplot 4, sunburst 7, violin 3) and 257 across the sites the samples do not
+   reach. Two calls to confirm: `none` reads as transparent, not as a typo, and an
+   unreadable background now draws segment separators and knock-out rings in the
+   canvas white instead of the sink's own fallback.
+7. **Sibling knock-outs (r2-35).** The doughnut's disc is gone (`47aa582`) and the
+   forecast markers are now `fill: none` with the series colour as the ring
+   (`18fafbb`), the hollow the IBCS plan bars already use in all three sinks.
+   **Open, owner's call: the axis-break band (`frame.ts`).** It is an occluder, not
+   a hollow: it hides the part of every column, segment, connector and label that
+   crosses the cut, and none of those nodes knows about the cut, so `fill: none`
+   would draw the bars straight through it. And on a transparent chart
+   `style.background` is the keyword every sink draws as no fill, so **the break
+   hides nothing there and the two zigzag lines are all that marks the cut.**
+   Options: (a) accept it; (b) fill the band with white when the background draws
+   nothing (a patch on a coloured slide, but the cut works); (c) split the rects
+   around the gap, the proper fix, in `column.ts` and `waterfall.ts` and their
+   snapshots. Also not done: `candlestick.ts` fills a rising body with the
+   background and could be `fill: none`, but the wick would then show through it.
 8. **Two product overflows the repaired guards now see.** The frame and overlap
    sweeps' options were given the data they need to take effect
    (`test/helpers/sweep-options.ts`) and that exposed, in `KNOWN_OPEN`: the
@@ -3240,7 +3262,13 @@ none is a task yet: each is an owner call or a measurement.
     `hsl()` hue in `turn`, `rad` or `grad` is unreadable, not converted. (Mekko
     segment labels read `labelContent` now, as of 2026-10-25.) A sideways
     lollipop's or dumbbell's label that sits on its own stem or connector is lifted
-    clear of it, or keeps its place where the row has no room to lift into.
+    clear of it, or keeps its place where the row has no room to lift into. A
+    stacked-flank butterfly legend is dropped, and reserves no band, when it would
+    leave the bars under 8pt (2,178 of 11,020 cells of the sweep lost the legend, 874
+    of them one that fit the frame with the plot floored underneath it; at 480x300
+    and 960x540 nothing moves), the boxplot mean marker shrinks to fit its slot and
+    is dropped below 5pt, and a value-axis unit with a line break that would rise
+    off the canvas is dropped, as one that would print on the title already is.
     `round.mjs --check` and a
     `no-run-button` refusal now run no battery and hold the previous session place.
 
