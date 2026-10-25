@@ -3159,27 +3159,58 @@ rule (`f3d289c`, `97e91a5`).
    below): the third hunt added callout text, heatmap row and column names, combo line
    names and the waffle legend to the sites that still box a break as one line.
 
+**Closed afterwards, the same day (`0d8b537`, `9d59b76`, `4da0937` and the commit
+after them).** Six of the leftovers below were small enough to finish, and one
+instrument problem the live rounds had shown:
+
+- **Years on a scatter's x axis print `2,015`:** `numberFormat.grouping` (default
+  true) switches the thousands separator off. Read strictly (`=== false`), so a
+  hand-edited `"no"` changes nothing; one pane checkbox, "Thousands separator", in
+  the Labels group. It reaches every number printed through `formatNumber`. The
+  three formats that pick the chart-wide half of the format by hand (the scatter
+  Color legend, the bubble Size key, a Gantt `Column` cell) now share
+  `chartWideFormat`, because the first version of the fix reached none of them.
+  Percent labels keep their separator on purpose. The default chart is byte-identical
+  for the whole showcase, every sample and 2,550 kind x size x decoration variants.
+- **The pane reads `de_DE` typed numbers like `de-DE`:** `localeTag` is exported from
+  `format.ts` and `decimalMark` uses it. Seen and not changed: the pane's locale
+  `<select>` offers only en-US, de-DE, fr-FR and da-DK, so a loaded `de_DE` or
+  `en-GB` shows a blank select although the locale itself is kept.
+- **The finite-number guard now sees a MISSING coordinate:** `REQUIRED_NUMBERS` in
+  `scene.ts` names the fields each node kind cannot be drawn without, typed so a new
+  number on a node interface or a new kind is a compile error there. A node missing
+  one is dropped, as a non-finite one already was.
+- **A combo's line labels follow `labelContent`,** sideways and upright alike (one
+  shared expression, and rotating a chart must not change what its labels say). A
+  list with nothing a point can print keeps the value the line always carried.
+- **`0.500` in a European block is the decimal 0.5.** A thousands group cannot start
+  with 0; `1.500` is still 1500. `US_GROUPED` had the same head (`0,500` read as 500
+  and voted American, which stopped a Danish block from converting at all). Siblings
+  with the same leading-zero head, left alone as unreachable: `LAKH_GROUPED`'s first
+  group, the space and apostrophe group in `DRESSED_NUMBER`, and `typedNumber`'s
+  multi-mark paths.
+- **Same Scale on a slide with two or more asked charts** answers per chart:
+  `updateChartsInSlides` returns the usual list plus a `perItem` answer in the order
+  asked (the new target, or null when the call never touched it), so the pane adopts
+  its own chart's new id or keeps its still-live one, and the "cannot tell" note had
+  no trigger left and was removed. The i18n string for it is now unused.
+- **The live resize self-test was an unfair instrument** (see item 2 of the section
+  below; it stalled in rounds 502, 504 and 505 on a 24-shape chart drawn late onto a
+  crowded slide, while the product logic worked every time it was reached). It now
+  draws a 9-shape chart, on the least loaded slide, straight after "an update
+  follows a moved chart", declines to start on a sick host, and files a stalled
+  draw or redraw as a skip whose reason says what was and was not observed. A
+  chimera or a lost resize still fails. Not yet seen on the live host.
+
 **What the fixes left undone, found while reading them:**
 
-- **Years on a scatter's x axis print `2,015`:** `NumberFormat` has no grouping
-  switch. Options: add `numberFormat.grouping` (default true) with a pane toggle, or
-  detect integer year-like X (all in 1900-2100) and ungroup.
-- The pane reads typed numbers for a config that says `de_DE` with a dot: `decimalMark`
-  in `datasheet.ts` does not apply the `_` to `-` rewrite the engine now does.
-- `scene.ts` `allNumbersFinite` cannot see a MISSING coordinate (the decor source of
-  the `y1: undefined` was fixed, the guard's hole was not); the sideways combo's
-  `labelContent` half of the label flip is unchanged.
-- Same Scale reaching only some charts on a slide that holds two or more asked charts
-  cannot tell which came back (`updateChartsInSlides` drops the unreached entries
-  instead of marking them): the pane is left as it was and says so.
 - Skill-made charts carry no scene fingerprint (`sceneFingerprint` is not exported
   from `src/index.ts`; a full redraw on the first edit stamps one, as documented),
   and a deck the OLD `pptx-deck.ts` wrote still carries the old four-element origin
   anchor, so its first edit moves the chart by its ink offset.
 - Explode's closing `applyConfig` replaces the pane with the chart it re-read, so an
   edit typed while Explode ran is discarded (true before; a fixed write-back had
-  masked it). `fromEuropeanNumber` turns `0.500` into 500 inside a block judged
-  European (a thousands group cannot start with 0; low reachability).
+  masked it).
 - The other value-axis call sites (`line.ts`, `boxplot.ts`, `candlestick.ts`,
   `violin.ts`) get the new shrink-then-drop fallback, so no number is cut, but do not
   yet ask the layout for its tick width to widen the gutter as the column and
@@ -3257,7 +3288,15 @@ none is a task yet: each is an owner call or a measurement.
    one scale with its 8 bars matching the layout at that size. Round 502's run of
    the same scenario threw `PowerPoint did not respond while drawing shapes 1-10 of
    24 (45s)` on its own chart draw, the known host stall (office-js#5022; 1 stalled
-   of 37 draws in that stretch), and says nothing about the question. Still open:
+   of 37 draws in that stretch), and says nothing about the question. Rounds 504 and
+   505 (`cac02a7`) stalled in the same scenario again: 504 in its own setup draw, 505
+   in the product's redraw AFTER it had decided to keep 600x360pt (the trace reads
+   `redrawing at the size the user gave the chart`, scale 2x, via the members). Each
+   batch of that 24-shape chart took 14 to 28 s of a 45 s limit on a slide that
+   already held 58 shapes, late in a round that had just worn the host with "what a
+   chart kind costs". The product logic worked every time it was reached; the
+   scenario was the poor instrument, and `0d8b537` rebuilt it (a 9-shape chart, an
+   early place in the round, a stalled host filed as a skip). Still open:
    a corner other than the top-left, a one-axis stretch and a resize of a scatter,
    bubble or other rect-free chart have not been run live; the scene-derived group
    extent is confirmed live only for rect-bearing kinds (clustered, waffle) and the

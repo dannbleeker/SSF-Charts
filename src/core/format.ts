@@ -95,6 +95,19 @@ export function formatNumber(v: number, fmt: Partial<NumberFormat> = {}): string
 }
 
 /**
+ * The halves of a number format that belong to the WHOLE chart, for a row or key
+ * that is its own metric: a Gantt `Column` cell, a scatter's Color legend, a
+ * bubble's Size key. `suffix` and `forceSign` are left behind on purpose, because
+ * a unit and a sign belong to the axis that declared them ("1.0 €m" on a NPS
+ * gradient). `decimals`, `locale` and `grouping` are the chart's number system,
+ * so a row that picks them out must pick all three. Written once here because the
+ * three sites each spelled the pick by hand, and `grouping` reached none of them.
+ */
+export function chartWideFormat(format?: Partial<NumberFormat> | null): Partial<NumberFormat> {
+  return { decimals: format?.decimals, locale: format?.locale, grouping: format?.grouping };
+}
+
+/**
  * Resolve "auto" decimals once per chart from the data's magnitude, so all
  * labels in one chart share the same precision (as think-cell does).
  */

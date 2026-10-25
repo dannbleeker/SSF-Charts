@@ -3,6 +3,7 @@ import { arrowheadFits, markerScale, markerSymbolOf } from "../geometry";
 import { textWidth, type SceneNode, type TextNode } from "../scene";
 import { tightBox } from "../collide";
 import {
+  chartWideFormat,
   formatNumber,
   formatP,
   histogramBins,
@@ -1087,13 +1088,11 @@ export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decora
      * `Color` row of NPS or headcount labelled its gradient "1.0 €m" …
      * "4.0 €m" — the y axis's unit stamped on a third variable.
      *
-     * `decimals` and `locale` still carry: an authored precision and the
-     * chart's number system belong to the whole chart, not to one row.
+     * `chartWideFormat` carries `decimals`, `locale` and `grouping`: an authored
+     * precision and the chart's number system belong to the whole chart, not to
+     * one row.
      */
-    const cFmt = resolveFormat([colorScale.min, colorScale.max], {
-      decimals: cfg.numberFormat?.decimals,
-      locale: cfg.numberFormat?.locale,
-    });
+    const cFmt = resolveFormat([colorScale.min, colorScale.max], chartWideFormat(cfg.numberFormat));
     const steps = 24;
     const barW = COLOR_BAR_W;
     const cell = barW / steps;
@@ -1353,7 +1352,7 @@ export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decora
     // for a headcount, and "+600" / "+300" under `forceSign`.
     const sizeFmt = resolveFormat(
       pts.map((p) => Math.abs(p.size ?? 0)),
-      { decimals: cfg.numberFormat?.decimals, locale: cfg.numberFormat?.locale },
+      chartWideFormat(cfg.numberFormat),
     );
     const refMax = niceTicks(0, maxSize, 3).pop()!;
     const refs = [refMax, refMax / 2];

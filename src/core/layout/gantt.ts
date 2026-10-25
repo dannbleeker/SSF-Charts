@@ -2,6 +2,7 @@ import type { ChartConfig, ChartStyle, Decorations } from "../types";
 import { contrastInk, textWidth, type SceneNode } from "../scene";
 import { clipToWidth } from "../elements";
 import {
+  chartWideFormat,
   formatDay,
   formatDayRange,
   formatNumber,
@@ -213,10 +214,7 @@ export function layoutGantt(cfg: ChartConfig, style: ChartStyle, decor: Decorati
     .filter((s) => /^column\b/i.test(s.name.trim()))
     .map((s) => {
       const nums = s.values.filter((v): v is number => v != null);
-      const fmt = resolveFormat(nums, {
-        decimals: cfg.numberFormat?.decimals,
-        locale: cfg.numberFormat?.locale,
-      });
+      const fmt = resolveFormat(nums, chartWideFormat(cfg.numberFormat));
       const label = s.name
         .trim()
         .replace(/^column\s*:?\s*/i, "")

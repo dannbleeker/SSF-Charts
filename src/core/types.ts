@@ -389,10 +389,9 @@ export interface NumberFormat {
    * Reaches every number the chart prints through `formatNumber` with the chart's
    * format — ticks, value labels, totals, a scatter's point labels. Percent labels
    * (a CAGR arrow, a share) keep their separator: they are quantities by
-   * construction. NOT YET reached: the three formats that pick `decimals` and
-   * `locale` out of this object by hand (the bubble Size key and the scatter Color
-   * legend in `scatter.ts`, a Gantt `Column` cell in `gantt.ts`); they would take
-   * `grouping` with them.
+   * construction. The three formats that pick `decimals` and `locale` out of this
+   * object by hand (the bubble Size key and the scatter Color legend in
+   * `scatter.ts`, a Gantt `Column` cell in `gantt.ts`) carry `grouping` with them.
    */
   grouping?: boolean;
 }

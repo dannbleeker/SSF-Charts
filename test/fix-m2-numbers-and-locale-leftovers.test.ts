@@ -164,10 +164,59 @@ describe("M2a: numberFormat.grouping switches the thousands separator off", () =
     expect(textsNamed(off, /^label-\d+$/)[0]).toBe("a (2,015, 1,200)");
   });
 
+  it("the three formats that pick decimals and locale by hand carry the switch too", () => {
+    // The bubble Size key, the Color legend and a Gantt `Column` cell each build a
+    // format of their own from `{ decimals, locale }`, so each had to be given
+    // `grouping` or it printed 12,000 on a chart that said 12000.
+    const bubble = (numberFormat?: unknown): ChartConfig =>
+      ({
+        kind: "bubble",
+        width: 720,
+        height: 460,
+        data: {
+          categories: ["Alpha", "Beta", "Gamma", "Delta"],
+          series: [
+            { name: "X", values: [10, 20, 30, 40] },
+            { name: "Y", values: [12, 26, 31, 44] },
+            { name: "Size", values: [12000, 34000, 9000, 50000] },
+            { name: "Color", values: [1000, 2000, 3000, 4000] },
+          ],
+        },
+        ...(numberFormat === undefined ? {} : { numberFormat }),
+      }) as unknown as ChartConfig;
+    const gantt = (numberFormat?: unknown): ChartConfig =>
+      ({
+        kind: "gantt",
+        width: 640,
+        height: 260,
+        data: {
+          categories: ["Phase 1", "> Design", "> Build"],
+          series: [
+            { name: "Start", values: [null, 0, 4] },
+            { name: "End", values: [null, 4, 10] },
+            { name: "Column Cost", values: [25000, 9050, 15950] },
+          ],
+        },
+        ...(numberFormat === undefined ? {} : { numberFormat }),
+      }) as unknown as ChartConfig;
+
+    expect(textsNamed(bubble(), /^size-legend-label-/), "control: the Size key groups").toEqual(["60,000", "30,000"]);
+    expect(textsNamed(bubble({ grouping: false }), /^size-legend-label-/)).toEqual(["60000", "30000"]);
+    expect(textsNamed(bubble(), /^color-legend-(min|max)$/), "control: the Color legend groups").toEqual([
+      "1,000",
+      "4,000",
+    ]);
+    expect(textsNamed(bubble({ grouping: false }), /^color-legend-(min|max)$/)).toEqual(["1000", "4000"]);
+    // A column cell has no stable node name, so look at every text the chart prints.
+    const cells = (cfg: ChartConfig) => texts(cfg).map((t) => t.text);
+    expect(cells(gantt()), "control: the Column cells group").toEqual(expect.arrayContaining(["25,000", "15,950"]));
+    expect(cells(gantt({ grouping: false }))).toEqual(expect.arrayContaining(["25000", "15950"]));
+    expect(cells(gantt({ grouping: false })).filter((t) => /\d,\d{3}/.test(t))).toEqual([]);
+  });
+
   it("every kind: no number the chart prints keeps a separator once it is off", () => {
     // The sweep that finds a site that forgot. Values are scaled into the
     // thousands so every kind has a number to group; `Group` is a category index.
-    // Bubble is swept without its Size key (see the todo below).
     const grouped = (t: string) => /\d,\d{3}/.test(t);
     const kindsWithAGroupedNumber: string[] = [];
     for (const { kind } of CHART_KINDS) {
@@ -189,10 +238,8 @@ describe("M2a: numberFormat.grouping switches the thousands separator off", () =
           ...(kind === "scatter" || kind === "bubble" ? { labelContent: ["value"] } : {}),
         },
       } as ChartConfig;
-      const withoutKey = (ts: TextNode[]) =>
-        kind === "bubble" ? ts.filter((t) => !/^size-legend-label-/.test(t.name ?? "")) : ts;
       if (texts(cfg).some((t) => grouped(t.text))) kindsWithAGroupedNumber.push(kind);
-      const left = withoutKey(texts({ ...cfg, numberFormat: { grouping: false } })).filter((t) => grouped(t.text));
+      const left = texts({ ...cfg, numberFormat: { grouping: false } }).filter((t) => grouped(t.text));
       expect(
         left.map((t) => `${t.name}: ${t.text}`),
         `${kind} still groups`,
@@ -201,11 +248,6 @@ describe("M2a: numberFormat.grouping switches the thousands separator off", () =
     // The sweep means nothing if it only ever looked at numbers with no thousands.
     expect(kindsWithAGroupedNumber.length, "kinds whose default has a grouped number").toBeGreaterThan(15);
   });
-
-  it.todo(
-    "bubble Size key, scatter Color legend and gantt `Column` cells pick `{ decimals, locale }` by hand " +
-      "(scatter.ts, gantt.ts) and so keep their separator: they need `grouping` carried with the locale",
-  );
 
   it("the default is byte-identical: grouping true, or anything but false, is the chart without the key", () => {
     for (const { kind } of CHART_KINDS) {

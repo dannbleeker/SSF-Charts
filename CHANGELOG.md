@@ -167,6 +167,25 @@ were gaps in the earlier fixes; some were old.
   write names the path when it cannot be made, and an appended slide is deleted
   only when a fresh read shows it blank.
 
+### Finishing what the third review left
+
+- **A chart can switch the thousands separator off.** A scatter or bubble chart
+  whose X values are years no longer has to print `2,015`: there is a *Thousands
+  separator* box in the Labels group (and `numberFormat.grouping: false` in the
+  config). It reaches axis ticks, value labels, totals and point labels, and the
+  scatter Color key, the bubble Size key and a Gantt `Column` cell. Every chart
+  that does not use it is unchanged.
+- **Numbers:** the pane reads typed numbers for a `de_DE` config the way it reads
+  `de-DE`; `0.500` in a block of European numbers is half, not five hundred; and a
+  node with a missing coordinate is dropped instead of printing `NaN`.
+- **A combo chart's line labels follow *Label content*,** upright and sideways, so
+  rotating a chart no longer changes what its labels say.
+- **Same scale on a slide with several charts** now knows which of them it reached,
+  so the pane keeps following the chart you have open instead of guessing.
+- **The live resize test is fairer.** It draws a small chart early in the round and
+  reports a stalled host as a skip with the reason, not as a failure of the
+  add-in.
+
 ## 0.6.1 — 2026-09-13
 
 **This release changes who can install SSF Charts, and that is the whole
