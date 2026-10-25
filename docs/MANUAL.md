@@ -103,9 +103,13 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
    layout and not a stretch, so text keeps its size and the chart can differ
    from your stretched one by a few points. A Width or Height you type in the
    pane wins over a hand resize. A chart resized unevenly, one bar at a time, is
-   redrawn at the size in the pane's settings, and so is one whose shapes
-   PowerPoint would not report the sizes of, or whose stacking order inside the
-   chart's group you changed (Bring to Front on a single bar or label).
+   redrawn at the size in the pane's settings, and so is one whose stacking order
+   inside the chart's group you changed (Bring to Front on a single bar or label).
+   If PowerPoint will not report the sizes of the bars and labels themselves, the
+   chart's own outline stands in for them: a resize of more than about 5% is still
+   kept, a smaller one is not noticed, and a chart drawn with diagonal lines, pie
+   slices or arrowheads (its outline cannot be worked out from the chart alone) is
+   redrawn at the size in the pane's settings.
 
    A chart PowerPoint would not group stays a loose set of shapes, and a copy of
    one made on the same slide (Ctrl+D) carries the original's list of shapes.

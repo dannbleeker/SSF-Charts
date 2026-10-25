@@ -24,6 +24,7 @@
  */
 
 import type { Scene, SceneNode } from "./scene";
+import { dashKind } from "./geometry";
 
 /**
  * Node kinds whose every drawn property can be written back onto an existing
@@ -336,6 +337,12 @@ export interface LiveScale {
   y: number;
   /** Rects whose size the host read back and that the factors were fitted to. */
   samples: number;
+  /**
+   * Whose size the factors were read off. Absent means the members', which is
+   * what `liveScaleOfScene` returns; `"group"` is `groupScaleOfScene`, read off
+   * the group's own box for a host whose members said nothing about size.
+   */
+  via?: "group";
 }
 
 /**
@@ -408,6 +415,210 @@ export function liveScaleOfScene(prev: Scene, live: readonly LiveShape[]): LiveS
   const y = axis(1);
   if (x === null || y === null || (x === 1 && y === 1)) return null;
   return { x, y, samples: want.length };
+}
+
+/**
+ * How many rects the host reported BOTH sides of. Zero is a host whose members
+ * said nothing about size, which is the case `groupScaleOfScene` exists for, and
+ * it is a different fact from "every rect agreed with the scene" — `null` from
+ * `liveScaleOfScene` and `off: null` from `checkShapesAgainstScene` are the same
+ * for both.
+ */
+export function rectSizesRead(prev: Scene, live: readonly LiveShape[]): number {
+  let read = 0;
+  for (let i = 0; i < Math.min(prev.nodes.length, live.length); i++)
+    if (prev.nodes[i].kind === "rect" && Number.isFinite(live[i].width) && Number.isFinite(live[i].height)) read++;
+  return read;
+}
+
+/** A shape's size as the host gave it; absent when it did not. */
+export interface LiveBox {
+  width?: number;
+  height?: number;
+}
+
+/** How big a drawn chart's shapes are, taken together. */
+export interface DrawnExtent {
+  width: number;
+  height: number;
+}
+
+/**
+ * The floors `addNode`, `addText` and `addSegment` put under a side, so a node
+ * that lays out to nothing is framed as what was drawn. `MIN_RECT_SIDE` is the
+ * rect's, ellipse's, chevron's and symbol's.
+ */
+const MIN_TEXT_SIDE = 4;
+const MIN_LINE_SIDE = 0.5;
+
+/**
+ * The frame one node becomes on the slide, as [left, top, right, bottom] in scene
+ * points, or `null` for a node drawn as something the host ROTATES.
+ *
+ * A diagonal line is a rectangle of the segment's length turned about its midpoint,
+ * a wedge is a fan of turned triangles and an arrowhead a turned triangle: each
+ * has a box whose `left`/`top`/`width`/`height` is the one before the turn, and
+ * the group the host builds around them is framed on the box after it — or not;
+ * `rotation-keeps-the-unrotated-box` has never been answered. A frame that depends
+ * on which is a frame this module will not guess, so those nodes make the whole
+ * scene's extent unknown. What stays: rects, text, ellipses, chevrons, symbols,
+ * and a line that is horizontal, vertical or dashed (`addSegment` draws those as
+ * `addLine`, unrotated, in the line's own bounding box).
+ *
+ * KEPT IN STEP WITH THE ADDERS BY A MEASUREMENT, NOT BY A COMMENT. The constants
+ * above are copied from them; `test/scene-drawn-extent.test.ts` draws every sample
+ * kind and every chart in the showcase on the fake host and requires this to
+ * equal the box the group it builds reports.
+ */
+function drawnFrame(n: SceneNode): [number, number, number, number] | null {
+  const box = (x: number, y: number, w: number, h: number, floor = MIN_RECT_SIDE): [number, number, number, number] => [
+    x,
+    y,
+    x + Math.max(floor, w),
+    y + Math.max(floor, h),
+  ];
+  switch (n.kind) {
+    case "rect":
+    case "chevron":
+      return box(n.x, n.y, n.w, n.h);
+    case "ellipse":
+      return box(n.cx - n.rx, n.cy - n.ry, n.rx * 2, n.ry * 2);
+    case "symbol":
+      return box(n.cx - n.size, n.cy - n.size, n.size * 2, n.size * 2);
+    case "text":
+      return box(n.x, n.y, n.w, n.h, MIN_TEXT_SIDE);
+    case "line": {
+      const w = Math.abs(n.x2 - n.x1);
+      const h = Math.abs(n.y2 - n.y1);
+      if (w >= MIN_LINE_SIDE && h >= MIN_LINE_SIDE && dashKind(n.dash) === "none") return null;
+      return box(Math.min(n.x1, n.x2), Math.min(n.y1, n.y2), w, h, MIN_LINE_SIDE);
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * The size of the box the host's group takes around this scene's shapes, or
+ * `null` when it cannot be known from the scene alone.
+ *
+ * THE SAME COMPUTATION THE GROUP FOLLOWS, which is the union of its members'
+ * frames: `boundsOf` in `src/render/ooxml.ts` frames the deck builder's group on
+ * it and measures the origin anchor from it (0e9500f), and the fake host's
+ * `addGroup` does the same over the shapes it was handed. This is that union over
+ * the nodes' frames instead of over XML, because the update path has a scene and
+ * must not load a zip library to ask a size.
+ *
+ * AND IT AGREES WITH THE LIVE HOST WHERE IT HAS BEEN COMPARED, which is what
+ * makes the factor below worth trusting. The archive's deck inventories carry
+ * the real group boxes of the charts the battery drew, but not the config behind
+ * each, so this is a match of SIZES and not a join on identity. The configs the
+ * battery draws derive these, and each is among the `PowerChart` boxes the
+ * inventories record, to the hundredth of a point:
+ *
+ *     clustered 480x300   this 480 x 299     host 480 x 299     885 groups
+ *     clustered 780x420   this 780 x 419     host 780 x 419      10
+ *     clustered 168x80    this 168 x 79      host 168 x 79      361
+ *     waffle    320x220   this 320 x 213.34  host 320 x 213.34    4
+ *
+ * Four coincidences like that are unlikely, and they say that for those two kinds
+ * the host neither auto-sizes a text box nor widens the group by a stroke. Every
+ * other kind rests on the fake host alone, which is why `groupScaleOfScene` stays
+ * quiet inside a margin.
+ */
+export function sceneDrawnExtent(scene: Scene): DrawnExtent | null {
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  for (const node of scene.nodes) {
+    const frame = drawnFrame(node);
+    if (!frame) return null;
+    left = Math.min(left, frame[0]);
+    top = Math.min(top, frame[1]);
+    right = Math.max(right, frame[2]);
+    bottom = Math.max(bottom, frame[3]);
+  }
+  return right > left && bottom > top ? { width: right - left, height: bottom - top } : null;
+}
+
+/**
+ * The group's size against the size the scene would draw it at.
+ *
+ * `ratio` is live over drawn, per axis, and is present whenever both are known —
+ * including when the chart was never touched and it reads 1. That is what a trace
+ * needs to say how far the instrument is from a perfect reading on a healthy
+ * chart, and `groupScaleOfScene` is what decides whether a ratio is a person.
+ */
+export function measureGroup(
+  prev: Scene,
+  group: LiveBox,
+): { drawn: DrawnExtent | null; ratio: { x: number; y: number } | null } {
+  const drawn = sceneDrawnExtent(prev);
+  const ok = Number.isFinite(group.width) && Number.isFinite(group.height);
+  if (!drawn || !ok) return { drawn, ratio: null };
+  return { drawn, ratio: { x: (group.width as number) / drawn.width, y: (group.height as number) / drawn.height } };
+}
+
+/**
+ * How far the live group may sit from the drawn one before it is a person and not
+ * the host: the larger of 5pt and 5% of that side. The host's box agreed to the
+ * digit on every live comparison above, so this is not sized to a noise that has
+ * been seen; it is sized to what a wrong answer COSTS. A reading outside it makes
+ * the redraw lay the whole chart out at a new size, and that size is written into
+ * the chart's config — a bias in this instrument would move every chart a little
+ * further on every edit. A hand resize under 5% is left to the half-stretched
+ * write it would get without this, which is under 5% off.
+ */
+const GROUP_NOISE_RATIO = 0.05;
+const GROUP_NOISE_POINTS = 5;
+
+/** A side shorter than this says nothing: 5pt of 20 is a quarter. */
+const MIN_GROUP_SIDE = 40;
+
+/** The factors a group box can be believed to have been dragged to: 4x either way. */
+const MIN_GROUP_SCALE = 0.25;
+const MAX_GROUP_SCALE = 4;
+
+/**
+ * How much a person has stretched a chart, read off the GROUP's own box — for the
+ * host that will not say how big the group's members are.
+ *
+ * Everything `liveScaleOfScene` reads is a member, and a host can answer a
+ * member's id and nothing else (`faults.groupMembersSilentOn`). The group is the
+ * one shape the update path already holds and has already loaded the size of, and
+ * resizing a group scales its box by the same factor it scales every member, so a
+ * box that no longer matches what the scene draws is a resize.
+ *
+ * WEAKER EVIDENCE, AND TREATED AS WEAKER:
+ *
+ * - **It cannot tell a resize from a dragged member.** Moving one bar inside the
+ *   group moves the box too, and the per-rect agreement test that rejects that
+ *   case is exactly what a silent host denies us. So the caller consults this
+ *   ONLY when no rect's size was read (`rectSizesRead` is zero); once a member
+ *   has answered, `liveScaleOfScene` and `checkShapesAgainstScene` are the
+ *   evidence and the group's box is only traced.
+ * - **A scene with a rotated node has no known box** (`sceneDrawnExtent`), and
+ *   answers `null`: a line chart or a pie is never read this way.
+ * - **Inside the noise band an axis reads exactly 1**, so a chart stretched in one
+ *   direction reads `{ x: 1.5, y: 1 }`, and a chart inside it on both reads
+ *   `null` — as does a factor beyond 4x either way.
+ *
+ * `samples` is 0 because no rect was read; `via` says whose box it was.
+ */
+export function groupScaleOfScene(prev: Scene, group: LiveBox): LiveScale | null {
+  const { drawn, ratio } = measureGroup(prev, group);
+  if (!drawn || !ratio) return null;
+  const axis = (live: number, want: number): number | null => {
+    if (want < MIN_GROUP_SIDE || Math.abs(live - want) <= Math.max(GROUP_NOISE_POINTS, GROUP_NOISE_RATIO * want))
+      return 1;
+    const factor = live / want;
+    return factor >= MIN_GROUP_SCALE && factor <= MAX_GROUP_SCALE ? factor : null;
+  };
+  const x = axis(group.width as number, drawn.width);
+  const y = axis(group.height as number, drawn.height);
+  if (x === null || y === null || (x === 1 && y === 1)) return null;
+  return { x, y, samples: 0, via: "group" };
 }
 
 /**

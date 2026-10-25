@@ -44,8 +44,11 @@ import { buildDeckBase64 } from "./pptx-deck";
 import type { ChartConfig } from "../core/types";
 import {
   checkShapesAgainstScene,
+  groupScaleOfScene,
   liveScaleOfScene,
+  measureGroup,
   planSceneUpdate,
+  rectSizesRead,
   sceneFingerprint,
   worthUpdating,
   type LiveScale,
@@ -13076,6 +13079,123 @@ type Frame = { left: number; top: number };
 export interface SeenOnTheSlide {
   prev?: Scene;
   scale?: LiveScale;
+  /** What the host handed back for the shapes this decision rests on: see `hostEvidence`. */
+  host?: HostEvidence;
+}
+
+/**
+ * A property exactly as the host handed it back, in a form a trace carries and a
+ * reader can tell apart: the number itself, `"undefined"`, `string:<first 24
+ * characters>`, or `threw <code>` for a read that raised.
+ *
+ * WHY THE RAW VALUE, when `loadedValue` already turns every one of those into
+ * "the host did not say". That is the right thing for the product to do and the
+ * wrong thing to record. The in-place update's success line said
+ * `checked {names: 0, sizes: 0}`, which three different hosts produce: one whose
+ * members never load a name, one whose load lands and reads `undefined`, and one
+ * that answers a name the scene has no node for. They want three different fixes
+ * and the line could not choose between them — and it was read, for a day, as the
+ * first.
+ */
+function rawRead(read: () => unknown): number | string {
+  try {
+    const v = read();
+    if (typeof v === "number") return Number.isFinite(v) ? Math.round(v * 100) / 100 : String(v);
+    if (typeof v === "string") return `string:${v.slice(0, 24)}`;
+    return v === undefined ? "undefined" : typeof v;
+  } catch (err) {
+    const code = (err as { code?: unknown } | null)?.code;
+    return `threw ${typeof code === "string" ? code : (/code=(\w+)/.exec(errorText(err))?.[1] ?? "Error")}`;
+  }
+}
+
+/** One shape's name, width and height as `rawRead` reports them. */
+export interface RawShape {
+  name: number | string;
+  width: number | string;
+  height: number | string;
+}
+
+/**
+ * What the host said about the shapes an in-place decision rests on, carried on
+ * the update's trace lines (the success line and every decline after the shapes
+ * were read) so that a round answers what the host returns instead of leaving it
+ * to be argued from a count.
+ *
+ * - `first` and `group` are raw readings of the first member (node 0) and, for a
+ *   grouped chart, the group itself.
+ * - `answered` is how many of the `of` shapes gave a name, a width and a height.
+ * - `ids` is whether the members' ids ascend in the order the host listed them.
+ *   The mapping from nodes to shapes is positional, and a Bring to Front moves a
+ *   child to the end of that list without changing its id — so an ascending list
+ *   is what an un-reordered chart WOULD show if this host numbers shapes in the
+ *   order they were drawn. That premise has no evidence yet, which is why this is
+ *   recorded and not acted on.
+ * - `drawn`, `live` and `ratio` are the group-size detector's measurement
+ *   (`measureGroup`): the box the scene would draw, the box the group has, and
+ *   the second over the first. On an unresized chart the ratio reading 1 is the
+ *   evidence that the detector is quiet on this host.
+ */
+export interface HostEvidence {
+  first: RawShape;
+  group?: RawShape;
+  answered: { of: number; names: number; widths: number; heights: number };
+  ids: "ascending" | "not ascending" | "unread";
+  drawn?: [number, number] | null;
+  live?: [number, number] | null;
+  ratio?: [number, number] | null;
+}
+
+/** A shape's width and height as loaded; a side the host did not answer is absent. */
+function liveBox(shape: PowerPoint.Shape): { width?: number; height?: number } {
+  return { width: loadedValue(() => shape.width), height: loadedValue(() => shape.height) };
+}
+
+function hostEvidence(
+  prev: Scene,
+  group: PowerPoint.Shape | undefined,
+  shapes: readonly PowerPoint.Shape[],
+): HostEvidence {
+  const rawShape = (s: PowerPoint.Shape): RawShape => ({
+    name: rawRead(() => s.name),
+    width: rawRead(() => s.width),
+    height: rawRead(() => s.height),
+  });
+  const count = (read: (s: PowerPoint.Shape) => unknown, ok: (v: unknown) => boolean) =>
+    shapes.filter((s) => ok(loadedValue(() => read(s)))).length;
+  // The trailing integer: the host's ids are plain numbers ("27") and the fake's
+  // end in one ("shape-27"). An id with none reads as NaN, which is "unread".
+  const ids = shapes.map((s) => Number(/(\d+)$/.exec(String(loadedValue(() => s.id) ?? ""))?.[1]));
+  const thousandth = (n: number) => Math.round(n * 1000) / 1000;
+  const pair = (a: number | undefined, b: number | undefined): [number, number] | null =>
+    Number.isFinite(a) && Number.isFinite(b) ? [thousandth(a as number), thousandth(b as number)] : null;
+  const live = group && liveBox(group);
+  const m = live && measureGroup(prev, live);
+  return {
+    first: rawShape(shapes[0]),
+    ...(group ? { group: rawShape(group) } : {}),
+    answered: {
+      of: shapes.length,
+      names: count(
+        (s) => s.name,
+        (v) => typeof v === "string" && v !== "",
+      ),
+      widths: count((s) => s.width, Number.isFinite),
+      heights: count((s) => s.height, Number.isFinite),
+    },
+    ids: ids.some(Number.isNaN)
+      ? "unread"
+      : ids.every((id, i) => i === 0 || id > ids[i - 1])
+        ? "ascending"
+        : "not ascending",
+    ...(m && live
+      ? {
+          drawn: m.drawn ? pair(m.drawn.width, m.drawn.height) : null,
+          live: pair(live.width, live.height),
+          ratio: m.ratio ? pair(m.ratio.x, m.ratio.y) : null,
+        }
+      : {}),
+  };
 }
 
 /**
@@ -13150,6 +13270,9 @@ export function keepResizedSize(
       kept: [size.width, size.height],
       scale: { x: scale.x, y: scale.y },
       samples: scale.samples,
+      // Whose size it was: the members' (what `samples` counts) or, for a host
+      // whose members said nothing about size, the group's own box.
+      via: scale.via ?? "members",
     });
     return { it: { ...it, scene: buildChart(kept), opts: { ...it.opts, tagData: JSON.stringify(kept) } }, size };
   } catch {
@@ -13269,7 +13392,13 @@ async function tryInPlaceUpdate(
   // not match" means an engine change is being handled correctly. Three
   // different next steps, one silent `return false`.
   const no = (why: string, extra?: Record<string, unknown>): false => {
-    trace("draw", "not updating in place — redrawing instead", { why, ...extra });
+    // `seen.host` is set once the shapes have been read; a decline before that
+    // has nothing from the host to add.
+    trace("draw", "not updating in place — redrawing instead", {
+      why,
+      ...extra,
+      ...(seen.host && { host: seen.host }),
+    });
     return false;
   };
   if (!it.opts?.tagData) return no("this update carries no config to write");
@@ -13379,7 +13508,12 @@ async function tryInPlaceUpdate(
   // them. Handed back to the caller, which owns the redraw: see
   // `keepResizedSize`. Pure arithmetic over values already loaded.
   seen.prev = prev;
-  seen.scale = liveScaleOfScene(prev, liveShapes) ?? undefined;
+  seen.host = hostEvidence(prev, anchor ? old : undefined, shapes);
+  // THE GROUP'S OWN BOX, but only for a host whose members said nothing about
+  // size: a box cannot tell a resize from one dragged bar, and the members can.
+  // The tagged shape is the group exactly when `anchor` came out of it.
+  const byGroup = anchor && rectSizesRead(prev, liveShapes) === 0 ? groupScaleOfScene(prev, liveBox(old)) : null;
+  seen.scale = liveScaleOfScene(prev, liveShapes) ?? byGroup ?? undefined;
   const plan = planSceneUpdate(prev, it.scene);
   if (!plan) return no("the two scenes are not node-compatible");
   if (!worthUpdating(plan, it.scene.nodes.length))
@@ -13413,6 +13547,11 @@ async function tryInPlaceUpdate(
         ? "a shape carries another node's name, so the group was reordered and its order no longer maps to the scene"
         : "the chart was resized since it was drawn, so writing its changed shapes at the stored config's size would mix two scales",
       { at: read.off.index, node: read.off.node, expected: read.off.expected, found: read.off.found },
+    );
+  if (byGroup && writesGeometry)
+    return no(
+      "the chart was resized since it was drawn — its members did not say how big they are, so the group's own box did, and writing its changed shapes at the stored config's size would mix two scales",
+      { scale: { x: byGroup.x, y: byGroup.y } },
     );
   const { dx, dy } = frameOrigin(opts);
   // Whether this edit can have moved the corner the origin tag is measured from.
@@ -13501,6 +13640,7 @@ async function tryInPlaceUpdate(
       changed: plan.changed.length,
       of: it.scene.nodes.length,
       error: errorText(err),
+      host: seen.host,
     });
     return false;
   }
@@ -13581,6 +13721,12 @@ async function tryInPlaceUpdate(
     // are the counts compared: 24 names on a 24-node chart is a checked mapping,
     // 0 is an unchecked one.
     checked: { names: read.names, sizes: read.sizes },
+    // AND WHAT THE HOST ACTUALLY RETURNED, because `checked` cannot say why it
+    // counted nothing. Zero names is a chart the deck builder drew (default
+    // names are no evidence), a host that withheld them, or a read that threw;
+    // zero sizes is an edit that wrote no geometry and so never asked. The raw
+    // readings, and how many of the shapes answered each, tell those apart.
+    host: seen.host,
   });
   return landed;
 }
