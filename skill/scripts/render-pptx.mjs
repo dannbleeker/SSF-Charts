@@ -9,6 +9,7 @@
  * Requires: npm install pptxgenjs jszip
  */
 import { readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import pptxgen from "pptxgenjs";
 // Pure paint + node mapping (split out so it is unit-testable and measurable —
@@ -100,15 +101,35 @@ async function rasterScene(scene, background) {
   return png;
 }
 
+const USAGE = "usage: node scripts/render-pptx.mjs <charts.json> [out.pptx]";
 const [, , input, output = "ssf-charts.pptx"] = process.argv;
+// `--help` is the first thing an agent types at an unfamiliar CLI, and it was
+// taken for the input file: "couldn't read/parse --help: ENOENT", with no usage
+// line anywhere in sight (that printed only when argv held nothing at all).
+if (input === "--help" || input === "-h") {
+  console.log(
+    `${USAGE}\n\n` +
+      "  charts.json  one ChartConfig, or an array of them (one slide each) — see reference.md\n" +
+      "  out.pptx     where to write the deck; its folder must already exist (default ssf-charts.pptx)",
+  );
+  process.exit(0);
+}
 if (!input) {
-  console.error("usage: node scripts/render-pptx.mjs <charts.json> [out.pptx]");
+  console.error(USAGE);
   process.exit(1);
 }
 
 let raw;
 try {
-  raw = JSON.parse(readFileSync(input, "utf8"));
+  // A UTF-8 byte-order mark is stripped first. Windows PowerShell 5.1's
+  // `Set-Content -Encoding UTF8` and Notepad's "UTF-8 with BOM" both write one,
+  // `readFileSync(…, "utf8")` keeps it, and JSON.parse then refuses the file with
+  // "Unexpected token '<U+FEFF>'" — an invisible character, so nothing in the
+  // message says what is wrong with a config that looks fine in every editor.
+  // Tested by code point: an invisible character spelled out in a regex literal
+  // is the same trap in this file.
+  const text = readFileSync(input, "utf8");
+  raw = JSON.parse(text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
 } catch (err) {
   console.error(`couldn't read/parse ${input}: ${err?.message ?? err}`);
   process.exit(1);
@@ -116,7 +137,10 @@ try {
 // Accept one config or an array of them. A wrapper object like {"charts":[…]} or
 // a primitive is the common LLM mistake — name it rather than render one blank slide.
 if (raw == null || typeof raw !== "object") {
-  console.error("expected a ChartConfig object or an array of them (got a " + typeof raw + ")");
+  // `null` is spelled out: `typeof null` is "object", so it read "(got a object)".
+  console.error(
+    "expected a ChartConfig object or an array of them (got " + (raw === null ? "null" : "a " + typeof raw) + ")",
+  );
   process.exit(1);
 }
 if (!Array.isArray(raw) && !("kind" in raw) && !("data" in raw) && !("chapters" in raw)) {
@@ -151,9 +175,17 @@ pres.layout = "WIDE";
 // The engine helpers the node mapping needs, bound once into a pure addNode.
 const addNode = makeAddNode({ dashKind, annularSectorPoints, symbolPreset, arrowheadBox });
 
+/**
+ * An agenda is a slide of text, not a chart: it has no `data`, draws on a fixed
+ * palette of its own, and the add-in inserts it loose and untagged
+ * (`insertAgendaSlides`). Every place below that treats a config as a chart asks
+ * this first.
+ */
+const isAgenda = (cfg) => !!cfg && cfg.kind === "agenda";
+
 /** Build the scene for one config: an agenda slide, or a chart. */
 function sceneFor(cfg) {
-  if (cfg && cfg.kind === "agenda") {
+  if (isAgenda(cfg)) {
     // { kind:"agenda", chapters:[…], highlight?, title? } → a chapter-list slide
     // (highlight the current chapter, or -1 for an overview). Full-slide size.
     return buildAgendaScene(Array.isArray(cfg.chapters) ? cfg.chapters : [], {
@@ -210,6 +242,7 @@ for (let i = 0; i < configs.length; i++) {
   let slide = null;
   try {
     const scene = sceneFor(cfg);
+    const agenda = isAgenda(cfg);
     slide = pres.addSlide();
     // The chart's own canvas colour, not a fixed white: a dark-styled config
     // paints its ink for `style.background`, so a white slide under it put white
@@ -219,18 +252,29 @@ for (let i = 0; i < configs.length; i++) {
     // `"transparent"`, which SSF Charts documents as a paint elsewhere — turned
     // the slide black under the chart's own near-black ink, producing a deck of
     // invisible charts that opens cleanly and validates. The SVG renderer has
-    // always fallen back to white here, so the two sinks disagreed.
-    const bgHex = hexOr(cfg?.style?.background, "#ffffff");
+    // always fallen back to white here, so the two sinks disagreed. `hexOr` reads
+    // a zero-alpha paint (`rgba(0,0,0,0)`, `#0000`, …) the same way.
+    //
+    // NOT AN AGENDA'S `style.background`. `buildAgendaScene` takes no style: it
+    // inks the slide #0b0b0b / #52514E whatever the config says, and the SVG
+    // previews draw it on white. A deck-wide dark `style.background` copied onto
+    // an agenda therefore made a #111111 slide under near-black text.
+    const bgHex = hexOr(agenda ? undefined : cfg?.style?.background, "#ffffff");
     slide.background = { color: bgHex };
-    if (cfg?.render === "image") {
+    // Centre the scene on the slide. Computed once, for both branches below and
+    // for the origin tag: the frame origin the pane will anchor an edit to has to
+    // be the number the shapes were actually placed from.
+    const dx = (SLIDE.w - scene.width * IN) / 2;
+    const dy = (SLIDE.h - scene.height * IN) / 2;
+    // Never an agenda: it is a handful of text boxes, nowhere near the dense-shape
+    // wall, and a picture named "PowerChart" is what the repair paths take for a
+    // chart whether or not it carries a tag.
+    if (cfg?.render === "image" && !agenda) {
       // Rasterise the whole scene into one picture object. Skips the per-node
       // shape flood — the escape hatch for dense charts (violin, area, sunburst)
       // whose native-shape counts trip the PowerPoint-web dense-shape wall.
       const png = await rasterScene(scene, `#${bgHex}`);
       const dataUri = `image/png;base64,${png.toString("base64")}`;
-      // Match the shapes-path centering: same dx/dy as below, same width/height.
-      const dx = (SLIDE.w - scene.width * IN) / 2;
-      const dy = (SLIDE.h - scene.height * IN) / 2;
       // Named like every other chart object, which is not cosmetic. The repair
       // paths in `powerpoint.ts` find a chart by `name === "PowerChart"` —
       // `retagSlideChart`, `rescueGroupAndTag`, `slideHoldsOnlyChart` — so a
@@ -253,20 +297,43 @@ for (let i = 0; i < configs.length; i++) {
       });
       imageSlides++;
     } else {
-      const dx = (SLIDE.w - scene.width * IN) / 2;
-      const dy = (SLIDE.h - scene.height * IN) / 2;
       for (const node of scene.nodes) addNode(slide, node, dx, dy);
     }
-    // The chart's own config, so the add-in can re-open what this produced.
-    // `scene.desc` is the chart's text alternative — the same string the SVG
-    // renderer puts in `<desc>` and the add-in writes as the shape's alt text.
-    // `injectGroupsAndTags` hangs it on the group it creates, which is the one
-    // place in a generated deck that can carry one.
-    dressing.push({
-      configJson: JSON.stringify(cfg),
-      title: cfg?.title ?? `Chart ${i + 1}`,
-      desc: scene.desc,
-    });
+    // An agenda is neither grouped nor tagged, as the add-in inserts it
+    // (`insertAgendaSlides`: `group: false, tagData: undefined`). It was handed
+    // `JSON.stringify(cfg)` like a chart, so the injector wrapped it in a group
+    // named PowerChart carrying a POWERCHART_CONFIG tag with no `data` in it —
+    // and the pane, which reads a tag without looking at what is in it, offered
+    // "Edit selected chart" on the agenda (a TypeError out of `stateFromConfig`)
+    // and aborted the deck-wide Same scale on its `valueExtent` for every chart
+    // in the deck, naming no slide.
+    if (agenda) {
+      dressing.push({ group: false });
+    } else {
+      // The chart's own config, so the add-in can re-open what this produced.
+      // `scene.desc` is the chart's text alternative — the same string the SVG
+      // renderer puts in `<desc>` and the add-in writes as the shape's alt text.
+      // `injectGroupsAndTags` hangs it on the group it creates, which is the one
+      // place in a generated deck that can carry one.
+      dressing.push({
+        configJson: JSON.stringify(cfg),
+        title: cfg?.title ?? `Chart ${i + 1}`,
+        desc: scene.desc,
+        // Where the live renderer would have put the chart's frame, in points —
+        // the same `[dx / IN, dy / IN]` the add-in's own deck builder hands the
+        // injector (`pptx-deck.ts`), which measures the anchor off the group it
+        // makes. This writer passed no origin at all, so every chart it made
+        // carried POWERCHART_CONFIG alone and the pane's first edit fell back to
+        // the group's own corner — the frame origin PLUS the scene's ink offset
+        // (an untitled clustered chart's first ink is 42pt below the frame, a pie
+        // 112pt right of it) — and the redraw landed that far from where it was.
+        //
+        // NO `sceneTag`: the lib does not export `sceneFingerprint`, so the first
+        // edit of one of these is still a full redraw (stamping the fingerprint is
+        // what that redraw is for). It no longer moves the chart.
+        origin: [dx / IN, dy / IN],
+      });
+    }
   } catch (err) {
     failed++;
     // Exactly one slide per config, whichever half of the try failed.
@@ -287,7 +354,26 @@ for (let i = 0; i < configs.length; i++) {
 // runs on its own generated decks. One implementation, so a chart Claude
 // generates and a chart the pane drew are the same kind of object.
 const { base64 } = await injectGroupsAndTags(await pres.write({ outputType: "base64" }), dressing);
-writeFileSync(output, Buffer.from(base64, "base64"));
+// The one step with no phrasing of its own. Every read-side failure in this
+// script is caught and worded for an agent, and this write — which runs last,
+// after all the rendering — let an output folder that does not exist, an output
+// path that is a folder, and a deck held open in PowerPoint end the process in
+// Node's raw uncaught-exception dump (source excerpt, internal frames, errno
+// object, Node version) over a deck that had rendered perfectly.
+try {
+  writeFileSync(output, Buffer.from(base64, "base64"));
+} catch (err) {
+  const fix =
+    {
+      ENOENT: `the folder ${dirname(output)} does not exist — create it, or give a path inside one that does`,
+      EISDIR: "that path is a folder — end it in a file name such as deck.pptx",
+      EPERM: "the file is read-only or locked — close it in PowerPoint, or write to another path",
+      EACCES: "the file is read-only or locked — close it in PowerPoint, or write to another path",
+      EBUSY: "the file is open in another program — close it in PowerPoint, or write to another path",
+    }[err?.code] ?? String(err?.message ?? err);
+  console.error(`couldn't write ${output}: ${fix}${err?.code ? ` (${err.code})` : ""}`);
+  process.exit(1);
+}
 const modeSummary = imageSlides
   ? `${configs.length - imageSlides} native shapes + ${imageSlides} image`
   : "native shapes";

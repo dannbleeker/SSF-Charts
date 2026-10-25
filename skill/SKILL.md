@@ -58,7 +58,7 @@ should stay `"shapes"` so the recipient can edit the chart.
 
 `highlight` is the current chapter (0-based; omit or `-1` for an overview). For a
 section-divider before each chapter, pass an array with a different `highlight`
-per slide.
+per slide. An agenda has no `style` and is always drawn on a white slide.
 
 3. **QA visually.** Render the SVGs and inspect them (or convert the pptx to
    images) before delivering: check label overlaps, totals, axis sanity. Fix
@@ -81,7 +81,7 @@ per slide.
 | Distribution per category | `boxplot` (Min/Q1/Median/Q3/Max rows, or raw samples → Tukey whiskers) |
 | Multi-dimension profile / score | `radar` (translucent polygons, ≤3 series) |
 | Matrix of values (region × period) | `heatmap` (one global color scale) |
-| Values by geography | `tilemap` (tile-grid cartogram: `map: "us"/"eu"/"europe"/"world"`) |
+| Values by geography | `tilemap` (tile-grid cartogram: `map: "us"/"eu"/"europe"/"world"`; `world` is never auto-detected, so always set it) |
 | Stage-by-stage breakdown of a total (contacts → answered → solved) | `cascade` ("Stage | Drop label | Group" categories) |
 | Pipeline / conversion stages | `funnel` (centered bands + conversion %) |
 | One dominant share ("68% of…") | `waffle` (10×10 unit grid; single category reads as a literal %) |
@@ -114,7 +114,7 @@ per slide.
 | Benchmark / consensus / target per category over columns | `combo` + `"type": "marker"` on that series (points, no line — keep it on the columns' scale) |
 | "Us vs the peer range" on a radar | `radar` (peers then us) + `decorations.radarBand: true` |
 | Too many stack segments (long tail) | `stacked`/`clustered` + `otherBucket: {max}` (collapse the rest to "Other") |
-| Daily activity over months (contributions grid) | `heatmap` (one daily date series) + `heatmap.calendar: true` |
+| Daily activity over months (contributions grid) | `heatmap` (one daily date series, categories as date strings such as `2026-01-15`, not day numbers) + `heatmap.calendar: true` |
 | Back-to-back comparison with sub-parts each side | `butterfly` + `butterfly.split: k` (stacked flanks) |
 | Radar over mixed KPI units (shape comparison) | `radar` + `radar.perSpoke: true` |
 | Line series with holes in the data | `line` + `decorations.bridgeGaps: true` (connect across nulls) |
@@ -138,17 +138,18 @@ per slide.
 | Group similar rows of a matrix together | `heatmap` + `heatmap.cluster: true` (dendrogram) |
 | Trend of a mix plus a KPI line | `combo` + `combo.columns: "area"` + a `type:"line"` series |
 
-Decorations (`decorations` object): `totals`, `cagr {from,to}`,
+Decorations (INSIDE the `decorations` object): `totals`, `cagr {from,to}`,
 `difference {from,to,series?,fromValueLine?}`, `valueLines`, `labelContent`,
-`segmentOrder`, `connectors` (segment-boundary lines between stacked columns),
+`connectors` (segment-boundary lines between stacked columns),
 `callouts` (speech-bubble comments), `bands` (shaded background regions),
 `hundredPercentNote`, `stepped` (line/area staircase), `smooth` (line
 curves), `bridgeGaps` (line across nulls), `trajectory` (scatter/bubble trail),
-`summaryBars` (gantt sections), `radarBand` (radar peer range), plus
-`scale {min,max}`,
+`summaryBars` (gantt sections), `radarBand` (radar peer range). These go at the
+TOP LEVEL of the config, beside `decorations`, not inside it: `scale {min,max}`,
 `axisBreak {from,to}`, `logScale`, `gapWidth`/`overlap` (Excel-style column
-spacing), `categorySort`, `footnote` (source line), `pie {explode}` and
-per-cell `series.colors` highlights at the top level. Defaults are
+spacing), `categorySort`, `segmentOrder`, `footnote` (source line) and
+`pie {explode}`; per-cell `colors` highlights go on a series. A key put in the
+wrong object is ignored without an error. Defaults are
 think-cell-like: labels on, axis off; always set `footnote` with the data
 source when you know it.
 
@@ -161,6 +162,7 @@ source when you know it.
   as the add-in draws it — so a deck rendered here opens re-editable in the
   pane. (This bullet used to say the opposite, and contradicted the usage note
   124 lines above it: grouping shipped in #228, and the committed showcase deck
-  has one `p:grpSp` named `PowerChart` per slide.)
+  has one `p:grpSp` named `PowerChart` per slide.) An agenda slide is not a
+  chart: it is loose, untagged shapes, as the pane inserts one.
 - Prefer `waterfall` over generic columns whenever the story is a change
   decomposition. Prefer `mekko` when both share and size matter.

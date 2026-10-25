@@ -124,6 +124,19 @@ export const hex = (c) => {
  * about the same config — the divergence class this project has now found in
  * all three colour sinks independently.
  *
+ * A paint that draws NOTHING is the same fact, and `readHex` cannot see it: it
+ * reads the colour channels and drops the alpha, so `rgba(0,0,0,0)` (what a
+ * browser's computed style answers for "transparent"), `#00000000`, `#0000`,
+ * `hsla(0,0%,0%,0)` and `rgb(0 0 0 / 0)` all came back `000000`. Only the
+ * KEYWORD `transparent` fell through to the white fallback, because it is not a
+ * colour name. The layouts read every one of those spellings as the same light
+ * canvas (`layoutBackground` in `src/core/color.ts` maps each to `transparent`,
+ * so the chart is inked #0b0b0b), which put near-black ink on a black slide —
+ * in the skill's deck and, since the add-in's generated deck started following
+ * `style.background`, in the add-in's too. `alphaOf` already knows what draws
+ * nothing, so it is asked here, and `test/fix-k6-deck-writer-skill-and-slide-claims.test.ts`
+ * sweeps the spellings against `layoutBackground` so the two cannot drift.
+ *
  * Kept separate from `hex` rather than changing it: the six-hex-digit guarantee
  * `hex` makes is load-bearing for every other call site, and a paint that is
  * merely unrecognised is a different fact from one that is unreadable.
@@ -135,6 +148,7 @@ export const hexOr = (c, fallbackHex) => {
   } catch {
     out = undefined;
   }
+  if (alphaOf(c) === 0) out = undefined;
   return typeof out === "string" && /^[0-9a-fA-F]{6}$/.test(out) ? out : hex(fallbackHex);
 };
 

@@ -42,7 +42,7 @@ Everything the SSF Charts engine accepts. All lengths in points (1pt = 1/72").
   decorations?: {
     segmentLabels?: boolean,          // default true, auto-hidden when too small
     seriesLabels?: boolean,           // default true (right of last column / legend)
-    totals?: boolean,                 // column totals
+    totals?: boolean,                 // column totals (one per stack on a clustered-stacked chart, sideways too)
     grandTotal?: boolean,             // sum of all category totals, top-right (stacked/clustered columns)
     variance?: { actual: number, reference: number, mode?: "absolute"|"percent", goodIsUp?: boolean },
                                       // IBCS variance tier below the columns: signed Δ (or Δ%) of the
@@ -127,7 +127,7 @@ Everything the SSF Charts engine accepts. All lengths in points (1pt = 1/72").
               jitter?: boolean,       // overlay raw observations as jittered dots (raw-sample mode)
               notch?: boolean,        // notch each box at the median CI (raw-sample mode)
               meanSd?: boolean },     // box = mean±SD, centre = mean, whiskers = mean±2SD (raw-sample mode)
-  map?: "us" | "eu" | "europe" | "world",   // tilemap layout (auto-detected if omitted)
+  map?: "us" | "eu" | "europe" | "world",   // tilemap layout (us/eu/europe are auto-detected if omitted; world never is)
   tilemap?: { shape?: "square"|"hex",       // hexagonal tiles (offset rows) instead of squares
               glyph?: "bars" },   // mini bar chart per region from a multi-series datasheet
   heatmap?: { color?, negativeColor?, mode?: "sequential"|"diverging"|"auto",
@@ -322,10 +322,13 @@ one trailing "Other" segment — think-cell's "Move to Other Series". No-op when
 there are already `max` or fewer series.
 
 **Calendar heatmap** (`heatmap.calendar`): a single daily series with date
-categories (ISO strings or day numbers with `data.dates`) is laid out as a
-weekday (row) × week (column) grid with month labels — the
-GitHub-contributions view. Falls back to the matrix layout without dates. Only
-the first series is drawn, and the colour scale follows it alone.
+categories (strings that read as dates — `2026-01-15`, `15.01.2026`, `Jan 2026`)
+is laid out as a weekday (row) × week (column) grid with month labels — the
+GitHub-contributions view. A bare day number is NOT a date here, `data.dates`
+or not (that flag belongs to Gantt rows; the heatmap never reads it), so it
+falls back to the plain matrix layout — as does any set with a category that
+is not a date, with no warning. Only the first series is drawn, and the colour
+scale follows it alone.
 
 **Butterfly stacked flanks** (`butterfly.split`): the first `split` series
 stack on the left flank and the rest stack on the right (a legend replaces the
@@ -464,7 +467,11 @@ follow the data from zero (or from the lowest negative value) up. **Heatmap**: s
 rows, categories = columns; one global color scale (diverging through white
 when the data spans zero). **Tilemap**: categories = region codes (US postal,
 ISO-2 for eu/europe, or NA/LATAM/EU/MEA/SSA/CIS/SA/EA/SEA/OCE for world) —
-the layout is auto-detected from the codes or pinned with `map:`.
+`us`, `eu` and `europe` are auto-detected from the codes when at least 90% of
+them match one layout, or pinned with `map:`. **`world` is never
+auto-detected** (its macro codes collide with ISO-2): always set
+`map: "world"`. A set that matches no layout draws no tiles, only the hint
+"No recognized region codes — set map: …".
 
 ## Chart-design formalia (baked-in defaults, per "the good chart" practice)
 
@@ -484,10 +491,15 @@ totals `#898781`. Override via `style.palette` or per-series `color`.
 ## Output
 
 `scripts/render-pptx.mjs` emits one 13.33×7.5in slide per config with the chart
-centered, every bar/label/line as a native PowerPoint shape, and exact
-adjustable pie geometry. The slide takes the chart's own `style.background`
-(white by default), so a dark-styled config stays readable.
-`scripts/render-svg.mjs` emits SVGs for fast visual QA. Both accept an
+centered, every bar/label/line as a native PowerPoint shape, and exact pie
+geometry (each wedge is a custom-geometry polygon sampled from the same polar
+maths as the preview; the OOXML pie preset is not used, so a wedge has no
+adjustment handles). The slide takes the chart's own `style.background`
+(white by default, and white for a background that draws nothing — `transparent`,
+`rgba(0,0,0,0)`, `#0000` — or that cannot be read; an agenda is always white), so
+a dark-styled config stays readable.
+`scripts/render-svg.mjs` emits SVGs for fast visual QA, on the chart's own
+`style.background` too. Both accept an
 `"agenda"` config and isolate a failing one, so a single bad entry cannot throw
 away the rest of the batch.
 
@@ -497,7 +509,13 @@ select a chart, click *Edit selected chart*, change the data, update it in
 place. The grouping and the `POWERCHART_CONFIG` tag are injected into the OOXML
 after pptxgenjs is done — it can express neither — by the same code the add-in
 runs, so the two outputs cannot drift apart. Image-mode charts get the tag on
-the picture, so they are re-editable too.
+the picture, so they are re-editable too. The tag part also records the chart's
+frame origin, so the first edit in the pane redraws the chart where it stands
+(that first edit is a full redraw, which is what stamps the fingerprint later
+edits patch against). An `"agenda"` slide is the exception: loose shapes, no
+group and no tag, exactly as the pane's *Insert agenda slides* draws one — it is
+text, not a chart, and there is no data in it to edit. It is always drawn as
+native shapes, whatever `render` says.
 
 The chart's text alternative travels too: the same one-line summary the SVG
 puts in `<desc>` is written as the group's alt text, so PowerPoint shows it

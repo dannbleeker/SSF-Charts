@@ -116,7 +116,10 @@ export async function buildDeckBase64(
     const slide = pres.addSlide();
     // `hexOr`, not `hex` — see the note at its definition. An unrecognised
     // background must fall back to white, because `hex`'s black is right for ink
-    // and catastrophic for the paint everything else is read against.
+    // and catastrophic for the paint everything else is read against. So must a
+    // zero-alpha one, in every spelling: `layoutBackground` (src/core/color.ts)
+    // lays the chart out for a light canvas under all of them and inks it
+    // #0b0b0b, and `rgba(0,0,0,0)` came out of here as an explicit black slide.
     slide.background = { color: hexOr(item.background ?? backgroundOf(item.configJson), "#ffffff") };
     // Centre the scene on the slide — the same arithmetic the skill renderer
     // uses, so a chart lands in the same place whichever path produced it.

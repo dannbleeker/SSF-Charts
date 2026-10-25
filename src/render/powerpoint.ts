@@ -2404,8 +2404,9 @@ export async function addSlideForChart(): Promise<string | null> {
  *                                           slide. One slide landed; nothing to
  *                                           take back.
  *   the deck grew by TWO or more            one `add()` landed several slides.
- *                                           All but the one we use are ours and
- *                                           blank, and are taken back out.
+ *                                           All but the one we use are taken back
+ *                                           out — each one a FRESH READ has shown
+ *                                           to hold no shapes, and no other.
  *
  * `slides.add()` APPENDS, so the slides the add made are the last `grew` of the
  * deck. That is the whole basis, and it is checked rather than assumed: every
@@ -2416,6 +2417,19 @@ export async function addSlideForChart(): Promise<string | null> {
  * slide of the user's removed. `addScratchSlide` makes the same claim on the
  * same evidence (`test/host-probe.test.ts` arms `addsAtFront` and
  * `renumbersOnAdd` together to prove the freshness half).
+ *
+ * "ABSENT FROM THE LISTING" PROVES THE SLIDE IS NEW TO THE LISTING, NOT THAT THE
+ * ADD MADE IT, and this deleted on the first alone. A slide that appears between
+ * the two listings — a co-author's, or the user duplicating the last slide while
+ * the offer is mid-add — lands BEFORE the appended one and satisfies both tests,
+ * so it was deleted with whatever it held (25 shapes, in the reproduction) and
+ * the chart went on the slide behind it. Before `54bde3b` a diff that was not
+ * exactly one slide deleted nothing. A slide the add made is BLANK — it is built
+ * on the blank layout — so blank is the extra test, asked of the deck now rather
+ * than assumed: an extra whose shape count does not read back as zero (it holds
+ * shapes, or the host would not say) is left where it is and traced. That also
+ * leaves a blank behind on a deck with no blank layout, where the add inherits
+ * placeholders; a blank slide in a finished deck is the cheaper mistake.
  *
  * The LAST of the new slides is the one used, as there. The others go through
  * `deleteSlideById`, which re-reads the deck and matches the id before it
@@ -2437,10 +2451,27 @@ async function claimAppendedSlide(before: string[], after: string[]): Promise<st
   }
   const claimed = added[added.length - 1];
   const extras = added.slice(0, -1);
+  // ONE read for all of them, in a context of its own and taken now — after the
+  // add and its listing, so it is the deck's answer about these slides at the
+  // moment of deleting them. `countSlideShapesOnce` leaves an id it could not
+  // read out of the map, which is not zero: only a count that reads back as
+  // exactly 0 clears a slide for deletion.
+  const counts = extras.length ? await countSlideShapesOnce(extras) : new Map<string, number>();
   const stuck: string[] = [];
+  const kept: string[] = [];
   // Highest first, so taking one out cannot move the position of another still
   // to go.
-  for (const id of [...extras].reverse()) if (!(await deleteSlideById(id))) stuck.push(id);
+  for (const id of [...extras].reverse()) {
+    if (counts.get(id) !== 0) {
+      kept.push(id);
+      trace("host", "left a new-looking slide in the deck: it is not shown to be blank", {
+        slideId: id,
+        shapes: counts.get(id) ?? "unreadable",
+      });
+      continue;
+    }
+    if (!(await deleteSlideById(id))) stuck.push(id);
+  }
   // A different line from `addScratchSlide`'s "claimed the appended slide
   // though the id list churned": `poolIdChurn` counts that one, and these are a
   // different population (a slide for a chart, not a probe's scratch).
@@ -2448,8 +2479,9 @@ async function claimAppendedSlide(before: string[], after: string[]): Promise<st
     before: before.length,
     after: after.length,
     landed: grew,
-    removed: extras.length - stuck.length,
+    removed: extras.length - stuck.length - kept.length,
     leftBehind: stuck.length,
+    notBlank: kept.length,
   });
   return claimed;
 }
