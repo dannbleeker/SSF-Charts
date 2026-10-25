@@ -3148,13 +3148,23 @@ none is a task yet: each is an owner call or a measurement.
    where APCA is poor); or flip to dark only where white falls under 3:1 WCAG
    (L <= 0.30, which flips `#1baf7a` and `#e87ba4` only). The hybrid is a
    one-constant change plus a snapshot regeneration, and is the recommendation.
-2. **A resize survives only half (r2-2).** An in-place edit now reads each rect's
-   live width and height back and, when the edit would write geometry and a rect is
-   more than 1pt off the scene, redraws instead of mixing two scales. A recolour or
-   retitle writes no geometry and keeps the stretched chart. What is not built is
-   the preferred form: the redraw keeping the person's size, which needs the pane's
-   config to adopt the live group size. Today that redraw returns to the size the
-   chart was drawn at (Ctrl+Z restores).
+2. **A resize survives (r2-2, finished in `x4-keep-the-resize`).** An in-place edit
+   reads each rect's live width and height back and, when the edit would write
+   geometry and a rect is more than 1pt off the scene, redraws instead of mixing two
+   scales. A recolour or retitle writes no geometry and keeps the stretched chart.
+   The redraw now keeps the person's size: the factor comes off the rects the resolve
+   sync already loads (`liveScaleOfScene`), the chart is laid out at the config's
+   size times it, the new size is written into the config tag, and the pane takes it
+   over through `EditTarget.size`. Left undone: a chart whose members the host will
+   not read (a refused group read, no width or height) still redraws at the size it
+   was drawn at; loading a resized chart from the selection shows the stored size
+   until an update keeps the live one, because the load read carries no member sizes
+   and a group's own size cannot be compared with the scene without a drawn-extent
+   record; the recovery ladder after a failed redraw (slide swap, picture) rebuilds at
+   the pane's size. Not measured on the live host: that a group resize scales every
+   member rect by one factor to within a point. The next round's
+   `redrawing at the size the user gave the chart` lines and the `sizes` count on
+   `updated only the shapes that changed` say whether it compared anything.
 3. **A copied ungrouped chart's tie-break (r2-19).** When two anchors name the same
    parts, the older (lower numeric shape id) owns them and an unorderable id means
    nobody does. Residuals: a copy edited this way leaves its own old parts under

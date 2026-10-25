@@ -326,6 +326,91 @@ export function checkShapesAgainstScene(prev: Scene, live: readonly LiveShape[],
 }
 
 /**
+ * The factors a person has stretched a chart by since it was drawn: how many
+ * times as wide and as tall its rects are now, against the scene they were drawn
+ * from. `1` on an axis whose rects all still agree with the scene to within
+ * `SIZE_TOLERANCE`, so a chart stretched in one direction reads `{ x: 1, y: 2 }`.
+ */
+export interface LiveScale {
+  x: number;
+  y: number;
+  /** Rects whose size the host read back and that the factors were fitted to. */
+  samples: number;
+}
+
+/**
+ * Fewer rects than this say nothing about the chart as a whole: one bar a person
+ * dragged by hand is a bar they changed, not a chart they resized.
+ */
+const MIN_SCALE_SAMPLES = 2;
+
+/**
+ * The factors beyond which a reading is a host that answered nonsense, not a
+ * person: a chart a tenth of its size or ten times it. A reading outside them
+ * is no evidence, so the chart keeps the size its config gives it as before.
+ */
+const MIN_LIVE_SCALE = 0.1;
+const MAX_LIVE_SCALE = 10;
+
+/**
+ * How much a person has stretched a chart, read off the shapes the host reported
+ * on — or `null` when they have not, or when the shapes cannot say.
+ *
+ * `checkShapesAgainstScene` answers "is a rect off by more than a point", and
+ * stops at the first that is. That is enough to refuse writing a changed bar
+ * beside stretched neighbours; it is not enough to draw the chart again at the
+ * size the person made it, which needs the FACTOR. Resizing a group in
+ * PowerPoint scales every member about one corner, so the factor is one number
+ * per axis, and the rects the host already reported on carry it: no host call
+ * of its own.
+ *
+ * The same discipline as the check beside it, POSITIVE EVIDENCE ONLY, and in
+ * three ways that matter when the answer is used to change what gets drawn:
+ *
+ * - **The pairing has to be the real one.** Rects are paired with nodes by
+ *   position, so a shape that now carries another node's name (a child brought
+ *   to the front) is no mapping at all and the answer is `null`.
+ * - **One factor per axis, and every rect has to agree with it** to within the
+ *   same point. A person who dragged a single bar, or two bars by different
+ *   amounts, has not resized the chart; fitting a factor to that would redraw
+ *   the whole chart at a size nobody chose. Such a chart gets `null` and keeps
+ *   the old behaviour.
+ * - **Silence is not evidence.** A rect whose size the host did not read is
+ *   skipped, fewer than `MIN_SCALE_SAMPLES` read means `null`, and a chart whose
+ *   rects all agree with the scene means `null` too, so a chart nobody touched
+ *   never gets a factor and is redrawn exactly as it always was.
+ *
+ * The factor is the ratio of the SUMS of the sides, which weights each rect by
+ * its size: a 0.2pt bar (the floor under a bar with no value) that the host
+ * rounds is outvoted by the 300pt bar beside it. The per-rect agreement test is
+ * what stops that from hiding an outlier.
+ */
+export function liveScaleOfScene(prev: Scene, live: readonly LiveShape[]): LiveScale | null {
+  if (checkShapesAgainstScene(prev, live, { sizes: false }).off) return null;
+  const want: [number, number][] = [];
+  const got: [number, number][] = [];
+  for (let i = 0; i < Math.min(prev.nodes.length, live.length); i++) {
+    const node = prev.nodes[i];
+    const { width, height } = live[i];
+    if (node.kind !== "rect" || !Number.isFinite(width) || !Number.isFinite(height)) continue;
+    want.push([Math.max(MIN_RECT_SIDE, node.w), Math.max(MIN_RECT_SIDE, node.h)]);
+    got.push([width as number, height as number]);
+  }
+  if (want.length < MIN_SCALE_SAMPLES) return null;
+  const axis = (k: 0 | 1): number | null => {
+    if (want.every((w, i) => Math.abs(got[i][k] - w[k]) <= SIZE_TOLERANCE)) return 1;
+    const sum = (rows: [number, number][]) => rows.reduce((total, r) => total + r[k], 0);
+    const factor = sum(got) / sum(want);
+    if (!(factor >= MIN_LIVE_SCALE && factor <= MAX_LIVE_SCALE)) return null;
+    return want.every((w, i) => Math.abs(got[i][k] - w[k] * factor) <= SIZE_TOLERANCE) ? factor : null;
+  };
+  const x = axis(0);
+  const y = axis(1);
+  if (x === null || y === null || (x === 1 && y === 1)) return null;
+  return { x, y, samples: want.length };
+}
+
+/**
  * Whether a plan is worth taking, given what the redraw would have cost.
  *
  * Kept separate from `planSceneUpdate` because it is a judgement about COST,

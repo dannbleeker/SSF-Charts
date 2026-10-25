@@ -166,7 +166,10 @@ describe("r2-2: an edit after the user resized the chart", () => {
     expect(routeTaken(), "a stretched chart took the in-place path for a geometry change").toBe("redraw");
     const declined = traceLog().entries.find((e) => e.message === "not updating in place — redrawing instead");
     expect((declined!.data as { why: string }).why).toMatch(/size|resiz|stretch/i);
-    expect(wrongShapes(slide, buildChart(next))).toEqual([]);
+    // The redraw lands at the size the person made it (1.5 wide, as tall as it
+    // was), not at the config's: `test/fix-x4-keep-the-resize.test.ts` is the
+    // proof of that decision. What matters here is that it is ONE scale.
+    expect(wrongShapes(slide, buildChart(edited(next, (c) => (c.width = 720))))).toEqual([]);
   });
 
   it("still takes the fast path for an edit that writes no geometry, and keeps the user's resize", async () => {

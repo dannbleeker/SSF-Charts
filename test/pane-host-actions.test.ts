@@ -107,7 +107,17 @@ const host = vi.hoisted(() => ({
    * existing "target is gone" test depends on that; the explode tests opt in to
    * a live EditTarget, which is what a real successful update hands back.
    */
-  updateResult: undefined as undefined | { slideId: string; shapeId: string; left: number; top: number; lost?: string },
+  updateResult: undefined as
+    | undefined
+    | {
+        slideId: string;
+        shapeId: string;
+        left: number;
+        top: number;
+        lost?: string;
+        /** The size the update redrew a hand-resized chart at — see `EditTarget.size`. */
+        size?: { width: number; height: number };
+      },
   /** What a fresh insert hands back — an EditTarget now, so a recovery stays editable. */
   insertResult: null as null | { slideId: string; shapeId: string; left: number; top: number; lost?: string },
   /** Whether the host advertises insertSlidesFromBase64 — off by default. */
@@ -134,6 +144,8 @@ const host = vi.hoisted(() => ({
    * only way a test can see whether the caller sweeps.
    */
   updateChartsStalls: new Map<number, string[]>(),
+  /** Which items of a multi-chart update come back redrawn at a size the person gave them, by index. */
+  updateChartsKept: new Map<number, { width: number; height: number }>(),
   /**
    * How many charts `updateChartsInSlides` drops WITHOUT reporting them.
    *
@@ -400,7 +412,11 @@ vi.mock("../src/render/powerpoint", () => ({
       // this array (it comes back carrying its OLD target), which is why the two
       // signals do not double-count. `updateChartsDrops` is how a test arms the
       // silent case.
-      return items.slice(host.updateChartsDrops).map((it) => it.target);
+      return items
+        .slice(host.updateChartsDrops)
+        .map((it, i) =>
+          host.updateChartsKept.has(i) ? { ...(it.target as object), size: host.updateChartsKept.get(i) } : it.target,
+        );
     },
   ),
   listChartsInDeck: vi.fn(async (opts: { withInventory?: boolean } = {}) => {
@@ -720,6 +736,7 @@ async function bootHostPane(opts?: {
   host.calls.updateChart = [];
   host.calls.updateCharts = [];
   host.updateChartsStalls.clear();
+  host.updateChartsKept.clear();
   host.updateChartsDrops = 0;
   host.stopRequested = false;
   host.slideSize = { width: 960, height: 540, source: "pageSetup" };
@@ -1859,6 +1876,131 @@ describe("Same scale", () => {
     await settle();
     expect(host.calls.swept).toHaveLength(0);
     expect($("host-note").textContent?.toLowerCase()).toContain("same scale applied");
+  });
+});
+
+/**
+ * x4: the renderer keeps a hand-resized chart's size through an edit and says so
+ * in `EditTarget.size`. The pane's width and height are the size every config it
+ * builds is drawn at, so unless it takes the answer over, its NEXT edit is built
+ * at the size the chart was first drawn at and redraws the chart back to it.
+ * `test/fix-x4-keep-the-resize.test.ts` proves the renderer's half against the
+ * fake host; this is the pane's.
+ */
+describe("a chart the person resized on the slide", () => {
+  beforeEach(bootHostPane);
+
+  const sizeFields = () => [($("chart-w") as HTMLInputElement).value, ($("chart-h") as HTMLInputElement).value];
+  const sentConfig = (n: number) => JSON.parse(host.calls.updateChart[n].opts.tagData!) as ChartConfig;
+
+  /** Load a 480x320 chart, so Insert becomes Update. */
+  async function loadChart(shapeId = "shape-9") {
+    host.loadSelectionResult = {
+      configJson: chartJson([1, 2, 3]),
+      target: { slideId: "s1", shapeId, left: 10, top: 20 },
+    };
+    $("load-selection").click();
+    await settle();
+  }
+
+  it("takes over the size the update kept, and builds the next edit at it", async () => {
+    await loadChart();
+    expect(sizeFields()).toEqual(["480", "320"]);
+    host.updateResult = { slideId: "s1", shapeId: "shape-10", left: 10, top: 20, size: { width: 960, height: 640 } };
+    $("insert").click();
+    await settle();
+    // The first edit went out at the size the pane had; the renderer redrew it at the person's.
+    expect([sentConfig(0).width, sentConfig(0).height]).toEqual([480, 320]);
+    expect(sizeFields(), "the pane still shows the size the chart was first drawn at").toEqual(["960", "640"]);
+
+    host.updateResult = { slideId: "s1", shapeId: "shape-11", left: 10, top: 20 };
+    $("insert").click();
+    await settle();
+    expect(
+      [sentConfig(1).width, sentConfig(1).height],
+      "the next edit was built at the old size, which redraws the chart back to it",
+    ).toEqual([960, 640]);
+  });
+
+  it("does not arm auto-update to push back a size the slide already has", async () => {
+    vi.useFakeTimers();
+    try {
+      host.loadSelectionResult = {
+        configJson: chartJson([1, 2, 3]),
+        target: { slideId: "s1", shapeId: "shape-9", left: 10, top: 20 },
+      };
+      $("load-selection").click();
+      // Past the load's own debounced preview, which would otherwise land after
+      // auto-update is on and push an update of its own.
+      await vi.advanceTimersByTimeAsync(500);
+      ($("auto-update") as HTMLInputElement).checked = true;
+      host.updateResult = { slideId: "s1", shapeId: "shape-10", left: 10, top: 20, size: { width: 960, height: 640 } };
+      $("insert").click();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(host.calls.updateChart).toHaveLength(1);
+      expect(sizeFields()).toEqual(["960", "640"]);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(host.calls.updateChart, "the pane pushed back the size it had just been told").toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves the size alone when the update kept none", async () => {
+    await loadChart();
+    host.updateResult = { slideId: "s1", shapeId: "shape-10", left: 10, top: 20 };
+    $("insert").click();
+    await settle();
+    expect(sizeFields()).toEqual(["480", "320"]);
+  });
+
+  it("does not hand one chart's size to another the pane has since opened", async () => {
+    await loadChart("shape-9");
+    let release!: () => void;
+    host.updateGate = new Promise<void>((r) => (release = r));
+    host.updateResult = { slideId: "s1", shapeId: "shape-10", left: 10, top: 20, size: { width: 960, height: 640 } };
+    $("insert").click();
+    await settle();
+    // While the write is open, the person selects and opens ANOTHER chart.
+    host.loadSelectionResult = {
+      configJson: JSON.stringify({ ...JSON.parse(chartJson([4, 5])), width: 600, height: 400 }),
+      target: { slideId: "s1", shapeId: "other", left: 30, top: 40 },
+    };
+    $("load-selection").click();
+    await settle();
+    release();
+    host.updateGate = null;
+    await settle();
+    expect(sizeFields(), "chart A's size landed on chart B").toEqual(["600", "400"]);
+  });
+
+  it("builds Explode's chart at the size it was kept at", async () => {
+    host.loadSelectionResult = {
+      configJson: JSON.stringify({ ...JSON.parse(chartJson([1, 2])), render: "image" }),
+      target: { slideId: "s1", shapeId: "pic-1", left: 10, top: 20 },
+    };
+    host.updateResult = { slideId: "s1", shapeId: "grp-1", left: 10, top: 20, size: { width: 720, height: 480 } };
+    $("explode").click();
+    await settle();
+    expect(sizeFields()).toEqual(["720", "480"]);
+  });
+
+  it("follows Same scale to the size a rescaled chart was kept at", async () => {
+    // The pane has chart `a` open; the rescale redraws it at the person's size.
+    host.loadSelectionResult = {
+      configJson: chartJson([10, 20, 30]),
+      target: { slideId: "s1", shapeId: "a", left: 0, top: 0 },
+    };
+    $("load-selection").click();
+    await settle();
+    host.deckCharts = [
+      { configJson: chartJson([10, 20, 30]), target: { slideId: "s1", shapeId: "a", left: 0, top: 0 } },
+      { configJson: chartJson([5, 90]), target: { slideId: "s2", shapeId: "b", left: 0, top: 0 } },
+    ];
+    host.updateChartsKept.set(0, { width: 720, height: 480 });
+    $("same-scale").click();
+    await settle();
+    expect(sizeFields()).toEqual(["720", "480"]);
   });
 });
 

@@ -843,6 +843,36 @@ function applyConfig(cfg: ChartConfig, editTarget: EditTarget | null) {
 }
 
 /**
+ * Take over the size an update kept for the chart the pane is editing.
+ *
+ * An update that finds the chart stretched on the slide draws it again at the
+ * size the person made it and says so through `EditTarget.size` (see
+ * `keepResizedSize`). The pane's width and height are the size every config it
+ * builds from here on is drawn at, so left alone they would redraw the chart
+ * back to the size it was first drawn at on the very next edit. The renderer has
+ * written the same size into the chart's own config tag, which is why this is
+ * the pane agreeing with the slide and not the pane overriding it.
+ *
+ * The preview is drawn at the new size WITHOUT arming auto-update
+ * (`drawPreview`, not `renderPreview`): this is the pane learning what the slide
+ * already shows, and pushing it back would spend an update on a chart that is
+ * already right.
+ */
+function adoptKeptSize(kept: EditTarget | null | undefined): void {
+  if (!kept?.size) return;
+  state.width = kept.size.width;
+  state.height = kept.size.height;
+  for (const [id, value] of [
+    ["chart-w", state.width],
+    ["chart-h", state.height],
+  ] as const) {
+    const field = document.getElementById(id) as HTMLInputElement | null;
+    if (field) field.value = String(value);
+  }
+  drawPreview();
+}
+
+/**
  * Two edit targets name the same chart. BOTH halves are the identity.
  *
  * Shape ids are per slide on a real host — round 497's deck inventory holds
@@ -1769,7 +1799,12 @@ function pairControl(
  */
 const canvasColor = (cfg: ChartConfig) => cfg.style?.background ?? "#ffffff";
 
-function renderPreviewNow() {
+/**
+ * Draw the preview from the pane's state — and nothing else. `renderPreviewNow`
+ * is this plus the auto-update arm; the split is for a caller that has just
+ * learned the state from the slide and must not push it straight back.
+ */
+function drawPreview() {
   try {
     const cfg = currentConfig();
     const scene = buildChart(cfg);
@@ -1783,6 +1818,10 @@ function renderPreviewNow() {
     p.textContent = `Could not render: ${err instanceof Error ? err.message : String(err)}`;
     preview.appendChild(p);
   }
+}
+
+function renderPreviewNow() {
+  drawPreview();
   maybeAutoUpdate();
 }
 
@@ -2460,7 +2499,11 @@ async function runInsert(asNew: boolean) {
       // the user opened mid-write re-pointed the pane, now showing B, at A's
       // redrawn shape — and the next push, manual or the timer's, wrote B's
       // config over A and never touched B.
-      if (paneStillHolds(began)) state.editTarget = next;
+      if (paneStillHolds(began)) {
+        state.editTarget = next;
+        // …and the size it was redrawn at, if the person had resized the chart.
+        adoptKeptSize(next);
+      }
       /**
        * THREE FACTS, AND TWO OF THEM USED TO BE UNREACHABLE.
        *
@@ -3186,6 +3229,7 @@ function followRescale(rescaled: { target: EditTarget; cfg: ChartConfig }[], app
     return;
   }
   state.editTarget = back;
+  adoptKeptSize(back);
   const scale = rescaled[i].cfg.scale;
   state.scaleMin = scale?.min != null ? String(scale.min) : "";
   state.scaleMax = scale?.max != null ? String(scale.max) : "";
@@ -3331,7 +3375,8 @@ async function runExplode() {
   }
   // Adopt the returned target: every shape was replaced, so the old one is dead
   // (the trap doInsert documents — a stale target makes the NEXT update no-op).
-  applyConfig(cfg, next);
+  // At the size the chart was kept at, if the person had resized it.
+  applyConfig(next.size ? { ...cfg, ...next.size } : cfg, next);
   $("selection-banner").style.display = "none";
   note("Exploded to native shapes — edits now update them in place.", "ok");
 }

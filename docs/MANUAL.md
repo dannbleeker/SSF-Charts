@@ -96,12 +96,16 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
 
    If you resized the chart on the slide by hand, an edit that leaves every bar
    and label where it is (a new title, new colours, a restyled outline) keeps
-   your size. An edit that has to move or resize a bar or label redraws the chart
-   at the size the pane's settings give it, so the hand resize is lost — the
-   alternative was a chart with some bars stretched and the edited ones not,
-   reading the wrong value. The same redraw happens if you have
-   changed the stacking order of shapes inside the chart's group (Bring to
-   Front on a single bar or label).
+   your size exactly. An edit that has to move or resize a bar or label redraws
+   the chart laid out afresh at the size you made it, and the pane's Width and
+   Height fields change to match — the alternative was a chart with some bars
+   stretched and the edited ones not, reading the wrong value. It is a fresh
+   layout and not a stretch, so text keeps its size and the chart can differ
+   from your stretched one by a few points. A Width or Height you type in the
+   pane wins over a hand resize. A chart resized unevenly, one bar at a time, is
+   redrawn at the size in the pane's settings, and so is one whose shapes
+   PowerPoint would not report the sizes of, or whose stacking order inside the
+   chart's group you changed (Bring to Front on a single bar or label).
 
    A chart PowerPoint would not group stays a loose set of shapes, and a copy of
    one made on the same slide (Ctrl+D) carries the original's list of shapes.

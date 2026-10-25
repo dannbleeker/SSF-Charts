@@ -39,14 +39,16 @@ import {
 export { errorText, stepOf, trimDebugInfo };
 import { polar, arrowheadBox, wedgeFanSteps, wedgeFanChord, symbolPreset, dashKind } from "../core/geometry";
 import { estimateOfficeShapes } from "../core/scene";
-import { buildChart } from "../core/chart";
+import { buildChart, clampDim } from "../core/chart";
 import { buildDeckBase64 } from "./pptx-deck";
 import type { ChartConfig } from "../core/types";
 import {
   checkShapesAgainstScene,
+  liveScaleOfScene,
   planSceneUpdate,
   sceneFingerprint,
   worthUpdating,
+  type LiveScale,
   type NodeChange,
 } from "../core/scene-diff";
 import { toHex6, alphaOf, isNamedColor } from "../core/color";
@@ -655,6 +657,20 @@ export interface EditTarget {
    * "the pane has lost track of it".
    */
   lost?: "no-config" | "unknown-shape";
+  /**
+   * The size the chart was redrawn at when that is NOT the size the caller's
+   * scene was built at — absent on every other update.
+   *
+   * It is the person's own resize, kept: the update found the chart stretched on
+   * the slide, drew it again at that size, and wrote that size into the config
+   * tag (see `keepResizedSize`). The caller's copy of the config still names the
+   * size the chart was DRAWN at, so its next edit would be built at the old
+   * size and redraw the chart back to it. This is how the caller finds out; the
+   * pane takes it over as its own width and height.
+   *
+   * OUTPUT ONLY: a target handed back in has it stripped, so it is never echoed.
+   */
+  size?: { width: number; height: number };
 }
 
 /**
@@ -2829,6 +2845,12 @@ export function targetWithNoTagResult(old: EditTarget, o: { drew: boolean; wreck
   return old;
 }
 
+/** The target without the answer a previous update left on it. See `updateChartsInSlides`. */
+function withoutSize(target: EditTarget): EditTarget {
+  const { size: _size, ...rest } = target;
+  return rest;
+}
+
 /**
  * Replace any number of existing SSF charts in place, in ONE request context.
  *
@@ -3134,9 +3156,15 @@ export async function deleteShapesById(slideId: string, ids: string[]): Promise<
 }
 
 export async function updateChartsInSlides(
-  items: { scene: Scene; target: EditTarget; opts?: InsertOptions }[],
+  asked: { scene: Scene; target: EditTarget; opts?: InsertOptions }[],
   onFailed?: (item: { scene: Scene; target: EditTarget; opts?: InsertOptions }, err: unknown) => void,
 ): Promise<EditTarget[]> {
+  // `EditTarget.size` is an ANSWER and never a question. A caller hands back the
+  // target its last update returned, so one that carries a size would be echoed
+  // by every path that returns the target it was given (an in-place edit, a
+  // chart the host never resolved), and the pane would take over, after an edit
+  // that resized nothing, a size it had since changed.
+  const items = asked.map((it) => (it.target.size ? { ...it, target: withoutSize(it.target) } : it));
   if (!items.length) return [];
   for (const it of items) slidesWithALostChart.delete(it.target.slideId);
   // A REFUSAL IN AN EARLIER BATCH SAYS NOTHING ABOUT THIS ONE — see
@@ -3533,6 +3561,8 @@ export async function updateChartsInSlides(
      * fall-through at the return, as it always has.
      */
     const movedInPlace = new Map<number, EditTarget>();
+    /** The size each chart was redrawn at when it is the person's resize (`keepResizedSize`), by index in `alive`. */
+    const keptSize = new Map<number, { width: number; height: number }>();
     for (const [i, entry] of alive.entries()) {
       // Stop BEFORE this chart's delete, and break rather than throw. Every
       // chart past here is still whole — untouched old shapes, nothing queued —
@@ -3541,35 +3571,10 @@ export async function updateChartsInSlides(
       // keep their old ones, which is exactly what the return below does for a
       // chart that was never reached.
       if (isStopRequested()) break;
-      const { it, old, parts, listedParts, at } = entry;
+      const { old, parts, listedParts, at } = entry;
+      let { it } = entry;
       const frame = frameOriginAt(it.target, at);
-      const opts: InsertOptions = {
-        ...it.opts,
-        // Which slide this redraw is aimed at. Read ONLY by the per-slide shape
-        // counter in the trace — the slide itself comes from `getSlide` below,
-        // and must go on doing so: `getTargetSlide`, the other reader of this
-        // field, resolves by `slides.getItem(id)`, which this host refuses for
-        // any slide a run has just added.
-        //
-        // Absent until now, so the counter pooled every chart in a deck-wide
-        // rescale under one `(visible)` key and reported 260 shapes on a slide
-        // that held 24.
-        slideId: it.target.slideId,
-        // What this redraw will have drawn, for the NEXT update to diff against.
-        sceneTag: sceneFingerprint(it.scene),
-        // The recorded frame origin, shifted by however far the user has dragged
-        // the chart since it was tagged (livePos - anchor). Untouched, that delta
-        // is zero and the chart re-renders exactly where it is; dragged, it
-        // follows the drag. Measured against the LIVE shape (`at`), never the
-        // caller's snapshot — the pane holds one EditTarget from when the chart
-        // was loaded and reuses it for every update, so a snapshot-based delta
-        // reports no movement and puts a dragged chart back. Charts with no
-        // usable origin tag fall back to the shape's own position.
-        left: frame.left,
-        top: frame.top,
-        altText: it.scene.desc,
-        altTitle: it.scene.title,
-      };
+      let opts = redrawOptions(it, frame);
       // Re-acquired per batch, always. The comment here used to say "an
       // existing slide's proxy is stable across syncs — hold it. Only a
       // freshly-added slide needs a per-batch fresh proxy", and every word of
@@ -3591,10 +3596,8 @@ export async function updateChartsInSlides(
       // redrawing. Before the delete, so a refusal costs nothing: nothing has
       // been removed yet and the loop below does the whole job as it always
       // has. See `tryInPlaceUpdate` for every reason it says no.
-      const landed = await tryInPlaceUpdate(context, entry, opts, {
-        config: entry.wasConfig && tagValue(entry.wasConfig),
-        scene: entry.wasScene && tagValue(entry.wasScene),
-      });
+      const seen: SeenOnTheSlide = {};
+      const landed = await tryInPlaceUpdate(context, entry, opts, seen);
       if (landed) {
         // Counted, NOT pushed into `rendered`. See `landedInPlace`: pushing it
         // would hand `groupAndTagAll` a chart whose shapes it never drew, and
@@ -3602,6 +3605,15 @@ export async function updateChartsInSlides(
         if (landed !== it.target) movedInPlace.set(i, landed);
         landedInPlace++;
         continue;
+      }
+      // The redraw, at the size the person gave the chart if they resized it.
+      // `entry.it` too, because the return below reads each chart's config from
+      // `alive` and the settle pass writes THAT one back if the tag did not land.
+      const kept = keepResizedSize(it, seen);
+      if (kept) {
+        entry.it = it = kept.it;
+        opts = redrawOptions(it, frame);
+        keptSize.set(i, kept.size);
       }
       const getSlide: SlideThunk = () => context.presentation.slides.getItemOrNullObject(it.target.slideId);
       // Everything the redraw manages to commit, whether or not it finishes.
@@ -3816,6 +3828,9 @@ export async function updateChartsInSlides(
         // on the slide and cannot be re-opened. Same signal the insert path
         // carries, for the same reason.
         ...(ri !== undefined && tagged[ri]?.tagged ? {} : { lost: "no-config" as const }),
+        // The size the caller's own copy of the config has to take over, or its
+        // next edit is built at the old one. Absent unless the person resized.
+        ...(keptSize.has(i) ? { size: keptSize.get(i) } : {}),
       };
     });
   });
@@ -12742,6 +12757,10 @@ function strokeColor(lf: PowerPoint.ShapeLineFormat, color: string, replacing = 
  *   config and the tags, never for the shapes, so these are asked of the shapes:
  *   see `checkShapesAgainstScene`.
  *
+ * Whichever way it says no, `seen` carries what the shapes said about a resize,
+ * so the redraw that follows can be drawn at the person's size and not at the
+ * one the chart was drawn at: see `keepResizedSize`.
+ *
  * The tag writes ride in the same sync as the property writes, deliberately. A
  * chart whose picture is new and whose config is old is the worst outcome
  * available here — re-opening it would silently revert the edit — so if the
@@ -13005,6 +13024,139 @@ function groupMembersInOrder(members: PowerPoint.ShapeScopedCollection | undefin
   return items;
 }
 
+/**
+ * The options one chart's redraw is drawn with: the caller's own, and the four
+ * things only the batch knows. One reader for the first attempt and for the
+ * redraw that keeps a resized chart's size, which has a different scene to
+ * fingerprint and the same frame to land on.
+ */
+function redrawOptions(it: { scene: Scene; target: EditTarget; opts?: InsertOptions }, frame: Frame): InsertOptions {
+  return {
+    ...it.opts,
+    // Which slide this redraw is aimed at. Read ONLY by the per-slide shape
+    // counter in the trace — the slide itself comes from the redraw loop's
+    // `getSlide`, and must go on doing so: `getTargetSlide`, the other reader
+    // of this field, resolves by `slides.getItem(id)`, which this host refuses
+    // for any slide a run has just added.
+    //
+    // Absent until now, so the counter pooled every chart in a deck-wide
+    // rescale under one `(visible)` key and reported 260 shapes on a slide
+    // that held 24.
+    slideId: it.target.slideId,
+    // What this redraw will have drawn, for the NEXT update to diff against.
+    sceneTag: sceneFingerprint(it.scene),
+    // The recorded frame origin, shifted by however far the user has dragged
+    // the chart since it was tagged (livePos - anchor). Untouched, that delta
+    // is zero and the chart re-renders exactly where it is; dragged, it
+    // follows the drag. Measured against the LIVE shape (`at`), never the
+    // caller's snapshot — the pane holds one EditTarget from when the chart
+    // was loaded and reuses it for every update, so a snapshot-based delta
+    // reports no movement and puts a dragged chart back. Charts with no
+    // usable origin tag fall back to the shape's own position.
+    left: frame.left,
+    top: frame.top,
+    altText: it.scene.desc,
+    altTitle: it.scene.title,
+  };
+}
+
+/** A frame origin on the slide, as `frameOriginAt` answers it. */
+type Frame = { left: number; top: number };
+
+/**
+ * What `tryInPlaceUpdate` learned about the chart on the slide on its way to
+ * saying no, handed to the caller that owns the redraw.
+ *
+ * `prev` is the scene the stored config draws, which the fingerprint has just
+ * vouched for as the scene the shapes were drawn from; `scale` is how far the
+ * person has stretched those shapes since. Each is absent unless the function got
+ * that far and the shapes said so. Absent is "no evidence", and the redraw is
+ * then what it has always been: drawn at the size the config gives it.
+ */
+export interface SeenOnTheSlide {
+  prev?: Scene;
+  scale?: LiveScale;
+}
+
+/**
+ * The smallest chart a redraw will adopt from a resize: the pane's own minimum
+ * for its Width and Height fields (`syncSizeFromInputs` in `app.ts`). A hand
+ * resize below it is a thumbnail the layout has nothing sensible to draw in, and
+ * the redraw keeps the config's size as before.
+ */
+const KEPT_MIN_WIDTH = 80;
+const KEPT_MIN_HEIGHT = 60;
+
+/**
+ * THE REDRAW THAT KEEPS THE PERSON'S SIZE.
+ *
+ * `tryInPlaceUpdate` declines to write geometry onto a chart the person has
+ * resized (r2-2), and the redraw that followed drew it again at the size the
+ * config gives it: the chart snapped back to the size it was DRAWN at, on any
+ * edit that moved a bar, and Ctrl+Z was the only way to the person's. The
+ * decision is that an edit after a resize keeps the resize. So the redraw is
+ * built at the size the shapes had.
+ *
+ * `scale` is the factor the person stretched the rects by, and every member
+ * scales by the same one, so it is also the factor for the config's frame: the
+ * chart is laid out afresh at `width * x` by `height * y`. The group's box lands
+ * within a few points of the one the person made, not on it, because the ink
+ * margin does not scale; and the layout is a re-layout and not a stretch, so
+ * fonts keep their size, as they do when PowerPoint resizes a group.
+ *
+ * Measured by the caller's resolve sync, which already loads every member's width
+ * and height: nothing is read from the host here, and the common path (a chart
+ * nobody resized, which never gets a `scale`) is untouched.
+ *
+ * ── THE ADOPTED SIZE IS WRITTEN INTO THE CONFIG TAG, and it has to be ─────────
+ * The config is the source of truth for what the shapes are: the next update
+ * rebuilds the scene from the stored config and checks it against the stored
+ * fingerprint before it trusts the shapes. A redraw at the person's size that
+ * left the old width in the tag would store a fingerprint no rebuild of that tag
+ * reproduces, and every later edit would decline the in-place path for good. So
+ * the config that is drawn is the config that is stored, and it carries the size.
+ *
+ * ── AND IT IS ONLY TAKEN WHEN THE CALLER HAS NOT ASKED FOR ANOTHER ────────────
+ * A scene whose canvas is not the stored one's was built at a size somebody
+ * chose (the pane's Width field), and that choice beats a measurement. The
+ * caller's scene must also be what its own config builds: this rebuilds from
+ * `tagData`, so a caller that hands a scene its config does not produce would
+ * have the chart drawn from something it never made. Both mean `null`, which is
+ * "draw what you were given", as before. So does a picture update, whose raster
+ * was taken at the old size and would be stretched by a larger scene.
+ *
+ * The caller learns the size through `EditTarget.size`.
+ */
+export function keepResizedSize(
+  it: { scene: Scene; target: EditTarget; opts?: InsertOptions },
+  seen: SeenOnTheSlide,
+): { it: typeof it; size: { width: number; height: number } } | null {
+  const { prev, scale } = seen;
+  const tagData = it.opts?.tagData;
+  if (!prev || !scale || !tagData || it.opts?.pictureBase64) return null;
+  if (it.scene.width !== prev.width || it.scene.height !== prev.height) return null;
+  // Tenths of a point: the host reads sizes back to about that, and a width of
+  // 959.99999 in the config the person sees in the pane is noise.
+  const fit = (side: number, factor: number) =>
+    factor === 1 ? side : clampDim(Math.round(side * factor * 10) / 10, side);
+  try {
+    const asked = JSON.parse(tagData) as ChartConfig;
+    if (sceneFingerprint(buildChart(asked)) !== sceneFingerprint(it.scene)) return null;
+    const size = { width: fit(prev.width, scale.x), height: fit(prev.height, scale.y) };
+    if (size.width < KEPT_MIN_WIDTH || size.height < KEPT_MIN_HEIGHT) return null;
+    const kept = { ...asked, ...size };
+    trace("draw", "redrawing at the size the user gave the chart", {
+      drawn: [prev.width, prev.height],
+      kept: [size.width, size.height],
+      scale: { x: scale.x, y: scale.y },
+      samples: scale.samples,
+    });
+    return { it: { ...it, scene: buildChart(kept), opts: { ...it.opts, tagData: JSON.stringify(kept) } }, size };
+  } catch {
+    return null;
+  }
+}
+
 async function tryInPlaceUpdate(
   context: PowerPoint.RequestContext,
   entry: {
@@ -13013,11 +13165,18 @@ async function tryInPlaceUpdate(
     parts: PowerPoint.Shape[];
     /** A grouped chart's members, read in the resolve sync. See `queueGroupMembers`. */
     groupMembers?: PowerPoint.ShapeScopedCollection;
+    /** The config and scene-fingerprint tags, read in the same sync. */
+    wasConfig?: PowerPoint.Tag;
+    wasScene?: PowerPoint.Tag;
   },
   opts: InsertOptions,
-  tags: { config?: string; scene?: string },
+  seen: SeenOnTheSlide,
 ): Promise<EditTarget | false> {
   const { it, old, groupMembers } = entry;
+  const tags = {
+    config: entry.wasConfig && tagValue(entry.wasConfig),
+    scene: entry.wasScene && tagValue(entry.wasScene),
+  };
   let parts = entry.parts;
   // HOW MANY SYNCS THIS UPDATE ISSUES, counted here rather than read from
   // `syncsPerContext` — and the reason is a correction to the commit before this
@@ -13198,6 +13357,29 @@ async function tryInPlaceUpdate(
     });
   if (sceneFingerprint(prev) !== tags.scene)
     return no("the stored config no longer renders to the scene that was drawn");
+  // `anchor` for a grouped chart, `old` for a parts-list chart, where the tagged
+  // shape IS node 0. Getting this wrong does not refuse — it writes node 0 onto
+  // the wrong object — so it is chosen once, here, and not re-derived.
+  const anchorShape = anchor ?? old;
+  const shapes = [anchorShape, ...parts];
+  const liveShapes = shapes.map((s) => ({
+    name: loadedValue(() => s.name),
+    width: loadedValue(() => s.width),
+    height: loadedValue(() => s.height),
+  }));
+  // HOW FAR THE PERSON HAS STRETCHED THE CHART, measured HERE and not at the
+  // size check below, because that check is reached by only one of the ways this
+  // function says no. A new category, a second series or a switched kind is
+  // declined as "not node-compatible" or "too much changed" before any size is
+  // looked at, and those are the edits people make most — so reading the factor
+  // only where the size check refuses would keep the resize for a value change
+  // and lose it for an added row. The mapping is vouched for by this point (one
+  // for one, and the fingerprint says the rebuilt scene is the drawn one), and
+  // nothing has been written yet, so the shapes are exactly as the person left
+  // them. Handed back to the caller, which owns the redraw: see
+  // `keepResizedSize`. Pure arithmetic over values already loaded.
+  seen.prev = prev;
+  seen.scale = liveScaleOfScene(prev, liveShapes) ?? undefined;
   const plan = planSceneUpdate(prev, it.scene);
   if (!plan) return no("the two scenes are not node-compatible");
   if (!worthUpdating(plan, it.scene.nodes.length))
@@ -13205,11 +13387,6 @@ async function tryInPlaceUpdate(
       changed: plan.changed.length,
       of: it.scene.nodes.length,
     });
-  // `anchor` for a grouped chart, `old` for a parts-list chart, where the tagged
-  // shape IS node 0. Getting this wrong does not refuse — it writes node 0 onto
-  // the wrong object — so it is chosen once, here, and not re-derived.
-  const anchorShape = anchor ?? old;
-  const shapes = [anchorShape, ...parts];
   // Only shapes the host CONFIRMED. `isLive` is the same test the delete path
   // uses before touching anything, and for the same reason: writing to a shape
   // the host would not answer for is how an update comes to edit something that
@@ -13229,15 +13406,7 @@ async function tryInPlaceUpdate(
   // or a font change leaves a stretched chart consistently stretched, and
   // redrawing for it would throw the person's resize away for nothing.
   const writesGeometry = plan.parts.some((p) => p.includes("box"));
-  const read = checkShapesAgainstScene(
-    prev,
-    shapes.map((s) => ({
-      name: loadedValue(() => s.name),
-      width: loadedValue(() => s.width),
-      height: loadedValue(() => s.height),
-    })),
-    { sizes: writesGeometry },
-  );
+  const read = checkShapesAgainstScene(prev, liveShapes, { sizes: writesGeometry });
   if (read.off)
     return no(
       read.off.what === "name"
