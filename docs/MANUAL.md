@@ -171,7 +171,7 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
 | Boxplot | distributions | all five `Min`/`Q1`/`Median`/`Q3`/`Max` rows, or raw samples → automatic Tukey whiskers and outliers; suffix rows with `\| group` for side-by-side grouped boxes |
 | Radar | multi-dimension profiles | categories = spokes, series = translucent polygons; keep ≤ 3 series; with no fixed scale the rings follow the data, from zero (or the lowest negative value) up |
 | Heatmap | value matrices | series = rows, categories = columns, one global color scale (diverging when data spans zero); marginal row/column totals optional |
-| Tile map | values by geography | categories = region codes (US postal / ISO-2 / world regions); layout auto-detected |
+| Tile map | values by geography | categories = region codes (US postal / ISO-2 / world regions); the US, EU and Europe layouts are auto-detected, World needs `map: "world"` (and a `map` that matches none of the codes gives way to the layout they name) |
 | Cascade | stage-by-stage breakdown of a total | categories `"Stage \| Drop label \| Group"`; each bar is a subset of the previous, remainders hang as labeled boxes |
 | Funnel | pipeline / conversion stages | centered bands, width ∝ value, conversion % between stages; order values ascending for a pyramid |
 | Waffle | one dominant share ("68% of…") | 10×10 unit grid, 1 cell = 1%, filled from the bottom-left; a single category ≤ 100 reads as a literal % with a big-number legend; `100%=` overrides the denominator |
@@ -211,15 +211,31 @@ the toggle does nothing at all, and leaves the chart exactly as it was.
 - **Blank rows split stacks**: in a stacked chart, series separated by a
   blank row form side-by-side sub-stacks (clustered-stacked).
 - **Dates**: ISO (`2026-01-15`), `15.01.2026`, and `Jan 2026` parse as
-  calendar dates for Gantt timelines. A **slash** date that could be read either
-  way round — `03/01/2026` is 3 January in Europe and 1 March in the US — is
-  refused rather than guessed at, and the cell reads as empty. Write it as
-  `2026-01-03` or `03.01.2026` to say which you meant. Slash dates with only one
-  possible reading (`01/15/2026`, `2026/01/15`) are fine. A day that does not
-  exist in its month (`04/31/2026`, `2026-02-30`, `Feb 29 2023`) reads as empty
-  rather than being moved into the next month. Digits alone are a date only
-  when they carry a year in full or all three parts: `1/2`, `1:100` and `5 12`
-  are not dates, and read as empty.
+  calendar dates for Gantt timelines. A date written as three numbers with
+  slashes, hyphens, dots or spaces, optionally followed by a time of day
+  (`15/01/2026`, `15-01-2026`, `15.01.2026 08:00`, `15 01 2026`), is read by one
+  rule:
+  - **One possible reading**: that one. `15-01-2026` and `01-15-2026` are both
+    15 January, because 15 cannot be a month, and `03/03/2026` is 3 March
+    whichever way round it is read.
+  - **A dot puts the day first**: `03.01.2026` is 3 January, with or without a
+    time after it, in every locale.
+  - **Both numbers could be a month**: `03-01-2026` is 3 January in Europe and
+    1 March in the US. It is read day first only when the chart's locale writes
+    the day first (`numberFormat.locale` of `da-DK`, `de-DE`, `en-GB` and the
+    like), which settles the dates in a Gantt row of a JSON config. Otherwise it
+    is refused rather than guessed at, and the cell reads as empty. A month-first
+    locale such as `en-US` does not settle it, and neither does the datasheet,
+    whose cells carry no locale. Write `2026-01-03` or `03.01.2026` to say which
+    you meant.
+  - **A two-digit year** (`03-01-26`) follows the same rule, except that a
+    day-first reading is never "the only one": `15/01/26` could also be 26
+    January 2015, so it needs the locale too.
+
+  A year first (`2026/01/15`, `2026-1-5`) has one reading and is always fine. A
+  day that does not exist in its month (`04/31/2026`, `2026-02-30`, `2026-2-30`,
+  `Feb 29 2023`) reads as empty rather than being moved into the next month. Digits alone are a date only when they carry a year in full or all
+  three parts: `1/2`, `1:100` and `5 12` are not dates, and read as empty.
 
 ### Special rows (magic series names)
 
@@ -1048,9 +1064,9 @@ numbers Excel stores:
 
 - **Labels** (the first row and first column) come through as Excel shows
   them — `Jan-26`, `10%`, `2024`. A date header whose shown text the pane would
-  read as a different day than the cell holds — `05-01-2026` in a day-first
-  workbook, which a month-first reader takes for 1 May — comes through as its
-  ISO date (`2026-01-05`) instead.
+  read as a different day than the cell holds, or not at all — `05-01-2026` in a
+  day-first workbook, which could be 5 January or 1 May and so reads as empty —
+  comes through as its ISO date (`2026-01-05`) instead.
 - **Percent-formatted cells** arrive as percentage points: a cell showing
   `3.5%` is `3.5`, not `0.035`, so a `%` number-format suffix labels it `3.5%`.
 - **Dates** in the data become calendar days, which is what a Gantt needs, and

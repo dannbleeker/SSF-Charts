@@ -21,7 +21,8 @@ const safeDecimals = (d: number): number => (Number.isFinite(d) ? Math.min(100, 
  */
 const NUMBER_FORMATTERS = new Map<string, Intl.NumberFormat>();
 function numberFormatter(locale: string, decimals: number, style?: "percent"): Intl.NumberFormat {
-  const key = `${locale} ${decimals} ${style ?? ""}`;
+  const tag = localeTag(locale);
+  const key = `${tag} ${decimals} ${style ?? ""}`;
   let nf = NUMBER_FORMATTERS.get(key);
   if (!nf) {
     const opts: Intl.NumberFormatOptions = {
@@ -33,13 +34,28 @@ function numberFormatter(locale: string, decimals: number, style?: "percent"): I
     // makes the Intl constructor throw a RangeError — fall back to en-US
     // rather than let one bad locale abort the whole render.
     try {
-      nf = new Intl.NumberFormat(locale, opts);
+      nf = new Intl.NumberFormat(tag, opts);
     } catch {
       nf = new Intl.NumberFormat("en-US", opts);
     }
     NUMBER_FORMATTERS.set(key, nf);
   }
   return nf;
+}
+
+/**
+ * A locale as the BCP-47 tag Intl wants: the POSIX spelling `de_DE` — the form
+ * `$LANG`, Java and Python all write, and the one a config produced by hand or by
+ * an agent reaches for — is the same locale with an underscore, which Intl
+ * rejects with a RangeError. That rejection fell into the en-US fallback above,
+ * so a chart that said `de_DE` printed "1,234.6" with nothing to say why.
+ *
+ * Only a string is rewritten. A locale arrives from JSON and is not always one;
+ * whatever else it is goes to the constructor untouched, whose try/catch is the
+ * only place that was ever allowed to find that out.
+ */
+function localeTag(locale: string): string {
+  return typeof locale === "string" ? locale.replace(/_/g, "-") : locale;
 }
 
 /** Format a value the way think-cell's default label format does: compact, thousands-separated. */
@@ -170,7 +186,15 @@ export function resolveAxisFormat(ticks: number[], format?: Partial<NumberFormat
  * beside them already read "60%", so precision comes from the SCALED ticks and
  * each label still names its own tick. A share is also unitless — `formatNumber`
  * appends `numberFormat.suffix` (the documented way to say "millions"), which
- * labelled a 100% axis "25 m%".
+ * labelled a 100% axis "25 m%". Written by `formatPercent`, which has no suffix to
+ * append and is what every segment label beside the axis goes through.
+ *
+ * It used to be `formatNumber(t * 100)` plus a literal "%", so the digits followed
+ * the chart's locale and the sign did not: a de-DE chart read "25%" on the axis
+ * beside "25 %" on its segments (a no-break space), a tr-TR one "25%" beside "%25",
+ * an ar-EG one "٢٥%" beside "٢٥٪؜" — the "two number systems in one chart" that
+ * `formatPercent` was given a locale to prevent, left standing on the one label
+ * that is read against the others.
  */
 export function axisTickLabel(
   ticks: number[],
@@ -178,8 +202,9 @@ export function axisTickLabel(
   fmt: Partial<NumberFormat> = {},
 ): (t: number) => string {
   const axisFmt = resolveAxisFormat(percent ? ticks.map((t) => t * 100) : ticks, fmt);
-  const shareFmt = { ...axisFmt, suffix: undefined };
-  return (t: number) => (percent ? `${formatNumber(t * 100, shareFmt)}%` : formatNumber(t, axisFmt));
+  const decimals = typeof axisFmt.decimals === "number" ? axisFmt.decimals : 0;
+  return (t: number) =>
+    percent ? formatPercent(t, decimals, axisFmt.forceSign, axisFmt.locale) : formatNumber(t, axisFmt);
 }
 
 /**
@@ -333,10 +358,6 @@ const DATE_WORDS = new Set([
 ]);
 
 /**
- * Parse a calendar-date cell ("2026-01-15", "15.01.2026", "Jan 2026", …)
- * into days since the Unix epoch. Returns null for non-dates.
- */
-/**
  * Gantt rows whose values are calendar days rather than plain numbers.
  *
  * Lives here, beside `parseDateToken`, because two callers need the same answer:
@@ -347,7 +368,138 @@ const DATE_WORDS = new Set([
  */
 export const GANTT_DATE_ROW = /^(?:start|end|milestone|today|holidays?|baseline\s*(?:start|end))$|^bracket\b/i;
 
-export function parseDateToken(raw: string): number | null {
+/**
+ * THREE NUMBERS AND A YEAR LAST, in any of the spellings where day and month trade
+ * places between locales: `03/01/2026`, `03-01-2026`, `3-1-26`, `03.01.2026`,
+ * `3. 1. 2026`, `03 01 2026`, each optionally led by a weekday and followed by a
+ * time of day, a meridiem and a zone ("Mon 03/01/2026", "03.01.2026 08:00",
+ * "01/15/2026 3:00 PM"). The time is matched only so it can be ignored: this
+ * parser returns the whole day a cell NAMES, like the ISO branch below.
+ *
+ * Every one of them reached `Date.parse`, which reads all of them month-first —
+ * except the bare dotted form, which was read day-first on its own regex. See
+ * `readNumericDate` for what is done with the match.
+ */
+const THREE_NUMBER_DATE = new RegExp(
+  [
+    // A weekday, as DATE_WORDS spells them: this branch answers without the word gate.
+    "^(?:(?:mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\\.?,?\\s+)?",
+    // The separator is one character, the same twice; a dot may be followed by a space.
+    "(?<a>\\d{1,2})(?<sep>[./-]|\\s) ?(?<b>\\d{1,2})\\k<sep> ?(?<y>\\d{4}|\\d{2})",
+    "(?:[T,\\s]\\s*\\d{1,2}:\\d{2}(?::\\d{2}(?:[.,]\\d+)?)?)?(?:\\s*[ap]m)?(?:\\s*(?:z|utc|gmt))?(?:\\s*[+-]\\d{2}:?\\d{2})?$",
+  ].join(""),
+  "i",
+);
+
+/** The same shape anywhere in a token that `THREE_NUMBER_DATE` did not take whole. */
+const EMBEDDED_NUMBER_DATE = /(?<!\d)\d{1,2}([./-]|\s) ?\d{1,2}\1 ?(?:\d{4}|\d{2})(?!\d)/;
+
+/**
+ * Whether `locale` writes the day before the month (da-DK, de-DE, en-GB, nl-NL …),
+ * as ICU answers it for that tag, once. A tag the runtime does not know, or one
+ * Intl rejects, is not day-first: with no evidence there is no winner to pick.
+ * Year-first locales (ja-JP, sv-SE, hu-HU) put the month first of the two and are
+ * not day-first either.
+ */
+const DAY_FIRST_LOCALES = new Map<string, boolean>();
+function readsDayFirst(locale: string | undefined): boolean {
+  if (typeof locale !== "string" || !locale) return false;
+  const tag = localeTag(locale);
+  let dayFirst = DAY_FIRST_LOCALES.get(tag);
+  if (dayFirst === undefined) {
+    dayFirst = false;
+    try {
+      if (Intl.DateTimeFormat.supportedLocalesOf(tag).length) {
+        const order = new Intl.DateTimeFormat(tag, { timeZone: "UTC" })
+          .formatToParts(Date.UTC(2026, 10, 25))
+          .map((part) => part.type);
+        const day = order.indexOf("day");
+        const month = order.indexOf("month");
+        dayFirst = day >= 0 && month >= 0 && day < month;
+      }
+    } catch {
+      // A malformed tag has no date order, exactly as `numberFormatter` finds it
+      // has no digits: the fallback is the answer that picks no winner.
+    }
+    DAY_FIRST_LOCALES.set(tag, dayFirst);
+  }
+  return dayFirst;
+}
+
+/** Epoch day of year-month-day, or null when that day does not EXIST (`Date.UTC` rolls it into the next month). */
+function calendarDay(year: number, month: number, day: number): number | null {
+  const ms = new Date(0).setUTCFullYear(year, month - 1, day);
+  const at = new Date(ms);
+  return at.getUTCMonth() === month - 1 && at.getUTCDate() === day ? Math.floor(ms / DAY_MS) : null;
+}
+
+/**
+ * A `THREE_NUMBER_DATE` token as the one date it can only be, or null.
+ *
+ * `03/01/2026` is 3 January in Europe and 1 March in the US and nothing in a cell
+ * says which, so the cell is read only where the data itself picks:
+ *
+ *   - ONE reading exists -> take it. `15-01-2026` and `01-15-2026` are both 15
+ *     January (15 is not a month), `31/04/2026` and `04/31/2026` are both nothing
+ *     (April has no 31st), and `03/03/2026` is 3 March whichever way round it is read.
+ *   - TWO readings exist (both numbers could be a month, and they differ) -> day
+ *     first when `locale` says its reader writes the day first (da-DK, de-DE,
+ *     en-GB …), and otherwise REFUSED: a visible gap beats a wrong number.
+ *   - A DOT names the day-first reading alone. Nobody writes `01.15.2026`, so
+ *     `03.01.2026` has one reading and is 3 January in every locale, which is what
+ *     the manual has always told an author to write to say which they meant.
+ *
+ * It used to be only the slash form that was refused. Every other spelling went to
+ * `Date.parse` and was read month-first: `03-01-2026` (Danish Excel's default short
+ * date) became 1 March, `03.01.2026 08:00` (its timestamp) too, and a Gantt of
+ * `03-01, 05-02, 02-03` came back as bars labelled "1 Mar–1 Sep" for tasks of six
+ * days. The mirror image was refused: `15/01/2026` has one reading and came back
+ * empty, because `Date.parse` only knows the American order and returns NaN for a
+ * 15th month.
+ *
+ * A SHORT YEAR (`03-01-26`) leaves a third reading, year first (`26-01-03`, as the
+ * year-first short dates of East Asian workbooks are written), that day-first-only
+ * tokens cannot rule out: `15/01/26` is 15 January 2026 or 26 January 2015. So a
+ * short year's day-first reading is taken only on the locale's word, never because
+ * it is the only month-valid one; month-first and equal-number tokens are read as
+ * they always were. Its pivot is V8's own (00-49 -> 20xx), which is what
+ * `Date.parse` did with `01/15/26`.
+ *
+ * CONFIRMED BY THE OWNER (2026-08-12) with the cost stated: a US author who writes
+ * `03/01/2026` for 1 March gets an empty cell rather than a chart. A European
+ * programme plan of `01/02, 05/02, 10/03` had come back as 2 January, 2 May and 3
+ * October — drawn perfectly and two months wrong — and that is what this is for.
+ * AMENDED (2026-10-25, the third bug hunt) the same way: the chart's own
+ * `numberFormat.locale` may settle a day-first reader, and every spelling follows
+ * the one rule. `style.locale` and a blanket day-first reading remain declined —
+ * they pick a winner where the data does not. A month-first locale does not settle
+ * it either: only a day-first one was offered.
+ */
+function readNumericDate(m: RegExpExecArray, locale: string | undefined): number | null {
+  const { a, sep, b, y } = m.groups as Record<"a" | "sep" | "b" | "y", string>;
+  const full = y.length === 4;
+  const dotted = sep === ".";
+  // The dot's short year is the version-number shape (`1.2.26`) the plain-number
+  // guard refuses, with or without a time after it.
+  if (dotted && !full) return null;
+  const year = full ? Number(y) : Number(y) < 50 ? 2000 + Number(y) : 1900 + Number(y);
+  const dayFirst = calendarDay(year, Number(b), Number(a));
+  const monthFirst = dotted ? null : calendarDay(year, Number(a), Number(b));
+  if (dayFirst == null || dayFirst === monthFirst) return monthFirst ?? dayFirst;
+  // Day-first is all there is to read, or it is one of two and the locale picks it.
+  const onlyReading = monthFirst == null && (full || dotted);
+  return onlyReading || readsDayFirst(locale) ? dayFirst : null;
+}
+
+/**
+ * Parse a calendar-date cell ("2026-01-15", "15.01.2026", "Jan 2026", …) into days
+ * since the Unix epoch. Returns null for non-dates.
+ *
+ * `locale` is the READER's — `numberFormat.locale` when a config declares one — and
+ * is asked one question only: whether a numeric date that reads two ways round is
+ * day-first. See `readNumericDate`.
+ */
+export function parseDateToken(raw: string, locale?: string): number | null {
   // Coerced, like every other text boundary in this engine. `raw` is a CELL —
   // it comes from a pasted block, a JSON config or the skill's caller — and
   // `null`/`undefined` threw `Cannot read properties of null (reading 'trim')`
@@ -357,8 +509,8 @@ export function parseDateToken(raw: string): number | null {
   // could not reach that answer without crashing first.
   const t = String(raw ?? "").trim();
   if (!t) return null;
-  const dmy = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (!dmy && /^[-+]?[\d,.]+$/.test(t)) return null; // plain numbers are not dates
+  const numeric = THREE_NUMBER_DATE.exec(t);
+  if (!numeric && /^[-+]?[\d,.]+$/.test(t)) return null; // plain numbers are not dates
   // A percentage is never a date. Without this `Date.parse("50% UTC")` yields a
   // finite garbage instant, so a perfectly ordinary "50%" cell became epoch day
   // -7305 AND flipped the whole chart into date mode.
@@ -366,34 +518,12 @@ export function parseDateToken(raw: string): number | null {
   // Numeric ranges ("3-5", "10–20") are category labels, not dates — Date.parse
   // would otherwise misread them as partial ISO dates.
   if (/^\d{1,3}\s*[-–]\s*\d{1,3}$/.test(t)) return null;
-  // A slash date whose first two numbers could BOTH be a month is two different
-  // dates and this parser cannot know which. `Date.parse` picks the American
-  // one silently, and the dotted form ten lines up picks the European one — so
-  // the same digits, in one datasheet, meant dates two months apart:
-  //
-  //     03/01/2026  ->  1 March        (Date.parse, month first)
-  //     03.01.2026  ->  3 January      (the `dmy` form above, day first)
-  //
-  // On a Gantt that is not a cosmetic difference. A European programme plan of
-  // `01/02, 05/02, 10/03` came back as 2 January, 2 May and 3 October: three
-  // months spread over ten, with nothing said.
-  //
-  // Refused rather than guessed, which is the rule `numericValue` in the
-  // datasheet already applies to the mirror-image case — a European "1,5"
-  // against an American "1,500" — in the same words: a visible gap beats a
-  // wrong number. An unambiguous slash date is untouched, so `01/15/2026` still
-  // reads as 15 January (no other reading exists) and `03/03/2026` still reads
-  // as 3 March (both readings agree).
-  //
-  // CONFIRMED BY THE OWNER (2026-08-12) with the cost stated: a US author who
-  // writes `03/01/2026` for 1 March gets an empty cell rather than a chart.
-  // That is the trade, and it was taken deliberately — this is not a default
-  // waiting to be tuned. The two alternatives were offered and declined: read
-  // slash dates day-first to match the dotted form, or disambiguate from
-  // `style.locale` when a config declares one. Both pick a winner where the
-  // data does not. Don't reopen it without him.
-  const slash = /^(\d{1,2})\/(\d{1,2})\/\d{2,4}$/.exec(t);
-  if (slash && Number(slash[1]) <= 12 && Number(slash[2]) <= 12 && slash[1] !== slash[2]) return null;
+  // Three numbers round separators are read here, by `readNumericDate`, and never
+  // handed to `Date.parse`: it has one order, month first, for every one of them.
+  // The same shape inside a token that is not that shape whole ("03/01/2026 Mon")
+  // is refused rather than guessed at, for the same reason.
+  if (numeric) return readNumericDate(numeric, locale);
+  if (EMBEDDED_NUMBER_DATE.test(t)) return null;
   // Everything below reaches `Date.parse`, which is far more lenient than a date
   // cell has any right to be: "#DIV/0! UTC" comes back as 2000-01-01, "Store 5"
   // as 2001-05-01, "<0.1" as 2000-01-01. So an Excel error cell, a shop name or
@@ -452,24 +582,25 @@ export function parseDateToken(raw: string): number | null {
    * 15th to whoever wrote it, and the same config has to render the same chart
    * on every machine. The time of day was already discarded by the floor at the
    * end; only the day it was allowed to move was ever in question.
+   *
+   * The month and the day may each be ONE digit (`2026-2-3`). That spelling was
+   * left to `Date.parse`, and so was outside the day-existence rule below, which
+   * is how `2026-2-30` became 2 March while `2026-02-30` was refused.
    */
-  const iso = /^(\d{4})-(\d{2})(?:-(\d{2}))?(?:[T ][\d:.]+(?:[Zz]|[+-]\d{2}:?\d{2})?)?$/.exec(t);
+  const iso = /^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?(?:[T ][\d:.]+(?:[Zz]|[+-]\d{2}:?\d{2})?)?$/.exec(t);
   // A month outside 1..12 is not a date, and `Date.UTC` normalises rather than
-  // refuses — so `2026-13-01` becomes 1 January 2027 and `15.13.2026` becomes
-  // 15 January 2027: a year out, silently, on a Gantt row. This is the month's
-  // half of the day-existence rule below, which has always refused `Apr 31`;
-  // the dotted form has been able to roll a year since it was written, and
-  // reading the ISO form ourselves would newly let it do the same (`Date.parse`
-  // simply returns NaN for a 13th month).
-  const month = dmy ? Number(dmy[2]) : iso ? Number(iso[2]) : null;
+  // refuses — so `2026-13-01` becomes 1 January 2027: a year out, silently, on a
+  // Gantt row. This is the month's half of the day-existence rule below, which has
+  // always refused `Apr 31`; reading the ISO form ourselves would newly let it
+  // roll a year (`Date.parse` simply returns NaN for a 13th month). The numeric
+  // day-month-year forms check their own month in `calendarDay`.
+  const month = iso ? Number(iso[2]) : null;
   if (month != null && (month < 1 || month > 12)) return null;
-  const ms = dmy
-    ? Date.UTC(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]))
-    : iso
-      ? Date.UTC(Number(iso[1]), Number(iso[2]) - 1, iso[3] ? Number(iso[3]) : 1)
-      : // Everything else ("Jan 2026", "Mon 5 Jan") still needs the UTC anchor
-        // to avoid the same local-timezone drift.
-        Date.parse(`${t} UTC`);
+  const ms = iso
+    ? Date.UTC(Number(iso[1]), Number(iso[2]) - 1, iso[3] ? Number(iso[3]) : 1)
+    : // Everything else ("Jan 2026", "Mon 5 Jan") still needs the UTC anchor
+      // to avoid the same local-timezone drift.
+      Date.parse(`${t} UTC`);
   if (!Number.isFinite(ms)) return null;
   // A day that does not EXIST in its month is not a date, and until now it
   // silently became one in the next month.
@@ -481,42 +612,37 @@ export function parseDateToken(raw: string): number | null {
   // already inconsistent about it: `Jan 32 2024` is refused, because 32 is not
   // a day number at all, while `Apr 31` was accepted and moved.
   //
-  // Checked only where the token names a day UNAMBIGUOUSLY — the ISO and
-  // dotted forms, a slash date, and a month-word form carrying exactly one
-  // one-or-two-digit number. Anything looser is left alone rather than guessed
-  // at, which is the same rule the shape gates above follow.
+  // Checked only where the token names a day UNAMBIGUOUSLY — the ISO form, a
+  // year-first date, and a month-word form carrying exactly one one-or-two-digit
+  // number. Anything looser is left alone rather than guessed at, which is the
+  // same rule the shape gates above follow. The day-month-year forms (dotted,
+  // slash, hyphen, spaced) never reach here: `calendarDay` checks the day of every
+  // reading it offers, so `04/31/2026` and `30.02.2026` are refused there and
+  // `31/04/2026` is no reading at all.
   //
-  // The slash date is the form that was missed. This check was written when
-  // `03/01` could be either month or day, so no slash date named its day for
-  // certain and none was included; the ambiguity gate above landed afterwards
-  // and made every survivor unambiguous — a first number up to 12 with a second
-  // above it is month-first (the day is the SECOND number), two equal numbers
-  // agree whichever way they are read, and a four-digit year first is Y/M/D —
-  // but nobody went back to extend this. So `04/31/2026` became 1 May and
-  // `02/29/2023` 1 March, while `Apr 31 2026`, `2026-04-31` and `30.02.2026`
-  // were all refused: the same nonexistent day, three spellings refused and
-  // one moved. A day-first `31/04/2026` never reached here; `Date.parse` returns
-  // NaN for its month 31.
+  // A year FIRST has no second reading, which is why the slash date was the form
+  // this check used to miss (`04/31/2026` became 1 May and `02/29/2023` 1 March,
+  // while `Apr 31 2026` and `2026-04-31` were refused) and why a year-first
+  // spelling is the form it can still miss: `2026 02 30` and `2026-2-30` rolled
+  // into March while `2026/02/30` and `2026-02-30` were refused.
   //
-  // Bare dates only, like the dotted form: a time of day after it changes what
-  // the instant is compared against (`24:00` is the NEXT day's midnight), and a
-  // month-word date with a time is left alone for the same reason.
-  const slashDay = /^(?:\d{1,2}\/(\d{1,2})\/\d{2,4}|\d{4}\/\d{1,2}\/(\d{1,2}))$/.exec(t);
-  const asked = dmy
-    ? Number(dmy[1])
-    : (/^\d{4}-\d{2}-(\d{2})(?:[T ]|$)/.exec(t)?.[1] ??
-      slashDay?.[1] ??
-      slashDay?.[2] ??
-      // Only a token that NAMES its month in words can have its single
-      // one-or-two-digit number read as a day. Without that condition
-      // `2025-12` — a year-month category label, which the line chart spaces
-      // proportionally — had its `12` taken for a day, compared against the
-      // 1st that `Date.parse` returns for it, and was refused as a date; the
-      // chart then fell back to even spacing. Caught by `line.test.ts`, which
-      // is why the whole suite runs before anything is believed.
-      (/[A-Za-z]/.test(t)
-        ? ((m) => (m && m.length === 1 ? m[0] : undefined))(t.match(/(?<!\d)\d{1,2}(?!\d)/g))
-        : undefined));
+  // Bare dates only for the slash and spaced spellings: a time of day after one
+  // changes what the instant is compared against (`24:00` is the NEXT day's
+  // midnight), and a month-word date with a time is left alone for the same reason.
+  const yearFirstDay = /^\d{4}(?:\/|\s+)\d{1,2}(?:\/|\s+)(\d{1,2})$/.exec(t);
+  const asked =
+    /^\d{4}-\d{1,2}-(\d{1,2})(?:[T ]|$)/.exec(t)?.[1] ??
+    yearFirstDay?.[1] ??
+    // Only a token that NAMES its month in words can have its single
+    // one-or-two-digit number read as a day. Without that condition
+    // `2025-12` — a year-month category label, which the line chart spaces
+    // proportionally — had its `12` taken for a day, compared against the
+    // 1st that `Date.parse` returns for it, and was refused as a date; the
+    // chart then fell back to even spacing. Caught by `line.test.ts`, which
+    // is why the whole suite runs before anything is believed.
+    (/[A-Za-z]/.test(t)
+      ? ((m) => (m && m.length === 1 ? m[0] : undefined))(t.match(/(?<!\d)\d{1,2}(?!\d)/g))
+      : undefined);
   if (asked != null && new Date(ms).getUTCDate() !== Number(asked)) return null;
   // Floor, not round: a token carrying a time of day at/after 12:00 would round UP
   // to the next calendar day. Bare dates are exact midnights, so this is a no-op

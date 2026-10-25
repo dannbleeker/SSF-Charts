@@ -472,8 +472,10 @@ ISO-2 for eu/europe, or NA/LATAM/EU/MEA/SSA/CIS/SA/EA/SEA/OCE for world) —
 `us`, `eu` and `europe` are auto-detected from the codes when at least 90% of
 them match one layout, or pinned with `map:`. **`world` is never
 auto-detected** (its macro codes collide with ISO-2): always set
-`map: "world"`. A set that matches no layout draws no tiles, only the hint
-"No recognized region codes — set map: …".
+`map: "world"`. A pin that matches none of the codes gives way to the layout the
+codes name (US postal codes under `map: "europe"` draw the US grid); a pin that
+matches some of them stays. A set that matches no layout draws no tiles, only
+the hint "No recognized region codes — set map: …".
 
 ## Chart-design formalia (baked-in defaults, per "the good chart" practice)
 

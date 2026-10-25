@@ -5,7 +5,7 @@ import { formatNumber, resolveFormat } from "../format";
 import { maxOf, minOf } from "../agg";
 import { lerpColor, noDataFill, sequentialScale } from "../color";
 import { seriesColor } from "../style";
-import { detectLayout, TILE_LAYOUTS } from "./tilemap-layouts";
+import { resolveTileLayout } from "./tilemap-layouts";
 import {
   titleInkBottom,
   bandFontSize,
@@ -131,8 +131,7 @@ const HEX_W = Math.sqrt(3) / 2;
 export function layoutTilemap(cfg: ChartConfig, style: ChartStyle, decor: Decorations): LayoutResult {
   const { data } = cfg;
   const fs = style.fontSize;
-  const layoutKey = cfg.map ?? detectLayout(data.categories);
-  const layout = layoutKey ? TILE_LAYOUTS[layoutKey] : undefined;
+  const layout = resolveTileLayout(cfg.map, data.categories);
 
   const nodes: SceneNode[] = [];
   const titleH = titleHeight(cfg, style);

@@ -149,7 +149,7 @@ const MAX_SERIES = 256;
  */
 const labelText = (v: unknown): string => (v == null ? "" : typeof v === "string" ? v : String(v));
 
-function normalizeData(raw: ChartData): ChartData {
+function normalizeData(raw: ChartData, locale?: string): ChartData {
   // A config with no data at all is REFUSED, deliberately and by name.
   //
   // It used to be refused by accident: `data?.` on two of four reads meant the
@@ -211,7 +211,9 @@ function normalizeData(raw: ChartData): ChartData {
       const values = Array.from({ length: n }, (_, c) => {
         const raw = rawValues[c];
         if (!dateRow || typeof raw !== "string") return cell(raw);
-        const day = parseDateToken(raw);
+        // The chart's own locale is the one thing that can settle `03-01-2026`:
+        // day-first for a da-DK or de-DE chart, refused for one that says nothing.
+        const day = parseDateToken(raw, locale);
         if (day != null) sawDate = true;
         return day;
       });
@@ -345,6 +347,21 @@ function cleanDecorations(decor: Partial<Decorations>): Partial<Decorations> {
 function authoredNumber(v: unknown): number | undefined {
   const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
   return Number.isNaN(n) ? undefined : n;
+}
+
+/**
+ * `numberFormat.decimals` out of authored JSON: a numeric string is the count it
+ * spells, and everything else is left exactly as written.
+ *
+ * Not `authoredNumber`, whose answer for "auto" is to drop the field — `"auto"` is
+ * the documented value, not a slip. Nor a rule for the rest: a count that is no
+ * number at all has always printed whole numbers (`safeDecimals` answers 0 for
+ * it), and a repair is not the place to change which. The numeric string is the
+ * plausible slip (`"decimals": "2"`, as `gapWidth` and `overlap` already took) and
+ * its reading is not in doubt.
+ */
+function authoredDecimalsCount(v: unknown): unknown {
+  return typeof v === "string" && v.trim() !== "" && v !== "auto" && Number.isFinite(Number(v)) ? Number(v) : v;
 }
 
 /**
@@ -540,6 +557,11 @@ export function normalizeConfig(cfg: ChartConfig): ChartConfig {
     authoredDetailGroups,
   );
   const pie = cleanFields(cfg.pie, ["explode", "breakout"], authoredIndices);
+  // `numberFormat.decimals` is the one documented number that stayed out of that
+  // sweep (`number | "auto"`): the string "2" printed no decimals at all while the
+  // pane, which writes `Number()`, previewed two. See `authoredDecimalsCount`.
+  const numberFormat = cleanFields(cfg.numberFormat, ["decimals"], authoredDecimalsCount);
+  const locale = typeof numberFormat?.locale === "string" ? numberFormat.locale : undefined;
 
   return {
     ...authored,
@@ -548,6 +570,7 @@ export function normalizeConfig(cfg: ChartConfig): ChartConfig {
     scale,
     style,
     horizontal,
+    numberFormat,
     otherBucket,
     scatter,
     butterfly,
@@ -555,7 +578,7 @@ export function normalizeConfig(cfg: ChartConfig): ChartConfig {
     multiples,
     waterfall,
     pie,
-    data: normalizeData(cfg.data),
+    data: normalizeData(cfg.data, locale),
     decorations:
       cfg.decorations && typeof cfg.decorations === "object" && !Array.isArray(cfg.decorations)
         ? cleanDecorations(cfg.decorations)

@@ -196,3 +196,31 @@ export function detectLayout(codes: string[]): "us" | "eu" | "europe" | null {
   if (europe >= 0.9) return "europe";
   return null;
 }
+
+/**
+ * The grid a tile map draws: the pinned `map`, unless it matches NONE of the codes
+ * and the codes name a layout of their own.
+ *
+ * A pin is a statement about the data, and a pin that none of the data agrees with
+ * is a stale one. The pane has no control for `map` and its tile-map sample pins
+ * `"europe"`, so typing US postal codes over the sample exported `map: "europe"`
+ * and drew the Europe grid with no value on it, while the same codes with `map`
+ * omitted drew the US grid. The data decides there, through `detectLayout`, which
+ * needs 90% of the codes to agree — whichever grid was pinned, a world pin included.
+ *
+ * A pin that matches SOME of the codes stays: that is a chart with a few typos in it,
+ * and the author's `map` is the better guess about which grid they meant. Nor does a
+ * code set that names no layout move a pin (detection never answers "world", so a
+ * world set is only ever drawn when it is pinned); there is nothing to move it to,
+ * and a pin that matches nothing keeps its grid of grey tiles, as it always did.
+ *
+ * Own properties only, like every table keyed by a config string: `map: "constructor"`
+ * is no layout, and used to reach `Object.prototype`.
+ */
+export function resolveTileLayout(pinned: string | undefined, codes: string[]): TileLayout | undefined {
+  const named = (key: string | null | undefined): TileLayout | undefined =>
+    key && Object.prototype.hasOwnProperty.call(TILE_LAYOUTS, key) ? TILE_LAYOUTS[key] : undefined;
+  const pinnedLayout = named(pinned);
+  if (pinnedLayout && codes.some((c) => c.trim().toUpperCase() in pinnedLayout)) return pinnedLayout;
+  return named(detectLayout(codes)) ?? pinnedLayout;
+}

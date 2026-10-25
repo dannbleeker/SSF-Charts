@@ -677,7 +677,12 @@ export function ellipsize(text: string, fontSize: number, bold: boolean, maxW: n
   // the END of the whole text would take the last line's characters off while the
   // line that is actually too wide stayed exactly as wide.
   if (HAS_BREAK.test(s)) return ellipsizeLines(s, fontSize, bold, maxW);
-  const ell = textWidth("…", fontSize, bold);
+  // The ellipsis of a right-to-left label carries a mark (see `RLM`), and `textWidth`
+  // charges that invisible mark as a Latin letter (it is not in the zero-width
+  // table): reserve it whenever there is an RTL letter for the cut to end on, so
+  // the result still fits.
+  const rtl = RTL_LETTER.test(s);
+  const ell = textWidth("…", fontSize, bold) + (rtl ? textWidth(RLM, fontSize, bold) : 0);
   let end = s.length;
   while (end > 0 && w + ell > maxW) {
     const last = s.charCodeAt(end - 1);
@@ -688,7 +693,64 @@ export function ellipsize(text: string, fontSize: number, bold: boolean, maxW: n
     w -= charWidth(pair ? s.codePointAt(end - 2)! : last, fontSize, bold);
     end -= pair ? 2 : 1;
   }
-  return end > 0 ? `${s.slice(0, end)}…` : "";
+  end = wholeClusterEnd(s, end);
+  if (end <= 0) return "";
+  const kept = s.slice(0, end);
+  return `${kept}…${rtl && endsInRtl(kept) ? RLM : ""}`;
+}
+
+/** U+200F RIGHT-TO-LEFT MARK: invisible, strong right-to-left, and so a direction for the neutral before it. */
+const RLM = "\u{200f}";
+
+/** A letter of a right-to-left script — the scripts a chart label actually arrives in. */
+const RTL_LETTER =
+  /[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Syriac}\p{Script=Thaana}\p{Script=Nko}\p{Script=Samaritan}\p{Script=Mandaic}\p{Script=Adlam}]/u;
+
+/**
+ * Whether the last LETTER of `text` is right-to-left — digits and marks round it do
+ * not count, because a European or Arabic digit after an RTL run carries its
+ * direction on to whatever follows (UAX #9, rule N1).
+ */
+function endsInRtl(text: string): boolean {
+  const letters = text.match(/\p{L}/gu);
+  return letters != null && RTL_LETTER.test(letters[letters.length - 1]);
+}
+
+/**
+ * `end`, moved back off a cut that would leave HALF a grapheme cluster in front of
+ * the ellipsis. The walk above counts code points and stops the moment the rest
+ * fits, and two kinds of cluster have a piece that fits on its own:
+ *
+ *  - A ZERO-WIDTH JOINER ends the kept text when the walk stops between a joiner and
+ *    the emoji it was joining: "Team 👨‍👩‍…" is a family cut after its second joiner.
+ *    The joiner is dropped, and with it the dangling join.
+ *  - A FLAG is two regional indicators, and the walk stops between them: "🇩…" is a
+ *    flag cut in half, "🇸🇪🇳…" one and a half. An odd run drops its last indicator.
+ *
+ * What is left in front of the ellipsis is then whole flags, or the people joined so
+ * far (a family cut to two members draws as two). The other clusters a cut can
+ * reach degrade to their base (a skin tone, a variation selector, a keycap) and a
+ * combining mark can never be stranded — it has no width, so the walk takes it off
+ * with its base — which is why those need nothing here. Only ever moves back, so a
+ * string that fit still fits.
+ */
+function wholeClusterEnd(s: string, end: number): number {
+  for (;;) {
+    if (end > 0 && s.charCodeAt(end - 1) === 0x200d) {
+      end--;
+      continue;
+    }
+    // Regional indicators are the surrogate pairs D83C DDE6..DDFF.
+    let indicators = 0;
+    while (end >= 2 * (indicators + 1)) {
+      const at = end - 2 * (indicators + 1);
+      const low = s.charCodeAt(at + 1);
+      if (s.charCodeAt(at) !== 0xd83c || low < 0xdde6 || low > 0xddff) break;
+      indicators++;
+    }
+    if (indicators % 2 === 0) return end;
+    end -= 2;
+  }
 }
 
 /**
