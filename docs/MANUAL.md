@@ -584,8 +584,9 @@ there, and the chart still says what it says.
 room with an ellipsis and still be recognisable; "100,0…" for 100,000 is not, it
 reads as a different number. So numbers get the room instead: the value axis's
 column widens to its widest tick label (the plot gives up the width, up to 40% of
-the chart), the strip beside a sideways bar widens for the longest total, and the
-last tick of a sideways axis or of a scatter's x axis moves onto the chart by
+the chart), a combo's second axis takes a gutter of its own where its numbers
+would be cut, the strip beside a sideways bar widens for the longest total, and
+the last tick of a sideways axis or of a scatter's x axis moves onto the chart by
 exactly the part that hung off it. Where even that cannot hold the number it
 shrinks toward 5pt, and below that it is not drawn. A chart whose numbers
 already fit keeps the plot it had.
