@@ -3220,8 +3220,19 @@ instrument problem the live rounds had shown:
   own docstring already said to draw on a slide the deck had, and the brief that
   asked for the quietest slide did not weigh that. It draws on the first probe
   chart's slide again, and when the group still cannot be read it traces what the
-  host would answer (slide, list, group) beside the skip. Not yet seen to ask its
-  question on the live host since the rebuild.
+  host would answer (slide, list, group) beside the skip. **It also took the host
+  down once**: round 507's second attempt died inside this scenario at the sweep of
+  its chart on slide 258 (`crashes/2026-10-25T20-31-22-crashed-run.json`; the
+  driver recovered and the third attempt filed the round), so `rounds-gate.mjs`
+  exits 3 on it, "a scenario is KILLING THE HOST", and `cycle.mjs` stops the night
+  on that. A zero ceiling cannot go green by itself, and the receipt that clears
+  the exit is the owner's signature (`DEATHS_ACKNOWLEDGED`). The cause of the crash
+  itself is not established: the host died on a by-id sweep of a shape drawn seconds
+  earlier, which it refuses in most sweeps, on the slide the choice had moved to.
+  After the fix, rounds 508 and 509 (`1b57c86`): 20 of 20 both times, the scenario
+  passing on slide 257 with the members following a 2x resize and the redraw
+  keeping the person's size (294x129pt drawn, 588x257pt resized, 594x266pt after
+  the edit), each draw batch about 14.5s of the 45s limit. Two rounds, not a rate.
 
 **What the fixes left undone, found while reading them:**
 
