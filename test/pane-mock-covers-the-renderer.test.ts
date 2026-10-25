@@ -152,6 +152,10 @@ const TOLERATED_ABSENT: Record<string, string[]> = {
     "shapeGeometryByName",
     "timeShapeRounds",
     "moveShapeBy",
+    // `an edit after the person resizes a chart` — read only inside that scenario,
+    // which `selftest-resize.test.ts` drives against the real renderer.
+    "resizeShapeBy",
+    "readChartShapes",
     "lastStall",
     "RASTERISE_OP",
     "rasterGap",

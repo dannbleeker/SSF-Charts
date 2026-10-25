@@ -624,7 +624,7 @@ conclusion.
 
 ### What the trace said that the archive has not
 
-The three above are about the thirteen named scenarios. The gate also reads the
+The three above are about the named scenarios. The gate also reads the
 TRACE, which is ~95K characters per round and which nobody can count by eye —
 round 081 was 512 entries collapsing to 44 distinct shapes, **none of them new**
 against 57 prior rounds, and the archive's vocabulary was 81 signatures then.

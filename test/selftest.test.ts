@@ -245,6 +245,14 @@ describe("the host self-test battery", () => {
        * `kindCostSpread`.
        */
       "what a chart kind costs",
+      /**
+       * The newest, so last. It resizes a chart's group and edits a value, and
+       * reads back what the host says at each of three moments: the one scenario
+       * that puts to the live host the premise `liveScaleOfScene`,
+       * `groupScaleOfScene` and `keepResizedSize` all rest on. Its verdicts are
+       * driven in `selftest-resize.test.ts`.
+       */
+      "an edit after the person resizes a chart",
     ]);
     for (const r of results) {
       expect(typeof r.ok).toBe("boolean");

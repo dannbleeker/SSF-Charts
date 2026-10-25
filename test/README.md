@@ -147,6 +147,10 @@ which makes them untestable on a fake that answers everything, and they are NOT
 a claim about the live host — the archive's `sizes: 8` says member widths and
 heights do come back there. `resize-on-a-silent-host.test.ts` is the suite that
 drives them, with `helpers/group-resize.ts` staging the hand resize.
+`groupResizeScalesMembers` is the other direction: a size write on a GROUP
+carries its members with it, as PowerPoint's handles do, which only
+`selftest-resize.test.ts` (the scenario that sets a group's size through
+Office.js) needs — everything else scales the members itself.
 
 `newSlideResolvesTimes` is the one that came from an answer sheet rather than a
 crash. PowerPoint on the web resolved a freshly-added slide's id **once** and

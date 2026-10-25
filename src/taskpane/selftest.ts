@@ -43,7 +43,7 @@
  * trusting the empty-array clear.
  */
 import type { ChartConfig, ChartKind } from "../core/types";
-import type { Scene } from "../core/scene";
+import type { RectNode, Scene } from "../core/scene";
 import { buildChart } from "../core/chart";
 import { sampleConfig } from "../core/samples";
 import { buildDeckBase64 } from "../render/pptx-deck";
@@ -88,6 +88,8 @@ import {
   timeShapeRounds,
   updateChartInSlide,
   moveShapeBy,
+  resizeShapeBy,
+  readChartShapes,
   errorText,
   // A live binding, read fresh on every access — the whole point is to diff it
   // around a scenario.
@@ -99,6 +101,7 @@ import {
   lastLateSyncSeq,
   waitForLateSync,
   shapesDrawnOn,
+  type ChartReading,
 } from "../render/powerpoint";
 import { trace, traceAbout, traceElapsed } from "../core/trace";
 
@@ -1497,6 +1500,350 @@ const dragThenUpdate: Scenario = async (prefix) => {
         ? `moved ${DX}x${DY}pt and the update redrew it there, so the origin round trip held`
         : `the update redrew it ${drift.x}x${drift.y}pt from where it was moved to`,
   };
+};
+
+/** How much bigger the scenario below makes a chart: the doubling a person's drag is most often near. */
+const RESIZE_FACTOR = 2;
+
+/**
+ * A side worth comparing: under this a rounded host value is a large share of it,
+ * and a bar at the 0.2pt floor is a floor and not a measurement.
+ */
+const MIN_COMPARED_SIDE = 8;
+
+/** What the host said about a chart's group and its members at one moment. */
+export interface ResizeReading {
+  group: { width?: number; height?: number };
+  members?: { name?: string; width?: number; height?: number }[];
+}
+
+type ComparedRect = { node: RectNode; width: number; height: number };
+
+/**
+ * The members that can be held against a scene's rects: paired by position, as the
+ * update path pairs them, for every rect big enough to compare whose both sides the
+ * host gave. `null` when the member list is not the scene's length (the pairing is
+ * then a guess) or fewer than three can be read — one bar is a bar, not a chart.
+ */
+function comparedRects(r: ResizeReading, scene: Scene): ComparedRect[] | null {
+  const members = r.members;
+  if (!members || members.length !== scene.nodes.length) return null;
+  const rows: ComparedRect[] = [];
+  scene.nodes.forEach((node, i) => {
+    const m = members[i];
+    if (node.kind !== "rect" || node.w < MIN_COMPARED_SIDE || node.h < MIN_COMPARED_SIDE) return;
+    if (Number.isFinite(m.width) && Number.isFinite(m.height))
+      rows.push({ node, width: m.width as number, height: m.height as number });
+  });
+  return rows.length >= 3 ? rows : null;
+}
+
+/**
+ * The verdict on an edit made after a chart was resized, from what the host said
+ * at three moments. Pure, because the reading is the thing that can be wrong and
+ * a verdict that cannot be tested is a label.
+ *
+ * PASS needs POSITIVE evidence of one scale, and a skip says what was missing:
+ *
+ * - **The resize has to be confirmed first.** The group's size must read about
+ *   `factor` times what it was, or nothing after it means anything (`office-js#6183`
+ *   is a host that accepts one axis of a write and drops the other). If the members
+ *   are readable they must have scaled with it; a group that reports 2x over
+ *   members that report the sizes they were drawn at is a host whose member sizes
+ *   do not follow a resize — a finding about the size guard, reported as one.
+ * - **Members readable afterwards:** every rect must match what a layout at the
+ *   kept size draws (pass), or what the config draws at its own size (the resize
+ *   was undone), or neither (a mix of two scales — the half-stretched chart this
+ *   whole change exists to stop).
+ * - **Members not readable afterwards:** a chart the edit REDREW is whole by
+ *   construction, so the group's size is the evidence (pass if it is the person's,
+ *   fail if it went back); a chart written IN PLACE cannot be told from a
+ *   half-stretched one without them, and that is a skip, never a pass.
+ */
+export function judgeResizeKept(o: {
+  factor: number;
+  drawn: ResizeReading;
+  resized: ResizeReading;
+  after: ResizeReading;
+  /** The edit replaced the chart's group instead of writing into it. */
+  redrawn: boolean;
+  /** What the config draws at its own size, and what a layout at the size the update says it kept draws. */
+  scenes: { config: Scene; kept: Scene };
+}): { ok: boolean; skipped?: boolean; blind?: boolean; detail: string } {
+  const known = (r: ResizeReading) => Number.isFinite(r.group.width) && Number.isFinite(r.group.height);
+  const box = (r: ResizeReading) =>
+    known(r) ? `${Math.round(r.group.width as number)}x${Math.round(r.group.height as number)}pt` : "unreadable";
+  const near = (a: number, b: number, share: number) => Math.abs(a - b) <= share * Math.abs(b);
+  const grown = (from: ResizeReading, to: ResizeReading) =>
+    near(to.group.width as number, (from.group.width as number) * o.factor, 0.1) &&
+    near(to.group.height as number, (from.group.height as number) * o.factor, 0.1);
+  const skip = (detail: string, blind = false) => ({ ok: false, skipped: true, ...(blind ? { blind } : {}), detail });
+
+  if (!known(o.drawn) || !known(o.resized))
+    return skip(
+      `the host would not report the group's size ${known(o.drawn) ? "after the resize" : "after the draw"}, so a resize cannot be confirmed (drawn ${box(o.drawn)}, resized ${box(o.resized)})`,
+      true,
+    );
+  if (!grown(o.drawn, o.resized))
+    return skip(
+      `the host accepted a ${o.factor}x size write on the group and it reports ${box(o.resized)} (was ${box(o.drawn)}), so it was not resized and nothing after it says anything`,
+    );
+  const drawnRects = comparedRects(o.drawn, o.scenes.config);
+  const resizedRects = comparedRects(o.resized, o.scenes.config);
+  if (drawnRects && resizedRects) {
+    const followed = resizedRects.filter((r, i) => near(r.width, drawnRects[i].width * o.factor, 0.1)).length;
+    if (followed < Math.ceil(resizedRects.length * 0.8))
+      return skip(
+        `the group reports ${box(o.resized)} (was ${box(o.drawn)}) but only ${followed} of ${resizedRects.length} members report ` +
+          `a size that followed it, so this host's member sizes do not move with a group resize and the size guard cannot see one through them`,
+      );
+  }
+  const memberNote =
+    drawnRects && resizedRects ? "members followed the resize" : "members were not reported at the resize";
+  if (!known(o.after))
+    return skip(`the host would not report the group's size after the update (resized to ${box(o.resized)})`, true);
+
+  const keptRects = comparedRects(o.after, o.scenes.kept);
+  const configRects = comparedRects(o.after, o.scenes.config);
+  if (keptRects && configRects) {
+    const agrees = (rows: ComparedRect[]) =>
+      rows.every(
+        (r) =>
+          Math.abs(r.width - r.node.w) <= Math.max(1, 0.02 * r.node.w) &&
+          Math.abs(r.height - r.node.h) <= Math.max(1, 0.02 * r.node.h),
+      );
+    if (agrees(keptRects)) {
+      if (!near(o.after.group.width as number, o.resized.group.width as number, 0.1))
+        return {
+          ok: false,
+          detail: `the members match a layout at the person's size but the group reports ${box(o.after)}, not ${box(o.resized)}`,
+        };
+      return {
+        ok: true,
+        detail: `${o.redrawn ? "redrawn" : "written in place"} at one scale and at the size the person made it: ${box(o.drawn)} drawn, ${box(o.resized)} resized, ${box(o.after)} after the edit (${keptRects.length} bars matched the layout at that size; ${memberNote})`,
+      };
+    }
+    if (agrees(configRects))
+      return {
+        ok: false,
+        detail: `the edit UNDID the resize: the chart came back at the size it was drawn at (${box(o.after)}, resized to ${box(o.resized)}), laid out for the config's own size`,
+      };
+    const ratios = (rows: ComparedRect[], side: "width" | "height") =>
+      rows.map((r) => r[side] / (side === "width" ? r.node.w : r.node.h));
+    const w = ratios(configRects, "width");
+    const h = ratios(configRects, "height");
+    return {
+      ok: false,
+      detail:
+        `the chart is not at one scale after the edit: its bars are ${Math.min(...w).toFixed(2)}x to ${Math.max(...w).toFixed(2)}x as wide and ` +
+        `${Math.min(...h).toFixed(2)}x to ${Math.max(...h).toFixed(2)}x as tall as the config draws them (${keptRects.length} compared; ` +
+        `${o.redrawn ? "redrawn" : "written in place"}; group ${box(o.drawn)} drawn, ${box(o.resized)} resized, ${box(o.after)} after)`,
+    };
+  }
+
+  // The members said nothing usable afterwards.
+  if (!o.redrawn)
+    return skip(
+      `the edit was written in place and the host would not report the members' sizes afterwards, so a half-stretched chart cannot be told from a clean one (group ${box(o.after)} after, ${box(o.resized)} resized)`,
+    );
+  if (!grown(o.drawn, o.after))
+    return {
+      ok: false,
+      detail: `the edit redrew the chart at ${box(o.after)}, not the ${box(o.resized)} the person made it: the resize was undone (${memberNote})`,
+    };
+  return {
+    ok: true,
+    detail: `redrawn at the size the person made it (${box(o.drawn)} drawn, ${box(o.resized)} resized, ${box(o.after)} after). The members were not reported afterwards, so one scale is inferred from a full redraw and not read (${memberNote})`,
+  };
+}
+
+/**
+ * An edit after the person RESIZES a chart — the half of `x4-keep-the-resize` no
+ * round has been able to reach.
+ *
+ * `liveScaleOfScene`, `groupScaleOfScene` and `keepResizedSize` all rest on a
+ * premise nobody has put to the live host, because nothing in 500 rounds resized
+ * a chart: that resizing a group scales its members, and that they then SAY so.
+ * The fake host's `userResizes` is written from the same premise and so cannot
+ * test it. This does the one thing that can: draw a chart on a slide of its own,
+ * set its group to twice its size through Office.js, edit a value through the
+ * product's own update path, and read back what the host reports.
+ *
+ * **WHAT IT RECORDS IS AS IMPORTANT AS WHAT IT DECIDES.** A task brief read
+ * `checked {names: 0, sizes: 0}` on three retitles and a deck-built chart as a
+ * host that returns nothing; the archive's `sizes: 8` on every geometry-writing
+ * update says otherwise, and the two readings could not be told apart from that
+ * line. So the scenario traces the raw readings of the group and its first member
+ * at each of the three moments (`threw PropertyNotLoaded`, `undefined` and a
+ * number are different hosts), how many members answered each field, and the route
+ * the edit took. Whichever way it comes out, the trace is what the next change is
+ * built from — the same reason the probe `group-members-report-geometry` asks the
+ * question without a chart.
+ *
+ * It reads through `readChartShapes`, which is the update's own read, and not
+ * `shapeGeometryByName`, whose descent into groups has reported "this host will
+ * not report a group's children" for thirty rounds while the update read them
+ * every time.
+ *
+ * ON A SLIDE THE DECK ALREADY HAD, and not on one it adds. The first version drew
+ * on a fresh slide, as the pane's own-slide offer does, and the fake — which
+ * models the host's refusal to let a slide added this run be held across the
+ * syncs of a multi-batch redraw — lost the redrawn chart's group, so the scenario
+ * measured the fresh-slide trouble that `docs/BACKLOG.md` already records and not
+ * the question it exists to ask. An update on a probe chart's own slide is the
+ * path every edit scenario here has driven on the live host and `same scale
+ * across the deck` has updated live-drawn charts on in place, so the chart is
+ * drawn in the corner of a probe slide, as `a chart of rotated shapes` draws
+ * beside one, and TAKEN AWAY as soon as it has been read. A measurement, not a
+ * specimen: it leaves the slide holding what it held.
+ */
+const resizeThenEdit: Scenario = async (prefix) => {
+  const { found: hosts, blind, gap } = await probeCharts(prefix);
+  const [host] = hosts;
+  if (!host)
+    return blind ? blindSkip(gap) : { ok: false, skipped: true, detail: "no probe chart's slide to draw a chart on" };
+  const slideId = host.target.slideId;
+  // The top left corner: doubled, a 300x180 chart is 600x360, which sits on the
+  // slide on every deck shape this battery has met (16:9 and 4:3 alike). It
+  // overlaps the probe chart already there, which costs a measurement that reads
+  // its own shapes by id nothing.
+  const corner = { left: 20, top: 20 };
+  const heldBefore = await slideShapeList(slideId);
+  const c: ChartConfig = { ...cfg(`${prefix} resize`), width: 300, height: 180 };
+  /** Every id this scenario's chart ever had on the slide, so none is left behind. */
+  const mine = new Set<string>();
+  const own = (t: { shapeId?: string; partIds?: string[] } | null | undefined) => {
+    for (const id of [t?.shapeId, ...(t?.partIds ?? [])]) if (id) mine.add(id);
+  };
+  const summary = (r: ChartReading | null) =>
+    r && {
+      isGroup: r.isGroup,
+      group: r.group.raw,
+      first: r.first,
+      listed: r.members?.length ?? null,
+      answered: {
+        names: r.members?.filter((m) => typeof m.name === "string" && m.name !== "").length ?? null,
+        widths: r.members?.filter((m) => Number.isFinite(m.width)).length ?? null,
+        heights: r.members?.filter((m) => Number.isFinite(m.height)).length ?? null,
+      },
+    };
+  const reading = (r: ChartReading): ResizeReading => ({ group: r.group, members: r.members });
+  let verdict: ReturnType<typeof judgeResizeKept>;
+  try {
+    verdict = await (async () => {
+      const target = await insertSceneIntoSlide(buildChart(c), { slideId, tagData: JSON.stringify(c), ...corner });
+      own(target);
+      if (!target)
+        return {
+          ok: false,
+          skipped: true,
+          detail: "the chart drew and the host would not name it afterwards, so there is no group to resize",
+        };
+      const drawn = await readChartShapes(target.slideId, target.shapeId);
+      if (!drawn)
+        return {
+          ok: false,
+          skipped: true,
+          blind: true,
+          detail: "the host would not read the chart's group right after it was drawn",
+        };
+      if (drawn.isGroup === false)
+        return {
+          ok: false,
+          skipped: true,
+          detail: "the chart was not grouped on this host, so there is no group to resize and no member list to read",
+        };
+      // Before the write, not after it: `resizeShapeBy` reads the size it scales
+      // and would report a group that does not say how big it is as a host that
+      // "would not take a size write", which is a different fact.
+      if (!Number.isFinite(drawn.group.width) || !Number.isFinite(drawn.group.height))
+        return {
+          ok: false,
+          skipped: true,
+          blind: true,
+          detail: `the host would not report the group's size after the draw, so a resize cannot be confirmed (group ${JSON.stringify(drawn.group.raw)})`,
+        };
+      if (!(await resizeShapeBy(target.slideId, target.shapeId, RESIZE_FACTOR, RESIZE_FACTOR)))
+        return { ok: false, skipped: true, detail: "the host would not take a size write on the chart's group" };
+      const resized = await readChartShapes(target.slideId, target.shapeId);
+      if (!resized)
+        return {
+          ok: false,
+          skipped: true,
+          blind: true,
+          detail: "the host would not read the chart's group after it was resized",
+        };
+
+      // A value moved, which writes geometry: a retitle would leave a stretched
+      // chart consistently stretched and prove nothing.
+      const next: ChartConfig = JSON.parse(JSON.stringify(c)) as ChartConfig;
+      const was = next.data.series[0].values[1];
+      next.data.series[0].values[1] = was === 30 ? 31 : 30;
+      const back = await updateChartInSlide(buildChart(next), target, { tagData: JSON.stringify(next) });
+      own(back);
+      if (!back) return { ok: false, detail: "the chart was gone from the slide after the update" };
+      // Redrawn and then not named: the target is the OLD one with `lost` on it, and
+      // reading it would read a shape that is gone and call that the chart.
+      if (back.lost)
+        return {
+          ok: false,
+          skipped: true,
+          blind: true,
+          detail: `the update redrew the chart and the host would not name the new group (lost: ${back.lost}), so what it left cannot be read`,
+        };
+      const after = await readChartShapes(back.slideId, back.shapeId);
+      trace("selftest", "an edit after a resize — what the host reported", {
+        drawn: summary(drawn),
+        resized: summary(resized),
+        after: summary(after),
+        redrawn: back.shapeId !== target.shapeId,
+        kept: back.size ?? null,
+      });
+      if (!after)
+        return {
+          ok: false,
+          skipped: true,
+          blind: true,
+          detail: "the host would not read the chart's group after the update",
+        };
+      return judgeResizeKept({
+        factor: RESIZE_FACTOR,
+        drawn: reading(drawn),
+        resized: reading(resized),
+        after: reading(after),
+        redrawn: back.shapeId !== target.shapeId,
+        scenes: {
+          config: buildChart(next),
+          kept: buildChart({
+            ...next,
+            ...(back.size ?? { width: c.width! * RESIZE_FACTOR, height: c.height! * RESIZE_FACTOR }),
+          }),
+        },
+      });
+    })();
+  } catch (err) {
+    verdict = { ok: false, detail: `threw: ${errorText(err)}` };
+  }
+  // CLEAN UP FIRST, REPORT SECOND: every scenario after this one reads the deck.
+  // By the ids this scenario's own inserts and update handed back — the group and
+  // its parts, before the edit and after — and, where the slide can be listed, by
+  // whatever it holds now that it did not hold before: a redraw whose new group
+  // the host would not name hands back no id to delete by. Nothing of the probe
+  // chart's is ever in either set, so it cannot be taken with them.
+  const heldNow = await slideShapeList(slideId);
+  const had = new Set((heldBefore ?? []).map((s) => s.id));
+  const strays = heldBefore && heldNow ? heldNow.map((s) => s.id).filter((id) => id && !had.has(id)) : [];
+  const doomed = [...new Set([...mine, ...strays])];
+  if (doomed.length) await deleteShapesById(slideId, doomed);
+  const heldAfter = await slideShapeList(slideId);
+  if (heldBefore && heldAfter && heldAfter.length > heldBefore.length)
+    return {
+      ...verdict,
+      ok: false,
+      skipped: undefined,
+      detail: `${verdict.detail}; and the scenario could not take its chart off the slide (${heldBefore.length} shapes before, ${heldAfter.length} after)`,
+    };
+  return verdict;
 };
 
 const explodePicture: Scenario = async (prefix) => {
@@ -4402,6 +4749,12 @@ const SCENARIOS: {
   // Newest, so last: it draws eight specimens and this list's rule is that an
   // unproven scenario's failure should cost the fewest verdicts behind it.
   { name: "what a chart kind costs", run: kindCostSpread },
+  // Newest, so last, and for a second reason: it adds a slide, draws a 24-shape
+  // chart on it, resizes and edits it, and the scenario ahead of it is the one
+  // with a recorded death rate. A death there costs this its turn, and nothing
+  // else its verdict. A NEW NAME, so it opens its own series and disturbs no round
+  // of history — `scenarioRegressions` compares by name.
+  { name: "an edit after the person resizes a chart", run: resizeThenEdit },
   // Picked only for the plainest reason there is: it blocks on a human.
   { name: "edit the chart YOU click", run: editViaRealClick, pickedOnly: true },
   { name: "what makes a long run slow down", run: degradesOverTime, pickedOnly: true },

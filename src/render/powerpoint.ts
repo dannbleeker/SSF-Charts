@@ -5615,6 +5615,115 @@ export async function moveShapeBy(slideId: string, shapeId: string, dx: number, 
   }
 }
 
+/**
+ * Resize a shape about its own corner — the self-test's stand-in for a person
+ * dragging a group's handle.
+ *
+ * WHY THIS EXISTS. Nothing in 500 rounds has resized a chart, so the whole of
+ * `liveScaleOfScene`, `groupScaleOfScene` and `keepResizedSize` rests on a
+ * premise about the host that nobody has put to it: that resizing a group
+ * scales its members, and that the members then SAY so. The fake host's
+ * `userResizes` is written from the same premise, so it cannot test it.
+ * `an edit after the person resizes a chart` calls this and then reads what the
+ * host reports.
+ *
+ * **A resize is only a width and a height that changed.** Setting them on the
+ * group is what PowerPoint's handles do, and the update path cannot tell the
+ * difference — the same argument `moveShapeBy` makes for a drag. Left and top
+ * are not touched, so the chart grows down and to the right. No selection call,
+ * for `moveShapeBy`'s reason.
+ *
+ * Returns whether the writes were accepted. It does NOT say they took effect:
+ * `office-js#6183` reports a host that accepts one axis of a move and drops the
+ * other, and the caller reads the size back for that reason.
+ */
+export async function resizeShapeBy(slideId: string, shapeId: string, fx: number, fy: number): Promise<boolean> {
+  if (!supports("1.3")) return false;
+  try {
+    return await ppRun(async (context) => {
+      const shape = context.presentation.slides.getItemOrNullObject(slideId).shapes.getItemOrNullObject(shapeId);
+      shape.load("width,height");
+      await boundedSync(context, "reading a shape's size before resizing it");
+      const width = loadedValue(() => shape.width);
+      const height = loadedValue(() => shape.height);
+      if (typeof width !== "number" || typeof height !== "number") return false;
+      shape.width = width * fx;
+      shape.height = height * fy;
+      await boundedSync(context, "resizing a shape, the way a handle would");
+      return true;
+    });
+  } catch (err) {
+    trace("selftest", "the shape could not be resized, so the edit after a resize cannot be checked", {
+      slideId,
+      shapeId,
+      error: errorText(err),
+    });
+    return false;
+  }
+}
+
+/**
+ * A chart's group and its members, read the way `tryInPlaceUpdate` reads them, and
+ * handed back with the raw readings beside the numbers.
+ *
+ * ONE READ, THE UPDATE'S OWN: the group resolved by id, `left,top,type,name,
+ * width,height` loaded off it, and `items/id,items/name,items/width,items/height`
+ * off its members in the same sync (`queueGroupMembers`). A scenario that asked
+ * for something else — `shapeGeometryByName` descends into groups with a
+ * different property list and has reported "this host will not report a group's
+ * children" for 30 rounds while the update read them every time — would measure
+ * the scenario's read and not the product's.
+ *
+ * `members` is absent when the collection never populated, which is a different
+ * fact from a collection whose members answered no size; `first` and `group.raw`
+ * are `rawRead`'s words, so `threw PropertyNotLoaded` and `undefined` stay
+ * apart.
+ */
+export interface ChartReading {
+  /** Whether the host calls the shape a group; absent when it did not say. */
+  isGroup?: boolean;
+  group: { width?: number; height?: number; raw: RawShape };
+  members?: { id?: string; name?: string; width?: number; height?: number }[];
+  first?: RawShape;
+}
+
+export async function readChartShapes(slideId: string, shapeId: string): Promise<ChartReading | null> {
+  if (!supports("1.8")) return null;
+  // A refusal in an earlier batch says nothing about this one: the same rule the
+  // update batch applies at its top, for the same reason.
+  forgetGroupReadRefusal();
+  try {
+    return await ppRun(async (context) => {
+      const group = context.presentation.slides.getItemOrNullObject(slideId).shapes.getItemOrNullObject(shapeId);
+      group.load("left,top,type,name,width,height");
+      const collection = queueGroupMembers(group);
+      await boundedSync(context, "reading a chart's group and its members, as an update does");
+      if (!isLive(group)) return null;
+      const items = collection ? loadedValue(() => collection.items) : undefined;
+      const members = Array.isArray(items)
+        ? items.map((m) => ({
+            id: loadedValue(() => m.id),
+            name: loadedValue(() => (m as unknown as { name?: string }).name),
+            ...liveBox(m),
+          }))
+        : undefined;
+      return {
+        isGroup: loadedValue(() => group.type) === undefined ? undefined : isGroupShape(group),
+        group: { ...liveBox(group), raw: rawShape(group) },
+        ...(members ? { members } : {}),
+        ...(Array.isArray(items) && items.length ? { first: rawShape(items[0]) } : {}),
+      };
+    });
+  } catch (err) {
+    trace("selftest", "a chart's group could not be read the way an update reads it", {
+      slideId,
+      shapeId,
+      error: errorText(err),
+    });
+    return null;
+  }
+}
+
 async function settleAndTagChart(slideId: string, tagData: string, shapeId?: string): Promise<boolean> {
   if (!supports("1.3") || !tagData) return false;
   // THE BINDING FIRST, because the two routes below are the ones this host has
@@ -13151,16 +13260,16 @@ function liveBox(shape: PowerPoint.Shape): { width?: number; height?: number } {
   return { width: loadedValue(() => shape.width), height: loadedValue(() => shape.height) };
 }
 
+/** One shape's name, width and height, raw. */
+function rawShape(s: PowerPoint.Shape): RawShape {
+  return { name: rawRead(() => s.name), width: rawRead(() => s.width), height: rawRead(() => s.height) };
+}
+
 function hostEvidence(
   prev: Scene,
   group: PowerPoint.Shape | undefined,
   shapes: readonly PowerPoint.Shape[],
 ): HostEvidence {
-  const rawShape = (s: PowerPoint.Shape): RawShape => ({
-    name: rawRead(() => s.name),
-    width: rawRead(() => s.width),
-    height: rawRead(() => s.height),
-  });
   const count = (read: (s: PowerPoint.Shape) => unknown, ok: (v: unknown) => boolean) =>
     shapes.filter((s) => ok(loadedValue(() => read(s)))).length;
   // The trailing integer: the host's ids are plain numbers ("27") and the fake's

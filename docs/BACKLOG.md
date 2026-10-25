@@ -3155,16 +3155,23 @@ none is a task yet: each is an owner call or a measurement.
    The redraw now keeps the person's size: the factor comes off the rects the resolve
    sync already loads (`liveScaleOfScene`), the chart is laid out at the config's
    size times it, the new size is written into the config tag, and the pane takes it
-   over through `EditTarget.size`. Left undone: a chart whose members the host will
-   not read (a refused group read, no width or height) still redraws at the size it
-   was drawn at; loading a resized chart from the selection shows the stored size
-   until an update keeps the live one, because the load read carries no member sizes
-   and a group's own size cannot be compared with the scene without a drawn-extent
-   record; the recovery ladder after a failed redraw (slide swap, picture) rebuilds at
-   the pane's size. Not measured on the live host: that a group resize scales every
-   member rect by one factor to within a point. The next round's
-   `redrawing at the size the user gave the chart` lines and the `sizes` count on
-   `updated only the shapes that changed` say whether it compared anything.
+   over through `EditTarget.size`. A host whose members are listed but give no width
+   or height is read off the group's own box instead (`groupScaleOfScene`, only when
+   no rect's size was read, 5pt-or-5% margin, a scene with a diagonal line, wedge,
+   polygon or arrowhead abstains; one dragged bar reads as a resize there, which is
+   why the members win whenever they answer). Left undone: a chart whose group read
+   is refused outright (no member list, so no way to know the group holds every
+   shape) still redraws at the size it was drawn at; a Bring to Front is still seen
+   only through names, and `ids` on the update's `host` trace records whether the
+   members' ids ascend in the listed order, which is the evidence a reorder could be
+   seen without them; loading a resized chart from the selection shows the stored
+   size until an update keeps the live one, because the load read carries no member
+   sizes; the recovery ladder after a failed redraw (slide swap, picture) rebuilds at
+   the pane's size. Not measured on the live host: a resize itself. No round has
+   resized a chart; `an edit after the person resizes a chart` does, and its
+   detail and the `host` object on the update's trace lines (raw readings of the
+   first member and the group, how many shapes answered each field, the group's
+   drawn, live and ratio) say what the host returns for one.
 3. **A copied ungrouped chart's tie-break (r2-19).** When two anchors name the same
    parts, the older (lower numeric shape id) owns them and an unorderable id means
    nobody does. Residuals: a copy edited this way leaves its own old parts under
@@ -3249,9 +3256,16 @@ none is a task yet: each is an owner call or a measurement.
    and `lineFormat.visible` unconditionally; whether `setSolidColor` resets an old
    transparency and whether setting a line colour reveals a hidden outline are
    still unanswered by any probe, so the fix is defensive and idempotent. The size
-   guard in 2 relies on the host reading a member's width and height back: the
-   `sizes` count in the next round's trace says whether it compared anything, and
-   the share of updates taken in place should not fall.
+   guard in 2 relies on the host reading a member's width and height back, and the
+   archive answers that for a chart nobody resized: every geometry-writing in-place
+   update in rounds 498, 500 and 501 (29 of 29) compared 8 rect sizes
+   (`checked.sizes: 8`), and names where the chart had already been written by this
+   add-in (16 to 18). The `{names: 0, sizes: 0}` lines are the retitles, which ask
+   for no size by design, and deck-built charts, whose default names are no
+   evidence. So the guard compares on this host; what is not known is what a
+   RESIZED group reports, and whether the group's own width and height come back.
+   `group-members-report-geometry` asks the second of an untouched group on the
+   scratch slide; the scenario in 2 asks both of a resized chart on a real slide.
 10. **Judgement calls to review.** Insert batch puts every chart on its own new
     slide, the first included. A blank row that overwrites a series row becomes a
     stack separator while one a paste appends is seeded as a series, and clearing a

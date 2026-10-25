@@ -570,6 +570,20 @@ export const faults = {
    * apart — a probe that reads the raw property can, which is why both exist.
    */
   silentReadsAs: "throws" as "throws" | "undefined",
+  /**
+   * Writing a group's width or height scales its members with it, about the
+   * group's corner — which is what PowerPoint's handles do, and what
+   * `an edit after the person resizes a chart` asks the live host to do through
+   * the API.
+   *
+   * Off by default, because a fake group has always taken a size write as a
+   * change to its own box and nothing else, and several suites write one. The
+   * tests that stage a resize by hand (`userResizes` in helpers/group-resize.ts)
+   * scale the members themselves; this is for the scenario that writes the
+   * GROUP's size through Office.js and needs the members to follow, as the real
+   * host is assumed to make them.
+   */
+  groupResizeScalesMembers: false,
   /** See `settleAddedSlideId`. Null is off; N settles the id after N lookups. */
   newSlideIdSettlesAfter: null as number | null,
   /**
@@ -1599,9 +1613,34 @@ function freshHandle(shape: FakeShape, override?: { id: string }): FakeShape {
         own = value as number;
         return true;
       }
+      if (
+        faults.groupResizeScalesMembers &&
+        target.type === "group" &&
+        (prop === "width" || prop === "height") &&
+        typeof value === "number"
+      )
+        scaleGroupMembers(target, prop, value);
       return Reflect.set(target, prop, value);
     },
   });
+}
+
+/**
+ * A group taking a new width or height, and its members going with it: every one
+ * scales by new over old about the group's corner, along that axis only. See
+ * `faults.groupResizeScalesMembers`.
+ */
+function scaleGroupMembers(group: FakeShape, prop: "width" | "height", value: number): void {
+  const old = Reflect.get(group, prop) as number;
+  if (!(old > 0)) return;
+  const factor = value / old;
+  const [start, size] = prop === "width" ? (["left", "width"] as const) : (["top", "height"] as const);
+  const origin = group[start];
+  for (const member of (group.grouped ?? []) as FakeShape[]) {
+    if (member.deleted) continue;
+    member[start] = origin + (member[start] - origin) * factor;
+    member[size] = member[size] * factor;
+  }
 }
 
 /**
@@ -3341,6 +3380,7 @@ export function installHost(
   faults.groupMembersSilentOn = [];
   faults.groupSilentOn = [];
   faults.silentReadsAs = "throws";
+  faults.groupResizeScalesMembers = false;
   faults.strictTags = false;
   faults.refuseCustomXmlWrites = false;
   faults.refuseCustomXmlReads = false;
