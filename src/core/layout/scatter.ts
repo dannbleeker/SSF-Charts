@@ -27,7 +27,11 @@ import {
   legendWrapWalk,
   MIN_PLOT_SIDE,
   MIN_LABEL_FS,
+  labelsClear,
+  onCanvas,
+  stripWidth,
   tickGapScale,
+  tickWidthFit,
   bandFontSize,
 } from "./frame";
 import type { LayoutResult } from "./column";
@@ -582,6 +586,37 @@ function axisNodes(
     tickGapScale(fs * 0.9, vals, to, span, want);
   const yTickScale = gapScale(yAxis.ticks, yAxis.to, plot.h, () => fs * 1.4);
   /**
+   * And the width of the box the y labels stand in, which `layoutScatter` sized from
+   * them. 1 for every label while the column could be made wide enough — which is
+   * every chart whose labels fit it, to the last bit — and otherwise (the column is
+   * capped at a share of the chart) the axis shrinks together, and a label that
+   * would need less than the floor is left out. Never a number cut in half.
+   */
+  const yFit = tickWidthFit(
+    yAxis.ticks.map((t) => formatNumber(t, yAxis.fmt)),
+    fs * 0.9 * yTickScale,
+    plot.x - 4,
+  );
+  const yDrawScale = yTickScale * yFit.scale;
+  /**
+   * The centre each x label is drawn at, at a size: on its tick, with the first
+   * kept off the y axis's gutter and the LAST kept on the canvas.
+   *
+   * The first was always nudged and the last was not, so the maximum's label hung
+   * half its width past the plot's right edge — and the plot stops 8pt short of the
+   * canvas, so "5,000" (24pt of ink) overran it and the frame clip made "5,…" of it,
+   * at every size, on any chart whose x range reaches 1,000. The comment on the
+   * nudge says the gantt's last tick makes the same move at the other end of its
+   * axis, and the scatter's own last tick never did (`onCanvas`).
+   *
+   * One function for the fit and the draw, because the nudge moves a label toward
+   * its neighbour and the fit has to be asked where the label ends up.
+   */
+  const xCentre = (t: number, s: number) => {
+    const half = textWidth(formatNumber(t, xAxis.fmt), fs * 0.9 * s) / 2;
+    return onCanvas(Math.max(xAxis.to(t), plot.x + half), half, cfg.width);
+  };
+  /**
    * The x strip's size, AFTER the origin nudge has been paid for.
    *
    * `gapScale` guarantees the tick spacing can carry the widest label. The nudge
@@ -594,8 +629,8 @@ function axisNodes(
    *
    * The secondary value axis had the same defect and took the other remedy: one
    * shift for the whole strip, which keeps every gap. That is not available here
-   * because only the FIRST label is nudged, and shifting all of them right by
-   * its overhang would push the last one off the canvas. So this strip pays in
+   * because the FIRST label is nudged right and the LAST one left, and shifting all
+   * of them by one overhang would push the other end off. So this strip pays in
    * SIZE instead: shrink until the nudged layout clears, and drop the numbers if
    * it cannot — the answer this file already gives when the ticks will not fit.
    *
@@ -608,24 +643,19 @@ function axisNodes(
     let scale = gapScale(xAxis.ticks, xAxis.to, plot.w, want);
     if (scale <= 0 || xAxis.ticks.length < 2) return scale;
     // Where each label's ink actually lands at this size, nudge included.
-    const spans = (s: number) =>
-      xAxis.ticks.map((t) => {
-        const half = textWidth(formatNumber(t, xAxis.fmt), fs * 0.9 * s) / 2;
-        const centre = Math.max(xAxis.to(t), plot.x + half);
-        return { lo: centre - half, hi: centre + half };
-      });
-    const clears = (s: number) => {
-      const b = spans(s);
-      for (let i = 1; i < b.length; i++) if (b[i].lo - b[i - 1].hi < 1) return false;
-      return true;
-    };
+    const clears = (s: number) =>
+      labelsClear(
+        xAxis.ticks.map((t) => xCentre(t, s)),
+        xAxis.ticks.map((t) => textWidth(formatNumber(t, xAxis.fmt), fs * 0.9 * s)),
+        1,
+      );
     while (scale > 0 && !clears(scale)) {
       scale -= 0.05;
       if (fs * 0.9 * scale < MIN_LABEL_FS) return 0;
     }
     return scale;
   })();
-  for (const t of yAxis.ticks) {
+  for (const [ti, t] of yAxis.ticks.entries()) {
     const y = yAxis.to(t);
     out.push({
       kind: "line",
@@ -641,15 +671,15 @@ function axisNodes(
     // bottom edge, so on a 300x60 chart at 24pt the axis and its ticks are
     // inside the title. Per tick, like the value axis in `frame.ts` — the ones
     // lower down are still where they belong.
-    if (yTickScale > 0 && !printsOnTitle(cfg, style, y - fs * 0.7 * yTickScale)) {
+    if (yTickScale > 0 && yFit.keep[ti] && !printsOnTitle(cfg, style, y - fs * 0.7 * yDrawScale)) {
       out.push({
         kind: "text",
         x: 0,
-        y: y - fs * 0.7 * yTickScale,
+        y: y - fs * 0.7 * yDrawScale,
         w: plot.x - 4,
-        h: fs * 1.4 * yTickScale,
+        h: fs * 1.4 * yDrawScale,
         text: formatNumber(t, yAxis.fmt),
-        fontSize: fs * 0.9 * yTickScale,
+        fontSize: fs * 0.9 * yDrawScale,
         color: style.mutedText,
         align: "right",
         valign: "middle",
@@ -659,15 +689,14 @@ function axisNodes(
   }
   if (xTickScale > 0) {
     for (const t of xAxis.ticks) {
-      const x = xAxis.to(t);
       // A tick label is CENTRED on its tick, so the one at the axis's origin
       // puts half its width to the LEFT of the plot — which is the strip the y
       // axis writes its own numbers in, and at 18pt on a 480x300 chart the two
-      // corner labels met. Nudged right by exactly the overlap, the same move
-      // the gantt's last tick label makes at the other end of its axis: a label
-      // that already clears the gutter does not move at all.
-      const half = textWidth(formatNumber(t, xAxis.fmt), fs * 0.9 * xTickScale) / 2;
-      const at = Math.max(x, plot.x + half);
+      // corner labels met. Nudged right by exactly the overlap, and the last one
+      // left by exactly its overhang past the canvas (see `xCentre`), the move the
+      // gantt's timeline makes at both ends: a label that already clears the
+      // gutter and the edge does not move at all.
+      const at = xCentre(t, xTickScale);
       // The x strip sits under the plot, and a plot squeezed into the title's
       // band takes the strip with it — the whole row, since these share one y.
       if (printsOnTitle(cfg, style, plot.y + plot.h + 2)) break;
@@ -715,6 +744,23 @@ function axisNodes(
     },
   );
   return out;
+}
+
+/**
+ * The y axis's column: 34pt while its widest label fits the 30pt box beside the
+ * plot, and the measured text when it does not.
+ *
+ * It was a flat 34, so a tick of 100,000 or more was cut by the frame clip into
+ * "200,0…" and the whole axis read as look-alikes (see `stripWidth`). Priced at
+ * the largest size the labels are ever drawn at, `fs * 0.9`: the size they are
+ * actually drawn at depends on the plot's height, which depends on the legend,
+ * which wraps within this width — so the reservation is made from the unshrunk
+ * labels, and a crowded axis whose labels were shrunk is given the room for the
+ * ones it would have had.
+ */
+function yAxisColumn(yTicks: number[], yFmt: NumberFormat, fs: number, width: number): number {
+  const ink = Math.max(0, ...yTicks.map((t) => textWidth(formatNumber(t, yFmt), fs * 0.9)));
+  return stripWidth(34, 30, ink, 4, width * 0.4);
 }
 
 export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decorations): LayoutResult {
@@ -765,7 +811,18 @@ export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decora
       : null;
 
   const titleH = titleHeight(cfg, style);
-  const axisW = 34;
+  // Data-driven axis domain (no forced zero baseline) shared with spreadCap;
+  // folds in partition lines, a quadrant crossing and x/y bands so those
+  // decorations never fall outside the plot. See scatterDomain.
+  //
+  // Asked HERE, before the plot, because the y axis's gutter is sized from the
+  // labels these ticks print: `scatterDomain` reads the config alone, so the ticks
+  // are known before any plot is.
+  const xTicks = niceTicks(...scatterDomain(cfg, "x"), 5);
+  const yTicks = niceTicks(...scatterDomain(cfg, "y"), 5);
+  const xFmt = resolveAxisFormat(xTicks, cfg.numberFormat);
+  const yFmt = resolveAxisFormat(yTicks, cfg.numberFormat);
+  const axisW = yAxisColumn(yTicks, yFmt, fs, cfg.width);
   const multiGroup = !colorScale && new Set(pts.map((p) => p.group)).size > 1;
   // ROWS, not one row. This legend is hand-rolled — it does not go through
   // `legendRow`/`legendRowCount` the way mekko, boxplot, radar, butterfly and
@@ -849,11 +906,7 @@ export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decora
    */
   const legendTop = plot.y - mTop;
 
-  // Data-driven axis domain (no forced zero baseline) shared with spreadCap;
-  // folds in partition lines, a quadrant crossing and x/y bands so those
-  // decorations never fall outside the plot. See scatterDomain.
-  const xTicks = niceTicks(...scatterDomain(cfg, "x"), 5);
-  const yTicks = niceTicks(...scatterDomain(cfg, "y"), 5);
+  // The ticks and their formats are asked above, where the y gutter needs them.
   const x0 = xTicks[0];
   const x1 = xTicks[xTicks.length - 1];
   const y0 = yTicks[0];
@@ -861,8 +914,6 @@ export function layoutScatter(cfg: ChartConfig, style: ChartStyle, decor: Decora
   const toX = (v: number) => plot.x + ((v - x0) / (x1 - x0 || 1)) * plot.w;
   const toY = (v: number) => plot.y + plot.h - ((v - y0) / (y1 - y0 || 1)) * plot.h;
 
-  const xFmt = resolveAxisFormat(xTicks, cfg.numberFormat);
-  const yFmt = resolveAxisFormat(yTicks, cfg.numberFormat);
   // The ten loose locals above, as the two bundles every extracted block takes.
   // See `ScatterAxis`. The originals stay: the blocks still inline here use them
   // by name, and rewriting those call sites would make this a rewrite rather

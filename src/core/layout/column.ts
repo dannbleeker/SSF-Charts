@@ -28,21 +28,27 @@ import {
   breakMarkerNodes,
   categoryRooms,
   chromeNodes,
+  CLIP_SLACK,
   computeFrame,
   computeFrameHorizontal,
+  endLabelNode,
   footnoteH,
   labelBesidePoint,
   legendWrapWalk,
   seriesLegendLabels,
   legendLabelsFor,
+  labelsClear,
   logFloor,
+  onCanvas,
   pointLabelText,
+  roomForEnds,
   titleHeight,
   valueScale,
   bandFontSize,
   tickGapScale,
   markInFrame,
   MIN_LABEL_FS,
+  type EndLabel,
   type Frame,
   type ValueScale,
   horizontalLegendFits,
@@ -374,6 +380,114 @@ function grandTotalNode(
 }
 
 /**
+ * A total drawn just past the END of a sideways stacked or clustered bar.
+ *
+ * Listed before the bars are, because the frame needs them: the strip beside the
+ * plot is sized to the widest of these (`roomForEnds`), and the draw reads the
+ * same list for what each says and how large it is, so the strip that is reserved
+ * and the labels that stand in it cannot disagree.
+ */
+interface SideTotal {
+  name: string;
+  text: string;
+  /** The value its bar reaches, which is where the label begins. */
+  top: number;
+  /** Centre of its bar's row, down the category axis. */
+  row: number;
+  /** The size it is drawn at, fitted to the row it names; 0 when the row cannot carry one. */
+  fs: number;
+}
+
+/**
+ * Every total a SIDEWAYS stacked or clustered chart prints: one per category, or —
+ * for a clustered-stacked chart — one per stack, at the end of its own sub-row.
+ *
+ * ONE PER STACK, as upright. The per-stack totals were gated `!H`, so a sideways
+ * clustered-stacked chart fell through to the single per-category total, which is
+ * the sum of EVERY stack, printed beside the tallest one: "55" at the end of a
+ * bar worth 40, with the 15 of the stack above it lost. The number matched no bar.
+ * The upright chart's rule is that a total sits on the thing it totals, and a
+ * sideways one is the same chart turned.
+ *
+ * Gated per stack, as upright: one stack can be blank while its neighbour is not,
+ * and only the blank one goes unlabelled (see `columnHasData`).
+ */
+function sidewaysTotals(
+  cfg: ChartConfig,
+  fmt: NumberFormat,
+  stacked: boolean,
+  stackIds: number[],
+  fs: number,
+  centers: number[],
+  slotLen: number,
+  colThick: number,
+): SideTotal[][] {
+  const { series, categories } = cfg.data;
+  // Each stack's series, once: this runs per category, and a chart can hold 4096
+  // categories of 256 stacks.
+  const stackSeries = stackIds.map((id) => series.filter((s) => (s.stack ?? 0) === id));
+  return categories.map((_, c) => {
+    const out: SideTotal[] = [];
+    if (stacked && stackIds.length > 1) {
+      const stackThick = colThick / stackIds.length;
+      stackSeries.forEach((mine, sp) => {
+        if (!columnHasData(mine, c)) return;
+        out.push({
+          name: `total-${c}-s${sp}`,
+          text: formatNumber(columnSignedTotal(mine, c), fmt),
+          top: columnPositiveTotal(mine, c),
+          // The sub-row's centre, where the bar of that stack is drawn.
+          row: centers[c] - colThick / 2 + (sp + 0.5) * stackThick,
+          // 0.95, as the upright per-stack totals: a stack is narrower than a column.
+          fs: bandFontSize(fs * 0.95, stackThick, 1.5),
+        });
+      });
+    } else if (columnHasData(series, c)) {
+      out.push({
+        name: `total-${c}`,
+        text: formatNumber(columnSignedTotal(series, c), fmt),
+        top: stacked ? columnPositiveTotal(series, c) : clusteredTopValue(series.map((s) => s.values[c] ?? 0)),
+        row: centers[c],
+        // A total is centred on its row in a box `fs * 1.5` tall, so once the
+        // font outgrows the row pitch the totals overlap each OTHER down the
+        // end of the bars — the same defect the butterfly's value labels had,
+        // and it wants the same bound: the ROW the total belongs to. Last
+        // resort, so at any font that already fits its row this is `fs`.
+        fs: bandFontSize(fs, slotLen, 1.5),
+      });
+    }
+    return out;
+  });
+}
+
+/**
+ * One sideways total, standing just past the end of the bar it totals — that bar's
+ * own end, not the tallest stack's. The room was made already (`roomForEnds`); a
+ * strip it could not make wide enough shrinks the number to what there is or leaves
+ * it out, and never cuts it (`endLabelNode`).
+ */
+function sideTotalNode(
+  st: SideTotal,
+  frame: Frame,
+  qOf: (v: number) => number,
+  canvasW: number,
+  style: ChartStyle,
+): SceneNode | null {
+  return endLabelNode(st.text, frame.x + qOf(Math.max(0, st.top)), st.row, st.fs, canvasW, style, st.name);
+}
+
+/** `sidewaysTotals` as the frame wants them: how wide each is, and how far along the plot its bar ends. */
+function totalEnds(totals: readonly SideTotal[], scale: ValueScale): EndLabel[] {
+  return totals
+    .filter((t) => t.fs > 0)
+    .map((t) => ({
+      ink: textWidth(t.text, t.fs, true),
+      // The same clamp `qOf` applies, as a share of the plot.
+      reach: Math.max(0, Math.min(1, (Math.max(0, t.top) - scale.min) / (scale.max - scale.min || 1))),
+    }));
+}
+
+/**
  * Stacked / clustered / 100% column charts — and, following think-cell's
  * "a bar chart is a rotated column chart" model, the same layouts in
  * horizontal orientation when cfg.horizontal is set.
@@ -389,22 +503,7 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
   const nStacks = stacked && !pct ? stackIds.length : 1;
   const stackPos = new Map(stackIds.map((id, i) => [id, i]));
 
-  const vframe = H ? null : computeFrame(cfg, style, decor, decor.seriesLabels ? data.series.map((s) => s.name) : []);
-  const frame = H ? computeFrameHorizontal(cfg, style, decor) : vframe!.frame;
   const fs = style.fontSize;
-
-  // Category slots run along x (vertical) or y (horizontal).
-  const catStart = H ? frame.y : frame.x;
-  const catLen = H ? frame.h : frame.w;
-  const slotLen = catLen / Math.max(1, n);
-  // Excel-style gap width: gap between columns as a % of column width.
-  // Default 50 reproduces think-cell's 2/3-of-slot columns.
-  const gapWidth = Math.max(0, Math.min(500, cfg.gapWidth ?? 50));
-  const colThick = slotLen / (1 + gapWidth / 100);
-  // Excel-style clustered overlap (−100…100): fraction each bar overlaps its
-  // neighbour. 0 = edge to edge (the historical default).
-  const overlapFrac = Math.max(-100, Math.min(100, cfg.overlap ?? 0)) / 100;
-  const centers = Array.from({ length: n }, (_, i) => catStart + slotLen * (i + 0.5));
 
   const posTotals = data.categories.map((_, c) => columnPositiveTotal(data.series, c));
   const negTotals = data.categories.map((_, c) => columnNegativeTotal(data.series, c));
@@ -469,29 +568,60 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
   const pctPosMax = pct
     ? Math.max(1, ...data.categories.map((_, c) => (denominators[c] > 0 ? posTotals[c] / denominators[c] : 0)))
     : 1;
-  const scale: ValueScale = pct
-    ? {
-        min: pctNegMin,
-        max: pctPosMax,
-        percent: true,
-        // Clamped to the domain, the way valueScale already filters its own:
-        // niceTicks rounds OUTWARD, so it returned ticks below pctNegMin, and
-        // toY mapped those past the plot — a gridline at y=301.6 on a 300pt
-        // canvas, with its label sitting on the category row.
-        ticks:
-          pctNegMin < 0 || pctPosMax > 1
-            ? niceTicks(pctNegMin, pctPosMax, 5).filter((t) => t >= pctNegMin - 1e-9 && t <= pctPosMax + 1e-9)
-            : [0, 0.25, 0.5, 0.75, 1],
-        toY: (v: number) => frame.y + frame.h - ((v - pctNegMin) / (pctPosMax - pctNegMin)) * frame.h,
-      }
-    : valueScale(
-        frame,
-        logOn ? logFloor(allValues, dataMin) : dataMin,
-        dataMax,
-        cfg.scale,
-        H ? undefined : cfg.axisBreak,
-        logOn,
-      );
+  // A function of the frame, because the frame needs it: the value-axis column is
+  // sized from the ticks this prints (`computeFrame`), and the scale maps onto the
+  // plot the column leaves. Asked twice — against the frame at the usual column
+  // width, then against the one it settles on — and the ticks are the same on both.
+  const scaleOf = (f: Frame): ValueScale =>
+    pct
+      ? {
+          min: pctNegMin,
+          max: pctPosMax,
+          percent: true,
+          // Clamped to the domain, the way valueScale already filters its own:
+          // niceTicks rounds OUTWARD, so it returned ticks below pctNegMin, and
+          // toY mapped those past the plot — a gridline at y=301.6 on a 300pt
+          // canvas, with its label sitting on the category row.
+          ticks:
+            pctNegMin < 0 || pctPosMax > 1
+              ? niceTicks(pctNegMin, pctPosMax, 5).filter((t) => t >= pctNegMin - 1e-9 && t <= pctPosMax + 1e-9)
+              : [0, 0.25, 0.5, 0.75, 1],
+          toY: (v: number) => f.y + f.h - ((v - pctNegMin) / (pctPosMax - pctNegMin)) * f.h,
+        }
+      : valueScale(
+          f,
+          logOn ? logFloor(allValues, dataMin) : dataMin,
+          dataMax,
+          cfg.scale,
+          H ? undefined : cfg.axisBreak,
+          logOn,
+        );
+
+  const vframe = H
+    ? null
+    : computeFrame(cfg, style, decor, decor.seriesLabels ? data.series.map((s) => s.name) : [], scaleOf);
+  const frame0 = H ? computeFrameHorizontal(cfg, style, decor) : vframe!.frame;
+
+  // Category slots run along x (vertical) or y (horizontal).
+  const catStart = H ? frame0.y : frame0.x;
+  const catLen = H ? frame0.h : frame0.w;
+  const slotLen = catLen / Math.max(1, n);
+  // Excel-style gap width: gap between columns as a % of column width.
+  // Default 50 reproduces think-cell's 2/3-of-slot columns.
+  const gapWidth = Math.max(0, Math.min(500, cfg.gapWidth ?? 50));
+  const colThick = slotLen / (1 + gapWidth / 100);
+  // Excel-style clustered overlap (−100…100): fraction each bar overlaps its
+  // neighbour. 0 = edge to edge (the historical default).
+  const overlapFrac = Math.max(-100, Math.min(100, cfg.overlap ?? 0)) / 100;
+  const centers = Array.from({ length: n }, (_, i) => catStart + slotLen * (i + 0.5));
+
+  // Sideways, the totals stand past the ends of the bars, in the strip the frame
+  // leaves beside the plot — which gives up the width they ask for (`roomForEnds`).
+  // The rows run down y, so the slots above stand whatever the plot's width.
+  const sideTotals =
+    H && decor.totals && !pct ? sidewaysTotals(cfg, fmt, stacked, stackIds, fs, centers, slotLen, colThick) : [];
+  const frame = sideTotals.length ? roomForEnds(cfg, frame0, totalEnds(sideTotals.flat(), scaleOf(frame0))) : frame0;
+  const scale: ValueScale = scaleOf(frame);
 
   // Value coordinate: distance along the value axis from the scale minimum.
   // Vertical charts route through toY so axis breaks apply; horizontal stays linear.
@@ -897,27 +1027,11 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
       // measured zero where the truth was an empty column. Gated here rather
       // than inside each branch so a third one cannot be added past it.
       if (H) {
-        // A total is centred on its row in a box `fs * 1.5` tall, so once the
-        // font outgrows the row pitch the totals overlap each OTHER down the
-        // end of the bars — the same defect the butterfly's value labels had,
-        // and it wants the same bound: the ROW the total belongs to. Last
-        // resort, so at any font that already fits its row this is `fs`.
-        const totalFs = bandFontSize(fs, slotLen, 1.5);
-        if (totalFs > 0)
-          nodes.push({
-            kind: "text",
-            x: frame.x + topQ + 3,
-            y: centers[c] - totalFs * 0.75,
-            w: cfg.width - (frame.x + topQ) - 3,
-            h: totalFs * 1.5,
-            text: formatNumber(signedTotals[c], fmt),
-            fontSize: totalFs,
-            bold: true,
-            color: style.text,
-            align: "left",
-            valign: "middle",
-            name: `total-${c}`,
-          });
+        // Listed above (`sidewaysTotals`), because the frame made room for them.
+        for (const st of sideTotals[c] ?? []) {
+          const node = sideTotalNode(st, frame, qOf, cfg.width, style);
+          if (node) nodes.push(node);
+        }
       } else {
         // Upright, a total is centred on its column SLOT and was drawn at the
         // chart font however narrow that slot is — so on a small frame a
@@ -1152,6 +1266,81 @@ function comboSeriesLevels(
       return k !== undefined ? row[k] : linesShareScale ? (s.values[c] ?? 0) : NaN;
     }),
   );
+}
+
+/**
+ * The one shift that brings a sideways secondary strip onto the canvas, `ats` being
+ * where its labels are centred and `half` half of each box (`boxW` wide).
+ *
+ * Moved as a block from the extent of its BOXES, which are `fs * 3.4` wide — wider
+ * than most of the numbers in them — so a box that hangs off an end does not mean
+ * the ink does, and the box rule has always been the one that decided. Where it
+ * leaves a label's INK off the canvas the frame clip cuts the number, "-10…" for
+ * -100: a strip that began 2pt inside the canvas and ran 7pt off the right was moved
+ * left by the overhang, and its first label's ink went off the left instead. The
+ * shift the boxes asked for stands wherever it keeps every label whole, so no strip
+ * that was fine moves; otherwise it is the smallest that does, and NaN when the ink
+ * of the whole strip is wider than the canvas — dropped rather than crushed, the
+ * answer this strip already gives when it will not fit.
+ */
+function sidewaysStripShift(ats: number[], inks: number[], boxW: number, half: number, canvasW: number): number {
+  // The boxes' rule, as it always was: each is `boxW` wide, centred on its tick.
+  const lefts = ats.map((q) => q - half);
+  const under = Math.min(...lefts);
+  const over = Math.max(...lefts) + boxW - canvasW;
+  if (under < 0 && over > 0) return NaN; // wider than the canvas — see below
+  const shift = under < 0 ? -under : over > 0 ? -over : 0;
+  // And the ink's, which is what the clip reads.
+  const on = (s: number) =>
+    ats.every((q, i) => q + s - inks[i] / 2 >= -CLIP_SLACK && q + s + inks[i] / 2 <= canvasW + CLIP_SLACK);
+  if (on(shift)) return shift;
+  const lo = Math.min(...ats.map((q, i) => q - inks[i] / 2));
+  const hi = Math.max(...ats.map((q, i) => q + inks[i] / 2));
+  if (hi - lo > canvasW) return NaN;
+  return lo < 0 ? -lo : hi > canvasW ? canvasW - hi : 0;
+}
+
+/**
+ * The box and the size of the SECONDARY value axis's tick labels, given the size
+ * its ticks' spacing allows (`gapScale`, as `tickGapScale` answers it).
+ *
+ * The strip reserves no gutter — the plot runs to the canvas edge and the strip
+ * overlaps its last few points rather than draw off the chart — and its box was
+ * `fs * 3.4`, pinned at the canvas's edge, whatever the numbers in it were. A
+ * label of eight figures is 49pt, so the frame clip made "20,00…" of 20,000,000.
+ *
+ * Upright, where the box is left-aligned from the plot's right edge (or from
+ * `canvasW - boxW`, whichever is further left), the box widens to the label and the
+ * strip slides left over the plot by the difference, which is the trade this strip
+ * has always made. A label the existing box holds keeps it, to the last bit. A
+ * label that would need more than a share of the chart shrinks to that share, and a
+ * strip that would then be below the floor returns `scale: 0` — dropped, the answer
+ * this strip gives when its ticks will not fit. Never a number cut in half.
+ *
+ * Sideways the labels are CENTRED on their ticks and the boxes stay as they were: a
+ * centred label is not cut by a box narrower than itself, only by the canvas. The
+ * caller moves the strip onto the canvas as a block and checks it with `inks` — each
+ * label's width at the size it is drawn at (`sidewaysStripShift`).
+ */
+function secondaryStrip(
+  texts: string[],
+  fs: number,
+  gapScale: number,
+  sideways: boolean,
+  plotRight: number,
+  canvasW: number,
+): { boxW: number; scale: number; inks: number[] } {
+  const boxW = fs * 3.4 * gapScale;
+  const inksAt = (scale: number) => texts.map((t) => textWidth(t, fs * 0.9 * scale));
+  const inks = inksAt(gapScale);
+  if (gapScale <= 0 || sideways) return { boxW, scale: gapScale, inks };
+  const ink = Math.max(0, ...inks);
+  const left = (w: number) => Math.max(0, Math.min(plotRight + 2, canvasW - w));
+  if (left(boxW) + ink <= canvasW + CLIP_SLACK) return { boxW, scale: gapScale, inks };
+  const cap = canvasW * 0.4;
+  if (ink + 2 <= cap) return { boxW: Math.max(boxW, Math.ceil(ink) + 2), scale: gapScale, inks };
+  const scale = (gapScale * (cap - 2)) / ink;
+  return fs * 0.9 * scale >= MIN_LABEL_FS ? { boxW: cap, scale, inks: inksAt(scale) } : { boxW, scale: 0, inks };
 }
 
 /**
@@ -1398,7 +1587,7 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
      * edge, so it is a line height. Measuring the wrong one is how a scatter's x
      * axis came to be drawn through itself.
      */
-    const tickScale2 = tickGapScale(
+    const gapScale2 = tickGapScale(
       fs * 0.9,
       ticks2,
       lineToY,
@@ -1422,7 +1611,14 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
      * Upright there is nothing to do: every label shares one x, so clamping it
      * moves the strip as a block already.
      */
-    const boxW = fs * 3.4 * tickScale2;
+    /**
+     * The box and the size the labels are drawn at once their WIDTH has had its say
+     * (`secondaryStrip`): the gap above fits them to each other, and nothing fitted
+     * them to the box, which is `fs * 3.4` — 34pt, pinned to the canvas's edge — so
+     * an eight-figure tick was cut to "20,00…" by the frame clip.
+     */
+    const texts2 = ticks2.map((t) => formatNumber(t, fmt2));
+    const { boxW, scale: tickScale2, inks } = secondaryStrip(texts2, fs, gapScale2, H, plot.x + plot.w, cfg.width);
     /**
      * THE STRIP YIELDS TO WHATEVER IS ALREADY THERE.
      *
@@ -1452,14 +1648,8 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
     const placedText = nodes.filter((n): n is TextNode => n.kind === "text" && !!String(n.text).trim()).map(tightBox);
     const landsOnSomething = (x: number, y: number, w: number, h: number) =>
       placedText.some((b) => x < b.x + b.w && b.x < x + w && y < b.y + b.h && b.y < y + h);
-    const stripShift = (() => {
-      if (!H || tickScale2 <= 0) return 0;
-      const lefts = ticks2.map((t) => lineToY(t) - fs * 1.7 * tickScale2);
-      const under = Math.min(...lefts);
-      const over = Math.max(...lefts) + boxW - cfg.width;
-      if (under < 0 && over > 0) return NaN; // wider than the canvas — see below
-      return under < 0 ? -under : over > 0 ? -over : 0;
-    })();
+    const stripShift =
+      H && tickScale2 > 0 ? sidewaysStripShift(ticks2.map(lineToY), inks, boxW, fs * 1.7 * tickScale2, cfg.width) : 0;
     for (const t of tickScale2 > 0 && !Number.isNaN(stripShift) ? ticks2 : []) {
       // The base chart's own axis sits below (horizontal) or left (vertical), so
       // the secondary strip goes on the opposite side: above the plot for bars,
@@ -2056,25 +2246,44 @@ export function horizontalChrome(
         ? Math.min(...scale.ticks.slice(1).map((t, i) => Math.abs(qOf(t) - qOf(scale.ticks[i]))))
         : frame.w;
     const room = Math.max(1, tickGap - 2);
+    /**
+     * Where each label is DRAWN at a size: centred on its tick, the first and the
+     * last kept on the canvas.
+     *
+     * The last tick sits at the plot's right edge, which is `fs * 0.8 + 2` from the
+     * canvas when the chart reserves no totals strip, and the first sits at the
+     * foot of a gutter that is 2pt wide when there are no category names — so a
+     * centred label of four characters or more hung off the chart and the frame clip
+     * made "4,0…" of 4,000, or "-100…" of -100,000. Moved by the overflow
+     * (`onCanvas`), the way the gantt's timeline already moves its ends, and fitted
+     * where it is moved TO: the nudge closes the gap the fit below had opened.
+     */
+    const inks = (f: number) => scale.ticks.map((t) => textWidth(axisLabel(t), f));
+    const centresAt = (f: number) => {
+      const w = inks(f);
+      return scale.ticks.map((t, i) => onCanvas(frame.x + qOf(t), w[i] / 2, cfg.width));
+    };
+    const stripClears = (f: number) => labelsClear(centresAt(f), inks(f), 2);
     const tickFs = (() => {
       let f = fs * 0.9;
-      while (f > MIN_LABEL_FS && scale.ticks.some((t) => textWidth(axisLabel(t), f) > room)) f -= 0.5;
+      while (f > MIN_LABEL_FS && (scale.ticks.some((t) => textWidth(axisLabel(t), f) > room) || !stripClears(f)))
+        f -= 0.5;
       return f;
     })();
+    const centres = centresAt(tickFs);
     // The loop floors rather than shrinking to nothing, so a gap this tight
     // leaves labels that still overlap — and a label too small to read is not
     // worth the collision. Dropped whole, gridlines kept, as on the other axes.
-    const tickFits = scale.ticks.every((t) => textWidth(axisLabel(t), tickFs) <= room);
+    const tickFits = scale.ticks.every((t) => textWidth(axisLabel(t), tickFs) <= room) && stripClears(tickFs);
     // …and only where the strip is not inside the TITLE. Sideways it hangs off
     // the foot of the plot, and `fitPlot` grows a squeezed plot up from that
     // foot, so on a 300x60 chart at 24pt the whole row of numbers was drawn
     // across the chart's own name.
     const stripClear = !printsOnTitle(cfg, style, frame.y + frame.h + 2);
-    for (const t of tickFits && stripClear ? scale.ticks : []) {
-      const x = frame.x + qOf(t);
+    for (const [ti, t] of tickFits && stripClear ? scale.ticks.entries() : []) {
       nodes.push({
         kind: "text",
-        x: x - 24,
+        x: centres[ti] - 24,
         y: frame.y + frame.h + 2,
         w: 48,
         // Top-anchored in the strip `horizontalValueAxisHeight` reserved, so a

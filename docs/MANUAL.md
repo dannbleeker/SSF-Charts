@@ -580,6 +580,16 @@ gap between two rings — and below about 5pt it is not drawn at all. A label to
 small to read is not a small label, it is ink; the marks it named are still
 there, and the chart still says what it says.
 
+**A number is never drawn cut in half.** A category name can be clipped to its
+room with an ellipsis and still be recognisable; "100,0…" for 100,000 is not, it
+reads as a different number. So numbers get the room instead: the value axis's
+column widens to its widest tick label (the plot gives up the width, up to 40% of
+the chart), the strip beside a sideways bar widens for the longest total, and the
+last tick of a sideways axis or of a scatter's x axis moves onto the chart by
+exactly the part that hung off it. Where even that cannot hold the number it
+shrinks toward 5pt, and below that it is not drawn. A chart whose numbers
+already fit keeps the plot it had.
+
 **Text is never drawn on top of other text.** The same sweep runs a second way,
 comparing every label's ink against every other label's, across **7 frames × 7
 fonts in both orientations**, and it is zero. The one declared exception is a

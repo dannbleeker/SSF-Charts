@@ -30,6 +30,82 @@ export const MIN_PLOT_SIDE = 8;
 export const MIN_LABEL_FS = 5;
 
 /**
+ * How far a label's ink may run past the box it is drawn in before
+ * `clipTextToFrame` (scene.ts) acts on it, in points.
+ *
+ * Named here because every strip that is sized to its labels has to agree with
+ * that backstop about what "fits". A strip widened for ink the clip would have
+ * left alone moves a chart that was never broken, and one that is not widened
+ * for ink the clip WILL cut prints half a number — "100,0…" for 100,000, which
+ * reads as a different, smaller one.
+ */
+export const CLIP_SLACK = 0.5;
+
+/** The share of the chart's width a strip sized to its labels may take. */
+const STRIP_CAP = 0.4;
+
+/**
+ * The width of a strip that has to hold a label `ink` wide, given the `room` the
+ * strip at its usual width `base` leaves that label.
+ *
+ * EVERY GUTTER HERE WAS A CONSTANT — 34pt for the value axis, `fs * 4` for the
+ * totals beside a sideways bar — and a constant cannot know how wide a number
+ * is. A label wider than its box was cut by the frame clip into digits and an
+ * ellipsis, and a truncated number reads as a different, plausible one
+ * ("1,000…" for 1,000,000). The strip is sized from the measured text instead.
+ *
+ * `base` when the label already fits, to the last bit: a chart whose labels fit
+ * keeps the geometry it has always had. Otherwise the ink plus `pad` (the strip's
+ * own margin, between the label and the plot it labels) and two points of air at
+ * the other edge, since the width is an ESTIMATE of the ink and a font a few
+ * percent wider than it is drawn off the strip's edge, which no renderer clips.
+ * Never more than `cap` — a share of the chart, because a gutter wider than that
+ * is a chart with no plot, and a label that cannot be held even then is shrunk by
+ * its caller rather than cut.
+ */
+export function stripWidth(base: number, room: number, ink: number, pad: number, cap: number): number {
+  if (ink <= room + CLIP_SLACK) return base;
+  return Math.max(base, Math.min(ink + pad + 2, cap));
+}
+
+/**
+ * The centre a tick label is drawn at when it is centred on its tick and may not
+ * leave the canvas: its own tick, or the nearest centre at which its ink is on the
+ * chart. `half` is half the label's width.
+ *
+ * A centred label at either end of an axis hangs half its width past the axis, and
+ * where the axis ends near the edge of the chart that is past the chart. The frame
+ * clip then ellipsizes the number — "4,0…" for 4,000 — into something that reads as
+ * a different one. The gantt's timeline already moved its first and last label by
+ * exactly the overflow; the sideways value axis and the scatter's x axis did not.
+ *
+ * Moved by the overflow and no further ("a tick label that has moved further than
+ * it had to no longer reads as belonging to its tick"), and not at all while the
+ * clip would leave the ink alone, so every label that already fits is untouched.
+ */
+export function onCanvas(at: number, half: number, canvasW: number): number {
+  if (at - half < -CLIP_SLACK) return half;
+  if (at + half > canvasW + CLIP_SLACK) return Math.max(half, canvasW - half);
+  return at;
+}
+
+/**
+ * Do labels centred at `centres` (ascending), `inks` wide, stand at least `gap`
+ * apart edge to edge?
+ *
+ * Asked of the centres a strip is DRAWN at, not the ones its ticks are at: moving
+ * an end label onto the canvas (`onCanvas`) moves it toward its neighbour, and the
+ * gap a fit had just opened closes by the same amount. The clamp undoes the fit
+ * unless the fit is asked where the clamp has put the label.
+ */
+export function labelsClear(centres: readonly number[], inks: readonly number[], gap: number): boolean {
+  for (let i = 1; i < centres.length; i++) {
+    if (centres[i] - inks[i] / 2 - (centres[i - 1] + inks[i - 1] / 2) < gap - 1e-9) return false;
+  }
+  return true;
+}
+
+/**
  * The size a label centred in a band of `band` points may be drawn at, in a box
  * `band / boxRatio` tall — or ZERO, meaning there is no room and the caller
  * must not draw it.
@@ -917,33 +993,166 @@ export function legendLabelsFor(cfg: ChartConfig, decor: Decorations): string[] 
   return [...cfg.data.series.map((s) => (s.scenario ? `${s.name} (${s.scenario})` : s.name)), ...extra];
 }
 
+/** The value-axis column of a chart whose tick labels fit it, in points. */
+const VALUE_AXIS_W = 34;
+
+/**
+ * The tick labels of a vertical value axis, and the size they are drawn at before
+ * the width of their box has its say.
+ *
+ * ONE function, read by the draw (`chromeNodes`) and by the reservation
+ * (`valueAxisGutter`), the way `horizontalLegendFits` is: the gutter that is
+ * reserved and the labels that are drawn cannot disagree about what the labels
+ * say or how large they are if neither of them works it out.
+ *
+ * One label per tick, each centred on its own tick, so the room each has is the
+ * SPACING between adjacent ticks — and none was fitted to it. At a font large
+ * relative to the plot the labels were drawn over each other, which is the
+ * single commonest text collision left in this engine after the category axis:
+ * 71 of the 237 overlapping pairs a sweep found, here and in the scatter's own
+ * axes.
+ *
+ * Bound by that spacing, the way the radar's ring ticks are bound by their ring
+ * gap. Last resort: on any chart whose ticks already clear each other `tickScale`
+ * is 1 and nothing moves.
+ *
+ * A tick label can hold a line break — only through the number format's prefix or
+ * suffix, but those are free text — and then it is as many pitches tall as it has
+ * lines. The room it wants between ticks grows with the most of them, so the
+ * whole axis shrinks together exactly as it does for a gap that is too tight for
+ * one line; a label with no break wants `fs * 1.4`, unchanged.
+ *
+ * "datamarks": Tufte-style tick dashes + labels, no axis line, no gridlines;
+ * tickMode "data" places them at the data extremes instead of nice round values
+ * (the range frame).
+ */
+function valueTickStrip(
+  cfg: ChartConfig,
+  style: ChartStyle,
+  decor: Decorations,
+  frame: Frame,
+  scale: ValueScale,
+): { marks: boolean; ticks: number[]; texts: string[]; tickScale: number } {
+  const fs = style.fontSize;
+  const marks = decor.valueAxis === "datamarks";
+  const ticks = marks && decor.tickMode === "data" ? [...new Set([scale.min, scale.max])] : scale.ticks;
+  // Tick labels are read against each other, so their precision comes from the
+  // tick step, not the tick magnitude — otherwise a narrow axis prints the same
+  // label at several heights. See axisTickLabel for that and for the share case.
+  const axisLabel = axisTickLabel(ticks, scale.percent, cfg.numberFormat);
+  const tickGap =
+    ticks.length > 1
+      ? Math.min(...ticks.slice(1).map((t, i) => Math.abs(scale.toY(t) - scale.toY(ticks[i]))))
+      : frame.h;
+  const texts = ticks.map((t) => axisLabel(t));
+  const tickScale = Math.min(1, tickGap / (fs * 1.4 + extraLinesHeight(maxLineCount(texts), fs * 0.9)));
+  return { marks, ticks, texts, tickScale };
+}
+
+/**
+ * The size of the value axis's tick strip once its WIDTH is accounted for: the
+ * share of the drawn size every kept label may keep so the widest of them stands
+ * inside its box, and which labels are kept at all.
+ *
+ * The strip was fitted to the gap between its ticks and never to the box it sits
+ * in, so a label wider than the gutter was cut by the frame clip into "100,0…".
+ * The gutter is sized to the text first (`valueAxisGutter`); this is the last
+ * resort for a box that cannot be made wide enough — a gutter is capped at a share
+ * of the chart — and for a caller that never sized one. Shrunk together, so the
+ * axis reads at one size rather than as a ransom note.
+ *
+ * A label that would have to go below `MIN_LABEL_FS` to fit is not drawn, the
+ * answer every fit here gives for ink nobody can read; the gridlines and the
+ * dashes still carry the scale, and the shorter labels of the same axis stay.
+ * Never a number cut in half.
+ */
+export function tickWidthFit(
+  texts: readonly string[],
+  drawnFs: number,
+  boxW: number,
+): { scale: number; keep: boolean[] } {
+  const floor = MIN_LABEL_FS / drawnFs;
+  const fits = texts.map((t) => {
+    const ink = textWidth(t, drawnFs);
+    return ink <= boxW + CLIP_SLACK ? 1 : boxW / ink;
+  });
+  const keep = fits.map((f) => f >= floor);
+  return { scale: Math.min(1, ...fits.filter((_, i) => keep[i])), keep };
+}
+
+/**
+ * The width of the left-hand value-axis column for THIS axis's tick labels:
+ * `VALUE_AXIS_W` while the widest of them fits the box the draw gives it, and the
+ * measured text plus the box's own margin when it does not.
+ *
+ * Measured at the size the labels are drawn at (`valueTickStrip`), so a crowded
+ * axis whose labels were shrunk to clear each other does not pay for the size
+ * they never reach.
+ */
+function valueAxisGutter(
+  cfg: ChartConfig,
+  style: ChartStyle,
+  decor: Decorations,
+  frame: Frame,
+  scale: ValueScale,
+): number {
+  const { marks, texts, tickScale } = valueTickStrip(cfg, style, decor, frame, scale);
+  const drawnFs = style.fontSize * 0.9 * tickScale;
+  // A strip too tight to be legible is not drawn, so it needs no column.
+  if (drawnFs < MIN_LABEL_FS) return VALUE_AXIS_W;
+  // The box's margin: the label box is `frame.x - 4` wide, `- 6` beside the dashes.
+  const pad = marks ? 6 : 4;
+  const ink = Math.max(0, ...texts.map((t) => textWidth(t, drawnFs)));
+  return stripWidth(VALUE_AXIS_W, VALUE_AXIS_W - pad, ink, pad, cfg.width * STRIP_CAP);
+}
+
 /**
  * Compute the plot rectangle by reserving margins for the enabled decorations
  * (title, totals row, category labels, value axis, right-hand series labels).
+ *
+ * `scaleOf` builds the value scale against a frame — the closure the layout
+ * already builds its scale with. The value-axis column is sized from the labels
+ * that scale prints, and a frame is fixed before the scale exists (the scale maps
+ * values onto the plot's HEIGHT, so it needs one), which is why it was a flat 34pt
+ * and cut every tick of six figures or more. The ticks are the same on any frame
+ * of this height, and the height does not depend on the column, so the scale is
+ * asked once against the frame at the usual width and the column widened from what
+ * it prints. Omitted, the column is the usual width and `chromeNodes` shrinks
+ * whatever it cannot hold.
  */
 export function computeFrame(
   cfg: ChartConfig,
   style: ChartStyle,
   decor: Decorations,
   seriesNames: string[],
+  scaleOf?: (frame: Frame) => ValueScale,
 ): { frame: Frame; res: FrameReservations } {
   const fs = style.fontSize;
   const titleH = titleHeight(cfg, style);
   const totalsH = totalsBandHeight(decor, style);
   const categoryAxisH = categoryStripHeight(cfg, decor, style);
-  const valueAxisW = decor.valueAxis ? 34 : 2;
+  let valueAxisW = decor.valueAxis ? VALUE_AXIS_W : 2;
   const seriesLabelsW = decor.seriesLabels
     ? Math.min(cfg.width * 0.3, Math.max(0, ...seriesNames.map((s) => textWidth(s, fs))) + 14)
     : 2;
   // Extra headroom when a difference arrow is drawn past the last column.
   const diffW = decor.difference ? 26 : 0;
   const varianceH = varianceBandHeight(cfg, decor, style);
-  const frame: Frame = fitPlot(cfg, {
-    x: valueAxisW,
-    y: titleH + totalsH,
-    w: cfg.width - valueAxisW - Math.max(seriesLabelsW, diffW + 2) - 2,
-    h: cfg.height - titleH - totalsH - varianceH - categoryAxisH - footnoteH(cfg, style, decor),
-  });
+  const place = (axisW: number): Frame =>
+    fitPlot(cfg, {
+      x: axisW,
+      y: titleH + totalsH,
+      w: cfg.width - axisW - Math.max(seriesLabelsW, diffW + 2) - 2,
+      h: cfg.height - titleH - totalsH - varianceH - categoryAxisH - footnoteH(cfg, style, decor),
+    });
+  let frame: Frame = place(valueAxisW);
+  if (decor.valueAxis && scaleOf) {
+    const wide = valueAxisGutter(cfg, style, decor, frame, scaleOf(frame));
+    if (wide > valueAxisW) {
+      valueAxisW = wide;
+      frame = place(wide);
+    }
+  }
   return { frame, res: { titleH, totalsH, categoryAxisH, valueAxisW, seriesLabelsW, varianceH } };
 }
 
@@ -986,6 +1195,97 @@ export function horizontalLegendFits(cfg: ChartConfig, style: ChartStyle, decor:
   // that has eaten it is naming bars nobody can see. Same judgement the scatter
   // legend and the cascade's group headers make.
   return left >= fs * 2.5;
+}
+
+/**
+ * A label drawn just past the END of a sideways bar: `ink` points wide, with its
+ * bar ending `reach` of the way along the plot (0 at the baseline, 1 at the far
+ * edge).
+ */
+export interface EndLabel {
+  ink: number;
+  reach: number;
+}
+
+/**
+ * The plot, narrowed until every label past a bar's end stands on the chart.
+ *
+ * The strip beside a sideways plot (`computeFrameHorizontal`) was a flat `fs * 4`
+ * — 40pt at the default font — and a total is a number: "2,100,000" is 52pt, so
+ * the longest bar's total, and every row of a %-axis mekko whose bars all run to
+ * the plot's edge, was cut by the frame clip into "2,100…". The plot gives up
+ * exactly the width the labels ask for, and no more: a bar that ends short of the
+ * edge has room beside it already, so a chart whose totals fit keeps the plot it
+ * has always had.
+ *
+ * `fits` asks the question the clip asks (a label begins 3pt past the bar), and a
+ * label that fails it sets the plot to the width at which it ends 2pt inside the
+ * chart. The strip is capped at a share of the chart; what the cap cannot hold is
+ * shrunk or dropped by the layout that draws it (`endLabelFontSize`), never cut.
+ *
+ * Takes the frame `computeFrameHorizontal` answered and changes its width only —
+ * the rows run down y and are untouched, so everything a layout derived from that
+ * frame's y and height (the category centres, the row pitch, the label sizes the
+ * `ends` were measured at) stands.
+ */
+export function roomForEnds(cfg: ChartConfig, frame: Frame, ends: readonly EndLabel[]): Frame {
+  const fits = (e: EndLabel) => frame.x + e.reach * frame.w + 3 + e.ink <= cfg.width + CLIP_SLACK;
+  let w = frame.w;
+  for (const e of ends) if (e.reach > 0 && !fits(e)) w = Math.min(w, (cfg.width - 2 - frame.x - 3 - e.ink) / e.reach);
+  w = Math.max(w, cfg.width * (1 - STRIP_CAP) - frame.x - 2);
+  return w < frame.w ? fitPlot(cfg, { ...frame, w }) : frame;
+}
+
+/**
+ * The size a label drawn just past the end of a sideways bar may take, given where
+ * the bar ends (`barEnd`, in chart coordinates): `fs` while it stands on the chart,
+ * shrunk to the room there is, and ZERO when it would have to go below
+ * `MIN_LABEL_FS` — the answer every fit here gives for a label nobody can read.
+ *
+ * `roomForEnds` makes the room for these; this is the last resort for a bar it
+ * cannot make enough of (the strip is capped), so a total is shrunk or left out and
+ * never printed as the first half of itself. Asked in the clip's own terms, so a
+ * label this lets through is a label the clip leaves alone.
+ */
+export function endLabelFontSize(text: string, bold: boolean, fs: number, barEnd: number, canvasW: number): number {
+  const fits = (f: number) => barEnd + 3 + textWidth(text, f, bold) <= canvasW + CLIP_SLACK;
+  let f = fs;
+  while (f > MIN_LABEL_FS && !fits(f)) f -= 0.5;
+  return f >= MIN_LABEL_FS && fits(f) ? f : 0;
+}
+
+/**
+ * A bold total standing just past the end of a sideways bar (`barEnd`), centred on
+ * its `row`, at the size `endLabelFontSize` allows — or no node where it cannot be
+ * read there. The one place a total beside a sideways bar is built: the stacked
+ * column's and the mekko's drew it twice, and the second copy is what the first
+ * one's fix would have missed.
+ */
+export function endLabelNode(
+  text: string,
+  barEnd: number,
+  row: number,
+  fs: number,
+  canvasW: number,
+  style: ChartStyle,
+  name: string,
+): SceneNode | null {
+  const fontSize = endLabelFontSize(text, true, fs, barEnd, canvasW);
+  if (fontSize <= 0) return null;
+  return {
+    kind: "text",
+    x: barEnd + 3,
+    y: row - fontSize * 0.75,
+    w: canvasW - barEnd - 3,
+    h: fontSize * 1.5,
+    text,
+    fontSize,
+    bold: true,
+    color: style.text,
+    align: "left",
+    valign: "middle",
+    name,
+  };
 }
 
 export function computeFrameHorizontal(cfg: ChartConfig, style: ChartStyle, decor: Decorations): Frame {
@@ -1043,29 +1343,8 @@ export function chromeNodes(
     }
   }
   if (decor.valueAxis && scale) {
-    // "datamarks": Tufte-style tick dashes + labels, no axis line, no
-    // gridlines; tickMode "data" places them at the data extremes instead
-    // of nice round values (the range frame).
-    const marks = decor.valueAxis === "datamarks";
-    const ticks = marks && decor.tickMode === "data" ? [...new Set([scale.min, scale.max])] : scale.ticks;
-    // Tick labels are read against each other, so their precision comes from the
-    // tick step, not the tick magnitude — otherwise a narrow axis prints the same
-    // label at several heights. See axisTickLabel for that and for the share case.
-    const axisLabel = axisTickLabel(ticks, scale.percent, cfg.numberFormat);
+    const { marks, ticks, texts: tickTexts, tickScale } = valueTickStrip(cfg, style, decor, frame, scale);
     /**
-     * The size the tick labels are drawn at.
-     *
-     * One label per tick, each centred on its own tick, so the room each has is
-     * the SPACING between adjacent ticks — and none was fitted to it. At a font
-     * large relative to the plot the labels were drawn over each other, which is
-     * the single commonest text collision left in this engine after the category
-     * axis: 71 of the 237 overlapping pairs a sweep found, here and in the
-     * scatter's own axes.
-     *
-     * Bound by that spacing, the way the radar's ring ticks are bound by their
-     * ring gap. Last resort: on any chart whose ticks already clear each other
-     * this is `fs * 0.9` and nothing moves.
-     *
      * Dropped outright when the spacing cannot pay for a LEGIBLE label. A fit
      * with no floor answers whatever the arithmetic says, and on a plot squeezed
      * to a few points that is a stack of one-point labels — ink no reader can
@@ -1074,21 +1353,19 @@ export function chromeNodes(
      * that cannot be read is not there. The datamarks and gridlines stay, since
      * those still carry the scale.
      */
-    const tickGap =
-      ticks.length > 1
-        ? Math.min(...ticks.slice(1).map((t, i) => Math.abs(scale.toY(t) - scale.toY(ticks[i]))))
-        : frame.h;
-    /**
-     * A tick label can hold a line break — only through the number format's
-     * prefix or suffix, but those are free text — and then it is as many pitches
-     * tall as it has lines. The room it wants between ticks grows with the most
-     * of them, so the whole axis shrinks together exactly as it does for a gap
-     * that is too tight for one line; a label with no break wants `fs * 1.4`,
-     * unchanged.
-     */
-    const tickTexts = ticks.map((t) => axisLabel(t));
-    const tickScale = Math.min(1, tickGap / (fs * 1.4 + extraLinesHeight(maxLineCount(tickTexts), fs * 0.9)));
     const tickLegible = fs * 0.9 * tickScale >= MIN_LABEL_FS;
+    /**
+     * And the same answer for the width of the box the labels stand in, which is
+     * the gutter `computeFrame` sized from these same labels. Where that gutter
+     * could be made wide enough this is 1 for every label and nothing moves; where
+     * it could not (the cap on a narrow chart) the axis shrinks together, and a
+     * label that would need less than the floor is left out rather than cut.
+     */
+    const boxW = marks ? frame.x - 6 : frame.x - 4;
+    const fit = tickWidthFit(tickTexts, fs * 0.9 * tickScale, boxW);
+    // Together with the spacing fit, as one size for the axis. A fit of 1 is an
+    // exact multiplication, so a strip that fits keeps every number it had.
+    const drawScale = tickScale * fit.scale;
     for (const [ti, t] of ticks.entries()) {
       const y = scale.toY(t);
       if (marks) {
@@ -1103,22 +1380,22 @@ export function chromeNodes(
           name: "datamark",
         });
       }
-      if (!tickLegible) continue;
+      if (!tickLegible || !fit.keep[ti]) continue;
       // Per TICK, not per axis: a squeezed plot puts its topmost ticks in the
       // title's band while the ones below it are still perfectly placed, and
       // each tick is a number in its own right.
       // This tick's own extra lines: the box grows by them and stays centred on
       // the tick, so the label still reads against the mark it names.
-      const grow = extraLinesHeight(lineCount(tickTexts[ti]), fs * 0.9 * tickScale);
-      if (printsOnTitle(cfg, style, y - fs * 0.7 * tickScale - grow / 2)) continue;
+      const grow = extraLinesHeight(lineCount(tickTexts[ti]), fs * 0.9 * drawScale);
+      if (printsOnTitle(cfg, style, y - fs * 0.7 * drawScale - grow / 2)) continue;
       nodes.push({
         kind: "text",
         x: 0,
-        y: y - fs * 0.7 * tickScale - grow / 2,
-        w: marks ? frame.x - 6 : frame.x - 4,
-        h: fs * 1.4 * tickScale + grow,
+        y: y - fs * 0.7 * drawScale - grow / 2,
+        w: boxW,
+        h: fs * 1.4 * drawScale + grow,
         text: tickTexts[ti],
-        fontSize: fs * 0.9 * tickScale,
+        fontSize: fs * 0.9 * drawScale,
         color: style.mutedText,
         align: "right",
         valign: "middle",

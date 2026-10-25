@@ -14,6 +14,7 @@ import {
   computeFrame,
   computeFrameHorizontal,
   valueScale,
+  type Frame,
 } from "./frame";
 import { horizontalChrome, type LayoutResult } from "./column";
 
@@ -133,8 +134,10 @@ export function waterfallExtent(cfg: ChartConfig): { min: number; max: number } 
  * and the clip applied to it cut the number to that: "+125,000" drew as
  * "+125,0…" with 115pt of empty row beside it, and a wider chart did not help
  * because the box stayed 40pt. A truncated number reads as a different, plausible
- * one ("+1,250…" reads as 1,250). The upright branch never did this: it shrinks
- * the labels to the slot and clips only the number no floor can fit.
+ * one ("+1,250…" reads as 1,250). The upright branch shrinks the labels to the slot
+ * and leaves out only the number no floor can fit — it cut them to a box narrower
+ * than the slot until the box was sized to the label too (see the label's box in
+ * `layoutWaterfall`).
  *
  * So the box is as wide as the label needs and no wider than the row has, and
  * where even that is short the label SHRINKS to the room before it is clipped —
@@ -156,6 +159,38 @@ function sideLabelFit(label: string, labelFs: number, fs: number, roomRight: num
   let f = labelFs;
   while (f > 5 && need(f) > roomRight) f -= 0.5;
   return { fs: f, w: Math.max(fs * 4, Math.min(need(f), roomRight)) };
+}
+
+/**
+ * The width of the box an UPRIGHT value label is drawn in, given the width of the
+ * label (`need`, at the size it is drawn at), of its bar (`barW`) and of the slot
+ * the bar owns.
+ *
+ * The box is centred on the bar and capped at the slot, so adjacent boxes ABUT
+ * instead of overlapping — and never narrower than the number it holds, up to that
+ * cap. The font fit is against the SLOT (`labelRoom`), while the box was `barW + 12`
+ * — two thirds of the slot and 12pt — and the label is clipped to the box. So a
+ * label the fit had accepted as fitting was cut anyway, whenever it was wider than
+ * the bar plus 10 and narrower than the slot minus 2: "+1,400,000" is 54pt at 10pt,
+ * the slot at eight columns is 59, the box was 51.5, and the chart printed
+ * "+1,400,0…" — a number that reads as another — while the same eight columns at
+ * 960pt printed every label whole. A fit and a clamp that disagree are resolved by
+ * the clamp, which is what the reader sees.
+ *
+ * The box is as wide as the label needs and no wider than the slot, and a label
+ * that already fit the old box keeps it to the last bit. Whole points past the
+ * label, as `sideLabelFit` does: the caller clips to `w - 2`, and `(width + 2) - 2`
+ * is not always `width` in floating point.
+ *
+ * ZERO where the label does not fit the slot even then — the font fit floors at
+ * 5pt, and a number wider than the slot at the floor was cut to a box that cannot
+ * hold it. The caller leaves it out: the comment above `sideLabelFit` says the
+ * upright branch clips only "the number no floor can fit", and a clip is a number
+ * cut in half, which reads as a different one.
+ */
+function uprightLabelBox(need: number, barW: number, slotLen: number): number {
+  const box = Math.min(need <= barW + 12 - 2 ? barW + 12 : Math.ceil(need) + 2, slotLen);
+  return need <= Math.max(1, box - 2) ? box : 0;
 }
 
 export function layoutWaterfall(cfg: ChartConfig, style: ChartStyle, decor: Decorations): LayoutResult {
@@ -182,10 +217,13 @@ export function layoutWaterfall(cfg: ChartConfig, style: ChartStyle, decor: Deco
     cfg.numberFormat,
   );
 
+  // A function of the frame, because the value-axis column is sized from the ticks
+  // it prints (see `computeFrame`).
+  const scaleOf = (f: Frame) => valueScale(f, lo, hi, cfg.scale, H ? undefined : cfg.axisBreak);
   const frame = H
     ? computeFrameHorizontal(cfg, style, { ...decor, seriesLabels: false })
-    : computeFrame(cfg, style, { ...decor, seriesLabels: false }, []).frame;
-  const scale = valueScale(frame, lo, hi, cfg.scale, H ? undefined : cfg.axisBreak);
+    : computeFrame(cfg, style, { ...decor, seriesLabels: false }, [], scaleOf).frame;
+  const scale = scaleOf(frame);
   const fs = style.fontSize;
 
   // Category slots along x (vertical) or y (horizontal); value axis the other way.
@@ -283,10 +321,6 @@ export function layoutWaterfall(cfg: ChartConfig, style: ChartStyle, decor: Deco
         // Sideways, a label that cannot sit inside its bar sits to the right of it
         // in the room the row has left (see `sideLabelFit`).
         const side = H && !fits ? sideLabelFit(label, labelFs, fs, cfg.width - (r.x + r.w + 2)) : null;
-        // Upright, the box is centred on the bar and capped at the slot, so
-        // adjacent boxes ABUT instead of overlapping. `r.x - 6` is exactly
-        // `centers[c] - (r.w + 12) / 2`, so an uncapped slot is byte-identical.
-        const boxW = side ? side.w : H ? r.w + 12 : Math.min(r.w + 12, slotLen);
         // A label that does not fit INSIDE its bar is drawn above it, and the
         // only thing above a bar that reaches the top of the plot is the edge of
         // the chart — 30pt over the top of a 300x60 chart at 32pt. Fitted to the
@@ -295,7 +329,15 @@ export function layoutWaterfall(cfg: ChartConfig, style: ChartStyle, decor: Deco
         // thin to label.
         const sideFs = side?.fs ?? labelFs;
         const outsideFs = fits || H ? sideFs : aboveMarkFontSize(labelFs, r.y, titleInkBottom(cfg, style), 1.45);
-        if (outsideFs > 0)
+        // Upright, the box is centred on the bar and capped at the slot (see
+        // `uprightLabelBox`). `r.x - 6` is exactly `centers[c] - (r.w + 12) / 2`, so
+        // an uncapped slot is byte-identical.
+        const boxW = side ? side.w : H ? r.w + 12 : uprightLabelBox(textWidth(label, outsideFs), r.w, slotLen);
+        // Left out, not cut, where even the smallest legible size does not fit the
+        // slot (an upright box of 0) — the answer a total gives upright
+        // (`column.ts`) for a number that cannot be read there, and the comment
+        // above `sideLabelFit` promised it.
+        if (outsideFs > 0 && boxW > 0)
           nodes.push({
             kind: "text",
             x: H ? (fits ? r.x - 6 : r.x + r.w + 2) : centers[c] - boxW / 2,

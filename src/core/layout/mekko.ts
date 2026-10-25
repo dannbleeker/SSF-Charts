@@ -12,9 +12,12 @@ import {
   chromeNodes,
   computeFrame,
   computeFrameHorizontal,
+  endLabelNode,
   fitPlot,
   horizontalLegendFits,
+  roomForEnds,
   titleHeight,
+  type EndLabel,
 } from "./frame";
 import { legendRow, namesWithoutMark, seriesLabelNodes, type LayoutResult } from "./column";
 import { columnPositiveTotal } from "./totals";
@@ -49,6 +52,33 @@ function segmentText(
     category,
     fmt,
     percentDecimals: authoredDecimals(cfg.numberFormat),
+  });
+}
+
+/**
+ * The totals a SIDEWAYS mekko prints past its rows' ends, as the frame wants them:
+ * how wide each is at the size its row can carry, and how far along the plot its
+ * row ends — all of the way for the %-axis variant, in proportion to its total for
+ * the one with units.
+ *
+ * The size and the text are the ones the draw below uses (`bandFontSize` of the
+ * row, `formatNumber` of the total), so the strip that is reserved and the number
+ * that stands in it cannot disagree.
+ */
+function rowEnds(
+  totals: number[],
+  extents: number[],
+  grand: number,
+  catLen: number,
+  units: boolean,
+  maxTotal: number,
+  fmt: NumberFormat,
+  fs: number,
+): EndLabel[] {
+  return totals.flatMap((total, c) => {
+    const rowFs = bandFontSize(fs, (extents[c] / grand) * catLen, 1.5);
+    if (rowFs <= 0) return [];
+    return [{ ink: textWidth(formatNumber(total, fmt), rowFs, true), reach: units ? total / maxTotal : 1 }];
   });
 }
 
@@ -139,6 +169,11 @@ export function layoutMekko(cfg: ChartConfig, style: ChartStyle, decor: Decorati
 
   // Category extent runs along x (vertical) or y (horizontal).
   const catLen = (H ? frame.h : frame.w) - gap * (n - 1);
+  // Sideways, the totals stand past the rows' ends in a strip of `fs * 4`, and a
+  // %-axis mekko's rows ALL run to the plot's edge — so every total of six figures
+  // was cut. The plot gives up the width they ask for. The rows run down y, so the
+  // slots above and `catLen` stand whatever the plot's width.
+  if (H) frame = roomForEnds(cfg, frame, rowEnds(totals, extents, grand, catLen, units, maxTotal, fmt, fs));
   let pos = H ? frame.y : frame.x;
 
   for (let c = 0; c < n; c++) {
@@ -213,22 +248,20 @@ export function layoutMekko(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       // A row can be ZERO here — the rows are shares of the total, so a chart
       // whose data is all zeroes has no rows at all — and `Math.min` answered a
       // font of zero, which OOXML rejects outright. `bandFontSize` is the floor.
-      const totalFs = bandFontSize(fs, ext, 1.5);
-      if (totalFs > 0)
-        nodes.push({
-          kind: "text",
-          x: frame.x + colLen + 3,
-          y: centers[c] - totalFs * 0.75,
-          w: cfg.width - (frame.x + colLen) - 3,
-          h: totalFs * 1.5,
-          text: formatNumber(totals[c], fmt),
-          fontSize: totalFs,
-          bold: true,
-          color: style.text,
-          align: "left",
-          valign: "middle",
-          name: `total-${c}`,
-        });
+      //
+      // And by the room beyond the row's end. The frame made it (`rowEnds`), so
+      // this is the size it was; where the strip was capped before it could hold the
+      // number, the number shrinks to what there is or is left out — never cut.
+      const total = endLabelNode(
+        formatNumber(totals[c], fmt),
+        frame.x + colLen,
+        centers[c],
+        bandFontSize(fs, ext, 1.5),
+        cfg.width,
+        style,
+        `total-${c}`,
+      );
+      if (total) nodes.push(total);
     } else {
       // The upright total sits ABOVE the column, and on the %-variant every
       // column fills the plot — so the only room it has is the band the frame
