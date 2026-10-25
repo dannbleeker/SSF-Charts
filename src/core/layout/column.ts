@@ -1973,8 +1973,28 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       // on the right, which `computeFrameHorizontal` reserves outside the plot.
       // A clamp moves a label whether or not the destination is free — the
       // lesson the CAGR caption already cost this repo — so the bound is the
-      // room inside the plot, and a label that cannot fit there is not drawn.
-      const comboLabelW = Math.max(0, Math.min(60, anchors.plot.x + anchors.plot.w - (pt.x + r + 2)));
+      // room inside the plot. A label that cannot fit there goes to the LEFT of its
+      // mark, as every other sideways point label does (`labelBesidePoint`), and
+      // is not drawn only if neither side holds it.
+      //
+      // "Not drawn" used to be the whole answer, and it lost the one label a
+      // sideways combo cannot spare: the point at the scale maximum IS the plot's
+      // right edge, and a Pareto's cumulative line always ends at 100 — so a
+      // horizontal Pareto drew 50, 80, 95 and no 100, and `[12, 30]` kept the 12
+      // and lost the 30 (so did 29.5; 29 was kept). The line family flipped these
+      // on 2026-10-24 on the rule that an overlapping label still reads where a
+      // dropped one does not; this emitter was the sibling that was missed.
+      const plotRight = anchors.plot.x + anchors.plot.w;
+      const comboLabelW = Math.max(0, Math.min(60, plotRight - (pt.x + r + 2)));
+      const comboText = formatNumber(v, lineFmts[li]);
+      // Bounded by the plot on BOTH sides: left of it are the category names, which
+      // is the collision the right bound exists to avoid, one edge over.
+      const beside = H ? labelBesidePoint(pt.x, comboText, rowFs[li][c], r + 2, plotRight, comboLabelW) : null;
+      const besideFits =
+        beside != null &&
+        (beside.align === "right"
+          ? pt.x - (r + 2) - textWidth(comboText, rowFs[li][c]) >= anchors.plot.x
+          : comboLabelW >= textWidth(comboText, rowFs[li][c]));
       // Upright the label hangs above the mark, so the room it has is whatever
       // is over the mark — `pt.y * (1 / 1.3)` is where its top ink lands.
       // Upright the label hangs above its mark AND sits between the marks either
@@ -1985,33 +2005,26 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
         neighbourFs[c],
         rowFs[li][c],
       );
-      if (
-        labelOn &&
-        pointFs > 0 &&
-        (H
-          ? rowFs[li][c] >= MIN_LABEL_FS && comboLabelW >= textWidth(formatNumber(v, lineFmts[li]), rowFs[li][c])
-          : uprightPointFs >= MIN_LABEL_FS)
-      ) {
+      if (labelOn && pointFs > 0 && (H ? rowFs[li][c] >= MIN_LABEL_FS && besideFits : uprightPointFs >= MIN_LABEL_FS)) {
         // Categories run down a bar chart, so a label ABOVE its point would sit
         // on the neighbouring category's row; put it beside the mark instead.
         nodes.push(
-          H
+          beside
             ? {
                 kind: "text",
-                // Bounded by the room to the RIGHT of the mark, not a fixed 60pt
-                // box clamped to `cfg.width - 60`. On a 60pt-wide chart that
-                // clamp evaluates to x=0 and the label spans the whole frame,
-                // landing on the category names down the left — the label placed
-                // beside its mark to avoid the neighbouring ROW, put on the
-                // neighbouring COLUMN instead.
-                x: Math.min(pt.x + r + 2, Math.max(0, cfg.width - comboLabelW)),
+                // Bounded by the room beside the mark, not a fixed 60pt box clamped
+                // to `cfg.width - 60`. On a 60pt-wide chart that clamp evaluates to
+                // x=0 and the label spans the whole frame, landing on the category
+                // names down the left — the label placed beside its mark to avoid
+                // the neighbouring ROW, put on the neighbouring COLUMN instead.
+                x: beside.x,
                 y: pt.y - rowFs[li][c] * 0.7,
-                w: comboLabelW,
+                w: beside.w,
                 h: rowFs[li][c] * 1.4,
-                text: formatNumber(v, lineFmts[li]),
+                text: comboText,
                 fontSize: rowFs[li][c],
                 color: independent ? color : style.text,
-                align: "left",
+                align: beside.align,
                 valign: "middle",
                 name: `combo-label-${li}-${c}`,
               }
@@ -2027,7 +2040,7 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
                 y: pt.y - uprightPointFs * 1.65,
                 w: 60,
                 h: uprightPointFs * 1.4,
-                text: formatNumber(v, lineFmts[li]),
+                text: comboText,
                 fontSize: uprightPointFs,
                 color: independent ? color : style.text,
                 align: "center",

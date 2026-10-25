@@ -68,7 +68,7 @@ export function layoutHeatmap(cfg: ChartConfig, style: ChartStyle, decor: Decora
   // Calendar layout: a single daily series with date categories becomes a
   // weekday × week grid (the GitHub-contributions view).
   const calDays = data.categories.map((c) => parseDateToken(c));
-  const calendar = !!opts.calendar && data.series.length >= 1 && calDays.every((d): d is number => d != null);
+  const calendar = !!opts.calendar && data.series.length >= 1 && fitsCalendar(calDays);
 
   // The series the scale is read from: all of them for the matrix, whose one
   // shared scale is what makes its rows comparable, and the FIRST alone for the
@@ -600,6 +600,34 @@ function clusterRows(vecs: number[][]): { order: number[]; root: ClusterNode; ma
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/**
+ * The most week columns a calendar is drawn with: as many as the engine allows
+ * CATEGORIES (`MAX_CATEGORIES` in chart.ts, 4096 — seventy-eight years), because
+ * a calendar that spans more weeks than it could have days is not a calendar of
+ * its data any more.
+ *
+ * The grid is as wide as its two farthest dates are apart, and the month-label
+ * loop walks every week of it. One mistyped year (`20260-01-15`, or a
+ * `9999-12-31` sentinel) among thirty real January days built a scene of 216,000
+ * nodes and a 25MB SVG — 94,000 for the sentinel — with the thirty days drawn
+ * at 0.0004pt each; two dates at the limits of `Date` made 6.5 million and took
+ * the process out of memory. `parseDateToken` reads a five-digit or signed year
+ * by design, so nothing upstream bounds the span.
+ */
+const MAX_CALENDAR_WEEKS = 4096;
+
+/**
+ * Do these categories lay out as ONE calendar: every one a date, and the dates no
+ * more than `MAX_CALENDAR_WEEKS` apart? Past the cap `layoutHeatmap` reads the
+ * chart as it reads one whose categories are not dates — the ordinary grid, one
+ * column per category, which is bounded by the categories it was given and shows
+ * the stray date as the column it is.
+ */
+function fitsCalendar(days: (number | null)[]): boolean {
+  if (!days.every((d): d is number => d != null)) return false;
+  return Math.ceil((Math.max(...days) - Math.min(...days)) / 7) + 1 <= MAX_CALENDAR_WEEKS;
+}
 
 /**
  * Calendar heatmap: a weekday (row) × week (column) grid. Days-since-epoch

@@ -355,8 +355,14 @@ export function layoutGantt(cfg: ChartConfig, style: ChartStyle, decor: Decorati
   // is below what OOXML will even accept. Zero means the row cannot carry a
   // name, and the name is dropped — the bar still shows the span.
   const rowFs = bandFontSize(fs, slotH, 1.5);
-  /** The in-bar span label is drawn at 0.9 of the row font, so it floors later. */
-  const barLabelFs = rowFs * 0.9 >= MIN_LABEL_FS ? rowFs * 0.9 : 0;
+  /**
+   * The in-bar span label and the remark are drawn at 0.9 of the row font, so they
+   * floor later. The remark was not asked: at a row pitch just under 8pt its font
+   * was 4.5pt, below what every other fitted label keeps, and at a pitch under
+   * 7.5 it was ZERO — the same zero `rowFs` answers for "no room", which OOXML
+   * rejects and the writers quietly raise to a one-point speck.
+   */
+  const smallRowFs = rowFs * 0.9 >= MIN_LABEL_FS ? rowFs * 0.9 : 0;
   const barH = Math.min(slotH * 0.55, fs * 1.4);
   // A milestone marker is a circle CENTRED on its date, so half of it sits to
   // the RIGHT of the last position the timeline can reach — and the right margin
@@ -678,8 +684,11 @@ export function layoutGantt(cfg: ChartConfig, style: ChartStyle, decor: Decorati
         name: `category-${c}`,
       });
     }
-    // Responsible + remark columns right of the timeline.
-    if (hasOwners && owners[c]) {
+    // Responsible + remark columns right of the timeline. A row that cannot carry
+    // its name cannot carry these either: the three are one family, sized from the
+    // same `rowFs`, and a zero font on any of them is a node the writers have to
+    // repair.
+    if (hasOwners && owners[c] && rowFs > 0) {
       nodes.push({
         kind: "text",
         x: plot.x + plot.w + 6,
@@ -697,15 +706,15 @@ export function layoutGantt(cfg: ChartConfig, style: ChartStyle, decor: Decorati
         name: `owner-${c}`,
       });
     }
-    if (hasRemarks && remarks[c]) {
+    if (hasRemarks && remarks[c] && smallRowFs > 0) {
       nodes.push({
         kind: "text",
         x: plot.x + plot.w + ownerW + 4,
         y: cy - rowFs * 0.7,
         w: remarkW - 4,
         h: rowFs * 1.4,
-        text: clipToWidth(remarks[c], rowFs * 0.9, remarkW - 4),
-        fontSize: rowFs * 0.9,
+        text: clipToWidth(remarks[c], smallRowFs, remarkW - 4),
+        fontSize: smallRowFs,
         color: style.mutedText,
         align: "left",
         valign: "middle",
@@ -785,7 +794,7 @@ export function layoutGantt(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       }
       if (decor.segmentLabels) {
         const label = spanLabel(s, e);
-        if (bw >= textWidth(label, fs * 0.9) + 4 && barLabelFs > 0) {
+        if (bw >= textWidth(label, fs * 0.9) + 4 && smallRowFs > 0) {
           nodes.push({
             kind: "text",
             x: bx,
@@ -793,7 +802,7 @@ export function layoutGantt(cfg: ChartConfig, style: ChartStyle, decor: Decorati
             w: bw,
             h: rowFs * 1.4,
             text: label,
-            fontSize: barLabelFs,
+            fontSize: smallRowFs,
             // Ink chosen for the bar it sits on, like every other in-shape
             // label: white vanished on a light palette colour.
             color: contrastInk(barFill),
@@ -844,7 +853,8 @@ export function layoutGantt(cfg: ChartConfig, style: ChartStyle, decor: Decorati
         name: `col-head-${i}`,
       });
     data.categories.forEach((_, c) => {
-      if (!col.cells[c]) return;
+      // No room for a name is no room for the figure beside it: see the owner column.
+      if (!col.cells[c] || rowFs <= 0) return;
       const cy = plot.y + slotH * (c + 0.5);
       nodes.push({
         kind: "text",

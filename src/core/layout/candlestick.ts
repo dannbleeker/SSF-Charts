@@ -92,6 +92,13 @@ export function layoutCandlestick(cfg: ChartConfig, style: ChartStyle, decor: De
         return priced.length ? scale.toY(Math.max(...priced)) : frame.y + frame.h;
       }),
       columnValue: data.categories.map((_, c) => close[c] ?? 0),
+      // A period with no Close is a period that has not closed (today's, a
+      // holiday), and `columnValue` above answers 0 for it. The mean line and the
+      // difference and CAGR arrows read that 0 as a close of nothing — "Ø 36" for
+      // closes of 44, 43, -, 45, 47 whose mean is 44.75, and "-100%" on an arrow to
+      // the open period — unless this says it was not measured. The Close is the
+      // question because it is what `columnValue` is.
+      columnHasData: data.categories.map((_, c) => close[c] != null),
       baselineY: frame.y + frame.h,
       plot: { x: frame.x, y: frame.y, w: frame.w, h: frame.h },
       valueToY: scale.toY,

@@ -200,27 +200,37 @@ export function layoutTreemap(cfg: ChartConfig, style: ChartStyle, decor: Decora
         strokeWidth: 1,
         name: `group-${g.gi}`,
       });
-      nodes.push({
-        kind: "text",
-        x: gr.x + 3,
-        y: gr.y + 1,
-        w: gr.w - 6,
-        h: headerH,
-        text: g.name,
-        fontSize: fs * 0.9,
-        bold: true,
-        color: style.text,
-        align: "left",
-        valign: "middle",
-        name: `group-label-${g.gi}`,
-      });
+      // THE HEADER IS DRAWN ONLY IF THE CELL CAN HOLD IT. A group is squarified by
+      // its share, so a small one is a hairline strip — 0.04pt at the foot of the
+      // chart for a 0.01% group — and its header (a box `headerH` tall at the
+      // cell's top) and its tiles (below that box) were placed regardless: the
+      // label stood 14pt under the canvas and, between 5 and 14pt, ran down over
+      // the next group's own header. Hairline cells draw no header and tile the
+      // whole cell instead, so what a thin group has to say is its tiles, which the
+      // flat path already draws that way.
+      const headed = gr.h >= headerH + 2;
+      if (headed)
+        nodes.push({
+          kind: "text",
+          x: gr.x + 3,
+          y: gr.y + 1,
+          w: gr.w - 6,
+          h: headerH,
+          text: g.name,
+          fontSize: fs * 0.9,
+          bold: true,
+          color: style.text,
+          align: "left",
+          valign: "middle",
+          name: `group-label-${g.gi}`,
+        });
       // Level 2: squarify this group's members within the cell below the header.
-      const inner: Rect = {
-        x: gr.x + 2,
-        y: gr.y + headerH,
-        w: Math.max(1, gr.w - 4),
-        h: Math.max(1, gr.h - headerH - 2),
-      };
+      const inner: Rect = headed
+        ? { x: gr.x + 2, y: gr.y + headerH, w: Math.max(1, gr.w - 4), h: Math.max(1, gr.h - headerH - 2) }
+        : { x: gr.x + 1, y: gr.y + 1, w: Math.max(1, gr.w - 2), h: gr.h - 2 };
+      // A cell thinner than its own gaps has no room for a tile: the group's outline
+      // is all there is, and a zero-area tile is not an input `squarify` is for.
+      if (inner.h < 1) return;
       const sorted = g.members.map((r, k) => ({ ...r, key: k })).sort((a, b) => b.value - a.value);
       const iscale = (inner.w * inner.h) / (g.total || 1);
       const rects = squarify(

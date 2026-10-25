@@ -586,6 +586,12 @@ export function layoutBoxplot(cfg: ChartConfig, style: ChartStyle, decor: Decora
       categoryWidth: data.categories.map(() => boxW),
       columnTop,
       columnValue: boxes.map((b) => b?.median ?? 0),
+      // No box is no median: a category with a blank summary row, or fewer than
+      // two raw observations, draws nothing and `columnValue` answers 0 for it.
+      // Averaged in or pointed at, that 0 printed "Ø 4.0" for medians of 4, 7, -, 5
+      // (the mean of what was measured is 5.3) and "-100%" on an arrow to the
+      // empty box. Asked of the same group `columnValue` reads.
+      columnHasData: boxes.map((b) => b != null),
       baselineY: H ? frame.x : frame.y + frame.h,
       plot: { x: frame.x, y: frame.y, w: frame.w, h: frame.h },
       valueToY: H ? undefined : qOf,

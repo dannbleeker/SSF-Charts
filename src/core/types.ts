@@ -736,13 +736,15 @@ export interface LayoutAnchors {
    * third of the denominator either.
    *
    * OPTIONAL, and absent means "every category counts" — the honest default for
-   * the layouts that publish `columnValue` from something that is never blank
-   * (a boxplot's median, a candlestick's close). Every layout that builds
-   * `columnValue` with `?? 0` has to answer, because the readers are not limited
-   * to the column family: `buildChart` draws `valueLines` on every kind that has
-   * a value map, and the difference and CAGR arrows read the same array. The
-   * line family (line, area, sparkline, slope, bump) answers alongside the
-   * columns.
+   * a layout whose `columnValue` has no blank to coerce (a waterfall's running
+   * level carries across an empty step). It was also written for "a boxplot's
+   * median, a candlestick's close", and that was false: a category with no box
+   * or no Close is ordinary input, and both layouts answered 0 for it. Every
+   * layout that builds `columnValue` with `?? 0` has to answer, because the
+   * readers are not limited to the column family: `buildChart` draws
+   * `valueLines` on every kind that has a value map, and the difference and CAGR
+   * arrows read the same array. The line family (line, area, sparkline, slope,
+   * bump), candlestick, boxplot, violin and mekko answer alongside the columns.
    */
   columnHasData?: boolean[];
   /**

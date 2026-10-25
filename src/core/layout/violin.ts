@@ -168,6 +168,9 @@ export function layoutViolin(cfg: ChartConfig, style: ChartStyle, decor: Decorat
             )
           : 0;
       }),
+      // The 0 above is the empty category's stand-in, not a median: averaged in,
+      // it dragged the mean line down and an arrow to the category printed "-100%".
+      columnHasData: data.categories.map((_, c) => samplesOf(c).length > 0),
       baselineY: frame.y + frame.h,
       plot: { x: frame.x, y: frame.y, w: frame.w, h: frame.h },
       valueToY: scale.toY,

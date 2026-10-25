@@ -20,7 +20,7 @@ import {
   type EndLabel,
 } from "./frame";
 import { legendRow, namesWithoutMark, seriesLabelNodes, type LayoutResult } from "./column";
-import { columnPositiveTotal } from "./totals";
+import { columnHasData, columnPositiveTotal } from "./totals";
 
 /**
  * What a mekko segment prints: the pane's "Label content" menu applied to it, as it
@@ -63,10 +63,12 @@ function segmentText(
  *
  * The size and the text are the ones the draw below uses (`bandFontSize` of the
  * row, `formatNumber` of the total), so the strip that is reserved and the number
- * that stands in it cannot disagree.
+ * that stands in it cannot disagree. Nor can the rows: a row nobody filled in
+ * prints no total (`measured`), so it reserves nothing for one.
  */
 function rowEnds(
   totals: number[],
+  measured: boolean[],
   extents: number[],
   grand: number,
   catLen: number,
@@ -76,6 +78,7 @@ function rowEnds(
   fs: number,
 ): EndLabel[] {
   return totals.flatMap((total, c) => {
+    if (!measured[c]) return [];
     const rowFs = bandFontSize(fs, (extents[c] / grand) * catLen, 1.5);
     if (rowFs <= 0) return [];
     return [{ ink: textWidth(formatNumber(total, fmt), rowFs, true), reach: units ? total / maxTotal : 1 }];
@@ -98,6 +101,10 @@ export function layoutMekko(cfg: ChartConfig, style: ChartStyle, decor: Decorati
   const units = !!data.xExtent?.some((v) => v != null && v > 0);
 
   const totals = data.categories.map((_, c) => columnPositiveTotal(data.series, c));
+  // Which columns were MEASURED, as `totals` cannot say: a column nobody filled in
+  // sums to 0 exactly as a typed 0 does. It gates the total printed at the column's
+  // end and is published for the mean and the arrows — see `LayoutAnchors`.
+  const measured = data.categories.map((_, c) => columnHasData(data.series, c));
   const extents = units ? data.categories.map((_, c) => Math.max(0, data.xExtent?.[c] ?? 0)) : totals;
   const maxTotal = Math.max(1e-9, ...totals);
   const fmt = resolveFormat(
@@ -173,7 +180,7 @@ export function layoutMekko(cfg: ChartConfig, style: ChartStyle, decor: Decorati
   // %-axis mekko's rows ALL run to the plot's edge — so every total of six figures
   // was cut. The plot gives up the width they ask for. The rows run down y, so the
   // slots above and `catLen` stand whatever the plot's width.
-  if (H) frame = roomForEnds(cfg, frame, rowEnds(totals, extents, grand, catLen, units, maxTotal, fmt, fs));
+  if (H) frame = roomForEnds(cfg, frame, rowEnds(totals, measured, extents, grand, catLen, units, maxTotal, fmt, fs));
   let pos = H ? frame.y : frame.x;
 
   for (let c = 0; c < n; c++) {
@@ -252,15 +259,21 @@ export function layoutMekko(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       // And by the room beyond the row's end. The frame made it (`rowEnds`), so
       // this is the size it was; where the strip was capped before it could hold the
       // number, the number shrinks to what there is or is left out — never cut.
-      const total = endLabelNode(
-        formatNumber(totals[c], fmt),
-        frame.x + colLen,
-        centers[c],
-        bandFontSize(fs, ext, 1.5),
-        cfg.width,
-        style,
-        `total-${c}`,
-      );
+      //
+      // And only for a column somebody filled in. The sum of a blank column is 0 and
+      // a typed 0 sums to 0 too; the label would assert the second about the first.
+      // An X extent gives the empty column a width, so the room was never the gate.
+      const total = measured[c]
+        ? endLabelNode(
+            formatNumber(totals[c], fmt),
+            frame.x + colLen,
+            centers[c],
+            bandFontSize(fs, ext, 1.5),
+            cfg.width,
+            style,
+            `total-${c}`,
+          )
+        : null;
       if (total) nodes.push(total);
     } else {
       // The upright total sits ABOVE the column, and on the %-variant every
@@ -284,7 +297,8 @@ export function layoutMekko(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       const totalText = formatNumber(totals[c], fmt);
       let totalFs = aboveMarkFontSize(fs, colTop, titleInkBottom(cfg, style), 1.45);
       while (totalFs > MIN_LABEL_FS && textWidth(totalText, totalFs, true) > ext) totalFs -= 0.5;
-      if (totalFs >= MIN_LABEL_FS && textWidth(totalText, totalFs, true) <= ext)
+      // `measured[c]`: the same gate as the sideways branch above, for the same reason.
+      if (measured[c] && totalFs >= MIN_LABEL_FS && textWidth(totalText, totalFs, true) <= ext)
         nodes.push({
           kind: "text",
           x: pos - 4,
@@ -433,6 +447,9 @@ export function layoutMekko(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       categoryWidth: widths,
       columnTop,
       columnValue: totals,
+      // A blank column sums to 0 and the arrow drew a zero-length mark at the plot
+      // top and captioned it "-100%". Asked of the same cells `totals` adds up.
+      columnHasData: measured,
       baselineY: H ? frame.x : frame.y + frame.h,
       plot: { x: frame.x, y: frame.y, w: frame.w, h: frame.h },
     },

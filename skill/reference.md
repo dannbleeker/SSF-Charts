@@ -327,7 +327,8 @@ is laid out as a weekday (row) × week (column) grid with month labels — the
 GitHub-contributions view. A bare day number is NOT a date here, `data.dates`
 or not (that flag belongs to Gantt rows; the heatmap never reads it), so it
 falls back to the plain matrix layout — as does any set with a category that
-is not a date, with no warning. Only the first series is drawn, and the colour
+is not a date, or whose dates are more than 4096 weeks (78 years) apart (a
+mistyped year), with no warning. Only the first series is drawn, and the colour
 scale follows it alone.
 
 **Butterfly stacked flanks** (`butterfly.split`): the first `split` series
@@ -406,7 +407,8 @@ open centre.
 
 **Pareto** (`pareto: true` on a clustered/combo chart): sorts the categories by
 the (first non-line) series descending and overlays a computed "Cumulative %"
-line on a secondary axis — the 80/20 view. Rewrites the chart into a combo.
+line on a secondary axis — the 80/20 view. A `Target` or `Error` row is never the
+bar, wherever it is typed. Rewrites the chart into a combo.
 
 **Bump chart** (`kind: "line"` + `decorations.bump: true`): values are ranks
 (1 = best) drawn on an inverted integer axis (rank 1 at the top; a ranking that

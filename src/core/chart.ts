@@ -243,8 +243,22 @@ function normalizeData(raw: ChartData): ChartData {
   // `some is not a function` — the optional chain does not help, because NaN is
   // not nullish. Truthy non-arrays were already repaired by accident, since
   // `Array.from` reads them by index; this makes the two cases agree.
-  const pad = <T>(arr: (T | null)[] | undefined): (T | null)[] | undefined =>
-    Array.isArray(arr) ? Array.from({ length: n }, (_, c) => arr[c] ?? null) : undefined;
+  //
+  // And every CELL goes through the number rule, as the series' cells do through
+  // `cell`: a cell that is no finite number is a blank one. The row was padded
+  // and nothing more, so `xExtent: [50, 30, "n/a"]` reached the mekko as a NaN
+  // extent — every column's share NaN, the segments 12,500pt tall and every label
+  // placed off the canvas, and the headless deck written with fractional EMU that
+  // the schema refuses (PowerPoint offers to repair the file) — and `Infinity`
+  // (JSON `1e999`) made every share NaN the same way. A numeric string stays the
+  // number it spells: `["50", "30", "20"]` worked by coercion and keeps working.
+  const pad = (arr: (number | null)[] | undefined): (number | null)[] | undefined =>
+    Array.isArray(arr)
+      ? Array.from({ length: n }, (_, c) => {
+          const v = authoredNumber(arr[c]);
+          return v !== undefined && Number.isFinite(v) ? v : null;
+        })
+      : undefined;
   return {
     ...data,
     categories,
@@ -344,19 +358,90 @@ function authoredNumber(v: unknown): number | undefined {
  * downstream, as they always were.
  */
 function cleanNumbers<T>(obj: T, keys: readonly string[]): T {
+  return cleanFields(obj, keys, authoredNumber);
+}
+
+/**
+ * `cleanNumbers` for any field `repair` can read: it answers the value the field
+ * should hold, the SAME object when nothing needs changing, or undefined when
+ * there is no reading of it — and then the field is dropped, so the consumer's
+ * own default applies.
+ */
+function cleanFields<T>(obj: T, keys: readonly string[], repair: (v: unknown) => unknown): T {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return obj;
   const rec = obj as Record<string, unknown>;
   let out: Record<string, unknown> | undefined;
   for (const key of keys) {
     const v = rec[key];
     if (v == null) continue;
-    const n = authoredNumber(v);
+    const n = repair(v);
     if (n === v) continue;
     const repaired = (out ??= { ...rec });
     if (n === undefined) delete repaired[key];
     else repaired[key] = n;
   }
   return (out as T | undefined) ?? obj;
+}
+
+/**
+ * A list of category indices out of authored JSON: the array's finite numbers, a
+ * bare number as a list of one, or undefined when what was written is neither.
+ *
+ * `waterfall.totalIndices`, `spacerIndices`, `pie.explode` and `pie.breakout` are
+ * read as lists — `new Set(…)`, `.includes`, `.filter` — and a scalar there did
+ * not mis-render, it THREW, with a message ("number 5 is not iterable") that names
+ * no field. The scalar is the natural slip (`"totalIndices": 5`, the documented
+ * `[5]` with its brackets dropped), and its reading is not in doubt, so it is
+ * read as the list of one it means: the same rule `segmentLabel` applies to a bare
+ * `"value"`. Dropping it would turn a loud failure into a bridge that silently has
+ * no total bar. Anything else that is not an array (`true`, `{}`, a string — a
+ * string is iterable, which was the silent version) has no reading and is dropped.
+ * A list keeps its finite numbers, so what reaches the layout is a `number[]`.
+ */
+function authoredIndices(v: unknown): number[] | undefined {
+  if (typeof v === "number") return Number.isFinite(v) ? [v] : undefined;
+  if (!Array.isArray(v)) return undefined;
+  const kept = v.filter((i): i is number => typeof i === "number" && Number.isFinite(i));
+  return kept.length === v.length ? (v as number[]) : kept;
+}
+
+/**
+ * `waterfall.detailGroups` as the layout can read it: groups that name a parent
+ * (`of`, a finite number) and a list of members (`indices`, read as
+ * `authoredIndices` does). A bare group is a list of one; a group that names no
+ * parent or no members has no reading and is dropped, since a group the layout
+ * cannot place is not a decomposition of anything.
+ */
+function authoredDetailGroups(v: unknown): unknown[] | undefined {
+  const list = Array.isArray(v) ? v : v && typeof v === "object" ? [v] : undefined;
+  if (!list) return undefined;
+  const kept = list.flatMap((g: unknown) => {
+    if (!g || typeof g !== "object" || Array.isArray(g)) return [];
+    const group = g as { of?: unknown; indices?: unknown };
+    const indices = authoredIndices(group.indices);
+    if (typeof group.of !== "number" || !Number.isFinite(group.of) || !indices) return [];
+    return [indices === group.indices ? g : { ...group, indices }];
+  });
+  return list === v && kept.length === list.length && kept.every((g, i) => g === list[i]) ? list : kept;
+}
+
+/** `scatter.spread` is an axis, "x" or "y"; the layout calls `.toUpperCase()` on it. */
+const authoredAxis = (v: unknown): "x" | "y" | undefined => (v === "x" || v === "y" ? v : undefined);
+
+/**
+ * `style.palette: null` is a palette that was not given. `null` is what a
+ * serialiser writes for an absent field, and `resolveStyle` lays the style over
+ * the defaults with a spread — which lets a `null` REPLACE the default palette
+ * instead of leaving it, so twenty of the twenty-five kinds died on
+ * `Cannot read properties of null (reading 'length')`. Dropped, the default
+ * applies. A palette of the wrong type that is not null is another matter and
+ * already survives (`paletteColor` answers a neutral grey for an unreadable one).
+ */
+function dropNullPalette(style: Partial<ChartStyle> | undefined): Partial<ChartStyle> | undefined {
+  if (!style || typeof style !== "object" || !("palette" in style) || style.palette != null) return style;
+  const rest = { ...style };
+  delete rest.palette;
+  return rest;
 }
 
 /** Drop label nudges carrying a non-finite delta (they corrupt a node's coords). */
@@ -413,10 +498,11 @@ export function normalizeConfig(cfg: ChartConfig): ChartConfig {
   // their own attributes (SVG does); none of them can put the chart back
   // where it belonged. Repaired here, once, on the way in, exactly as the
   // dimensions and the manual scale already are.
-  const style =
+  const style = dropNullPalette(
     cfg.style && clampFontSize(cfg.style.fontSize) !== cfg.style.fontSize
       ? { ...cfg.style, fontSize: clampFontSize(cfg.style.fontSize) }
-      : cfg.style;
+      : cfg.style,
+  );
 
   // The authored counts and limits are arithmetic too, and every one of them
   // reaches a clamp that passes NaN straight through — see `authoredNumber`.
@@ -434,13 +520,26 @@ export function normalizeConfig(cfg: ChartConfig): ChartConfig {
   //                            onto the right;
   //   - `boxplot.iqrMultiplier` NaN fences: every outlier silently dropped (2 of
   //                            2 on a raw-sample box), which is data the chart
-  //                            then fails to show.
+  //                            then fails to show;
+  //   - `multiples.columns`    `Math.floor("auto")` is NaN, so the panel width was
+  //                            NaN and `buildMultiples` declined: the small-multiples
+  //                            grid silently became one combined chart.
   // Dropped here, once, so each falls back to the default it already had.
   const authored = cleanNumbers(cfg, ["gapWidth", "overlap"]);
   const otherBucket = cleanNumbers(cfg.otherBucket, ["max"]);
-  const scatter = cleanNumbers(cfg.scatter, ["spreadLimit", "trendDegree"]);
+  const scatter = cleanFields(cleanNumbers(cfg.scatter, ["spreadLimit", "trendDegree"]), ["spread"], authoredAxis);
   const butterfly = cleanNumbers(cfg.butterfly, ["split"]);
   const boxplot = cleanNumbers(cfg.boxplot, ["iqrMultiplier"]);
+  const multiples = cleanNumbers(cfg.multiples, ["columns"]);
+  // The documented LISTS are arithmetic of a different kind: the layouts iterate
+  // them, so a scalar did not misplace anything, it threw out of `buildChart`.
+  // See `authoredIndices`, which says how a bare index is read.
+  const waterfall = cleanFields(
+    cleanFields(cfg.waterfall, ["totalIndices", "spacerIndices"], authoredIndices),
+    ["detailGroups"],
+    authoredDetailGroups,
+  );
+  const pie = cleanFields(cfg.pie, ["explode", "breakout"], authoredIndices);
 
   return {
     ...authored,
@@ -453,6 +552,9 @@ export function normalizeConfig(cfg: ChartConfig): ChartConfig {
     scatter,
     butterfly,
     boxplot,
+    multiples,
+    waterfall,
+    pie,
     data: normalizeData(cfg.data),
     decorations:
       cfg.decorations && typeof cfg.decorations === "object" && !Array.isArray(cfg.decorations)
@@ -657,7 +759,14 @@ function applyPareto(cfg: ChartConfig): ChartConfig {
   // The bars are the first series that is neither overlay kind. Testing only
   // against "line" would rank the chart by a marker series when one is written
   // first — sorting the columns by their own benchmark.
-  const bar = cfg.data.series.find((s) => s.type !== "line" && s.type !== "marker");
+  //
+  // Nor a SPECIAL row. A Target row typed above the measure is a benchmark by its
+  // name, and this runs before `extractErrorRows` takes the special rows out, so
+  // it became the bar: the categories were ranked by the target, the cumulative
+  // share was computed from it, and the real measure was dropped with no warning.
+  // The same `CARRIED_ROW` that `sortCategories` and the small-multiples path
+  // already skip.
+  const bar = cfg.data.series.find((s) => s.type !== "line" && s.type !== "marker" && !CARRIED_ROW.test(s.name.trim()));
   if (!bar) return cfg;
   const order = cfg.data.categories.map((_, c) => c).sort((a, b) => (bar.values[b] ?? 0) - (bar.values[a] ?? 0));
   const pick = <T>(arr: T[] | undefined) => (arr ? order.map((c) => arr[c]) : undefined);

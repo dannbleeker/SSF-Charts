@@ -12,8 +12,12 @@ import { MIN_LABEL_FS, titleInkBottom, titleNode } from "./layout/frame";
  * wrong, which is why dropping the blank from the SUM alone does not fix it.
  *
  * `columnHasData` is optional and absent means every category counts — the
- * honest default for a `columnValue` built from something that is never blank.
- * See LayoutAnchors.
+ * honest default for a layout whose `columnValue` has no blank to coerce (a
+ * waterfall's running level carries across an empty step) or whose kind never
+ * reaches this file with a mean or an arrow. It is NOT "a close, a median or a
+ * column total is never blank": it was assumed for those four and each of them
+ * can be, so candlestick, boxplot, violin and mekko answer it too. See
+ * LayoutAnchors.
  *
  * ONE DEFINITION, BECAUSE THERE WERE TWO CALLERS AND THEY DISAGREED. The filter
  * was written for the value line, and the difference arrow's `fromValueLine`
@@ -509,7 +513,10 @@ export function decorationNodes(
 
   // --- Speech-bubble callouts: a comment anchored to a column or level ---
   decor.callouts?.forEach((co, i) => {
-    const c = Math.max(0, Math.min(a.categoryX.length - 1, co.category));
+    const c = categoryAt(co.category, a.categoryX.length);
+    // A callout about no category has nowhere to stand (its text would be drawn
+    // from `categoryX[NaN]`, every coordinate NaN and every node dropped).
+    if (c == null) return;
     const ax = a.categoryX[c];
     // A callout is a comment, not a claim, so a series with no mark here (NaN —
     // a line on its own axis) keeps its text and points at the column instead of
@@ -644,12 +651,27 @@ export function bandNodes(cfg: ChartConfig, style: ChartStyle, decor: Decoration
         r = { x: a.plot.x, y: top, w: a.plot.w, h: bot - top };
       }
     } else if (band.axis === "x" && a.categoryX.length) {
-      const c1 = Math.max(0, Math.min(a.categoryX.length - 1, Math.min(band.from, band.to)));
-      const c2 = Math.max(0, Math.min(a.categoryX.length - 1, Math.max(band.from, band.to)));
+      const from = categoryAt(band.from, a.categoryX.length);
+      const to = categoryAt(band.to, a.categoryX.length);
+      if (from == null || to == null) return;
+      const c1 = Math.min(from, to);
+      const c2 = Math.max(from, to);
       // `categoryX` is the category's centre on the CROSS axis — x on a column
       // chart, y on a bar.
-      const m1 = a.categoryX[c1] - a.categoryWidth[c1] * 0.75;
-      const m2 = a.categoryX[c2] + a.categoryWidth[c2] * 0.75;
+      //
+      // CLIPPED TO THE PLOT, as the value-range branch above is. The 0.75 is half
+      // a SLOT only where `categoryWidth` is a bar two thirds of one (a column at
+      // the default gap); everywhere else it is a guess, and a wrong one drew the
+      // band and its label outside the frame — a mekko's columns touch and the
+      // violin's width is its half-spread, so the band overshot each end; a line's
+      // width is the whole slot, so it ran 1.5 slots wide; and a stacked chart at
+      // `gapWidth: 0` reached 36pt past the left edge. Ink outside the frame is
+      // drawn on the slide, over whatever the chart sits beside. The plot is the
+      // bound a category can have, and a band over every category exactly fills it.
+      const lo = H ? a.plot.y : a.plot.x;
+      const hi = lo + (H ? a.plot.h : a.plot.w);
+      const m1 = Math.max(lo, a.categoryX[c1] - a.categoryWidth[c1] * 0.75);
+      const m2 = Math.min(hi, a.categoryX[c2] + a.categoryWidth[c2] * 0.75);
       r = H ? { x: a.plot.x, y: m1, w: a.plot.w, h: m2 - m1 } : { x: m1, y: a.plot.y, w: m2 - m1, h: a.plot.h };
     }
     if (!r || r.w <= 0 || r.h <= 0) return;
@@ -699,9 +721,32 @@ export function bandNodes(cfg: ChartConfig, style: ChartStyle, decor: Decoration
   return nodes;
 }
 
-function clampPair(p: { from: number; to: number }, a: LayoutAnchors): { from: number; to: number } {
+/**
+ * The category a decoration's index names: ROUNDED to a whole one and clamped
+ * into range, or null when it is no number at all.
+ *
+ * Every anchor array is read by index, and a fractional index reads
+ * `undefined`. Where a layout publishes a value→y map that comes out as NaN and
+ * `finiteNodes` drops the node; where it does not (a 100% chart, a mekko, a
+ * treemap, a sunburst) the arrow's `y1` was read straight off `columnTop[0.5]`
+ * and the node left the engine with `y1: undefined` — a key `finiteNodes` cannot
+ * see, which the SVG printed as `y1="NaN"`. The pane's difference spinner is a
+ * plain number input, so typing 1.5 reached it.
+ *
+ * Rounded, because the author pointed at a category and the nearest one is the
+ * only reading there is. A number that is out of range still clamps (`to: 99`
+ * means "the last"), and a numeric string reads as the number it spells; what is
+ * not a number is no category, and the decoration is not drawn.
+ */
+function categoryAt(index: unknown, n: number): number | null {
+  const v = Number(index);
+  return Number.isNaN(v) ? null : Math.max(0, Math.min(n - 1, Math.round(v)));
+}
+
+function clampPair(p: { from: number; to: number }, a: LayoutAnchors): { from: number; to: number } | null {
   const n = a.categoryX.length;
-  const from = Math.max(0, Math.min(n - 1, p.from));
-  const to = Math.max(0, Math.min(n - 1, p.to));
+  const from = categoryAt(p.from, n);
+  const to = categoryAt(p.to, n);
+  if (from == null || to == null) return null;
   return from <= to ? { from, to } : { from: to, to: from };
 }
