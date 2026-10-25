@@ -50,6 +50,12 @@ const baselineX = (cfg: ChartConfig): number => {
   return Math.min(line.x1, line.x2);
 };
 
+/** The right edge of the plot, which the baseline runs to. */
+const baselineRight = (cfg: ChartConfig): number => {
+  const line = named<LineNode>(buildChart(cfg).nodes, "line", "baseline")[0];
+  return Math.max(line.x1, line.x2);
+};
+
 /** A label is cut when it ends in the ellipsis the frame clip leaves. */
 const cut = (t: TextNode) => /…$/.test(t.text);
 
@@ -240,8 +246,31 @@ describe("the value axis's column is sized to the labels it holds (r3-4, r3-7, r
     for (const t of strip) {
       expect(cut(t)).toBe(false);
       expect(inkSpan(t).x1).toBeLessThanOrEqual(cfg.width + SLACK);
+      // At the size the axis always draws at, and in a gutter of its own: the plot
+      // gave up the width, so the grey numbers are not drawn over the last bar.
+      expect(t.fontSize).toBe(9);
+      expect(t.x).toBeGreaterThanOrEqual(baselineRight(cfg));
     }
     expect(strip.map((t) => t.text)).toContain("40,000,000");
+  });
+
+  it("keeps the plot it had where the secondary axis's numbers fit, overlap and all", () => {
+    // The gutter is demand-driven: a dual-axis chart whose labels were never cut is
+    // not narrowed, which is what the refused alternative would have done to all of them.
+    const cfg: ChartConfig = {
+      kind: "combo",
+      ...DEFAULT_SIZE,
+      secondaryAxis: true,
+      data: {
+        categories: ["A", "B", "C"],
+        series: [
+          { name: "Revenue", values: [10, 20, 30] },
+          { name: "Margin", type: "line", values: [31, 34, 38] },
+        ],
+      },
+      decorations: { valueAxis: true, categoryAxis: true, seriesLabels: false },
+    };
+    expect(baselineRight(cfg)).toBe(cfg.width - 4);
   });
 });
 

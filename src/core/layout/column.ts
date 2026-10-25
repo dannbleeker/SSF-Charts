@@ -1301,13 +1301,55 @@ function sidewaysStripShift(ats: number[], inks: number[], boxW: number, half: n
 }
 
 /**
+ * The width the plot gives up so the upright SECONDARY value axis has a gutter of its
+ * own — or 0 while its labels are not cut, which is every chart whose numbers fit.
+ *
+ * The strip reserves no gutter: the plot runs to the canvas edge and the strip
+ * overlaps its last few points rather than draw off the chart, and its box is
+ * `fs * 3.4` pinned at the canvas's edge, whatever the numbers in it are. A label of
+ * eight figures is 49pt, so the frame clip made "20,00…" of 20,000,000. Reserving a
+ * gutter for every dual-axis chart was refused (it shrinks the roomy ones that have
+ * no collision to fix), so it is reserved only where the labels would be cut, and
+ * only by what they need: the plot's right edge moves in until the strip, widened to
+ * its widest label, stands in the room that frees — clear of the bars, not over them
+ * in grey on blue. Capped at a share of the chart, beyond which `secondaryStrip`
+ * shrinks what is left.
+ *
+ * Asked of the plot the base chart laid out, so the caller lays it out again at the
+ * narrower width: the margins beside the plot (series names, a difference arrow's
+ * room) are the base's, and nothing here knows them.
+ */
+function secondaryStripRoom(
+  lineMin: number,
+  lineMax: number,
+  fmt: Partial<NumberFormat> | undefined,
+  fs: number,
+  plot: Frame,
+  canvasW: number,
+): number {
+  const ticks = niceTicks(Math.min(0, lineMin), lineMax, 5);
+  const axisFmt = resolveAxisFormat(ticks, fmt);
+  const min = ticks[0];
+  const max = ticks[ticks.length - 1];
+  const toY = (v: number) => plot.y + plot.h - ((v - min) / (max - min || 1)) * plot.h;
+  // The size the labels will be drawn at, the one `layoutCombo` fits them to.
+  const scale = tickGapScale(fs * 0.9, ticks, toY, plot.h, () => fs * 1.4);
+  const ink = Math.max(0, ...ticks.map((t) => textWidth(formatNumber(t, axisFmt), fs * 0.9 * scale)));
+  const right = plot.x + plot.w;
+  // Where the strip starts today, and whether its widest label is cut there.
+  if (scale <= 0 || Math.max(0, Math.min(right + 2, canvasW - fs * 3.4 * scale)) + ink <= canvasW + CLIP_SLACK)
+    return 0;
+  return Math.min(right + ink + 4 - canvasW, canvasW * 0.4);
+}
+
+/**
  * The box and the size of the SECONDARY value axis's tick labels, given the size
  * its ticks' spacing allows (`gapScale`, as `tickGapScale` answers it).
  *
- * The strip reserves no gutter — the plot runs to the canvas edge and the strip
- * overlaps its last few points rather than draw off the chart — and its box was
- * `fs * 3.4`, pinned at the canvas's edge, whatever the numbers in it were. A
- * label of eight figures is 49pt, so the frame clip made "20,00…" of 20,000,000.
+ * The strip's box was `fs * 3.4`, pinned at the canvas's edge, whatever the numbers
+ * in it were, so a label of eight figures (49pt) was cut by the frame clip into
+ * "20,00…". Where `secondaryStripRoom` could not give it a gutter of its own — it is
+ * capped — this is what is left.
  *
  * Upright, where the box is left-aligned from the plot's right edge (or from
  * `canvasW - boxW`, whichever is further left), the box widens to the label and the
@@ -1510,14 +1552,22 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
         }))
       : undefined,
   };
-  const result =
+  const baseAt = (c: ChartConfig) =>
     columnsKind === "waterfall"
-      ? layoutWaterfall(colCfg, style, decorWithLines)
+      ? layoutWaterfall(c, style, decorWithLines)
       : columnsKind === "mekko"
-        ? layoutMekko(colCfg, style, decorWithLines)
+        ? layoutMekko(c, style, decorWithLines)
         : columnsKind === "area"
-          ? layoutLine(colCfg, style, decorWithLines)
-          : layoutColumns(colCfg, style, decorWithLines);
+          ? layoutLine(c, style, decorWithLines)
+          : layoutColumns(c, style, decorWithLines);
+  let result = baseAt(colCfg);
+  // An upright secondary axis whose numbers the strip beside the plot cannot hold
+  // takes its own gutter from the plot (`secondaryStripRoom`): the base is laid out
+  // again, narrower, and the strip stands in what that frees.
+  const stripRoom = secondary
+    ? secondaryStripRoom(lineMin, lineMax, cfg.numberFormat, style.fontSize, result.anchors.plot, cfg.width)
+    : 0;
+  if (stripRoom > 0 && !cfg.horizontal) result = baseAt({ ...colCfg, width: cfg.width - stripRoom });
   const { anchors, nodes } = result;
   // Horizontal (bar) base: the value axis runs left-to-right, and `categoryX`
   // holds each category's Y centre. The overlay is the same line drawn against
