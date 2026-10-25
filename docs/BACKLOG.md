@@ -69,8 +69,8 @@ grow with every round, so they are anchored rather than left to rot:
     post-fix 16:9        76          55                97.2%
     post-fix 4:3         45          32                96.9%
 
-    crash records:  93 deaths on PRE-fix builds, 16 on post-fix, 109 total
-                    from 115 files — a FILE IS NOT A DEATH, see below
+    crash records:  93 deaths on PRE-fix builds, 17 on post-fix, 110 total
+                    from 116 files — a FILE IS NOT A DEATH, see below
 
 **REFRESHED 2026-10-02, FROM 413 TO 497.** The pre-fix rows are byte-for-byte
 what they were, which is the check that the refresh moved only data: that era is
@@ -3208,10 +3208,20 @@ instrument problem the live rounds had shown:
 - **The live resize self-test was an unfair instrument** (see item 2 of the section
   below; it stalled in rounds 502, 504 and 505 on a 24-shape chart drawn late onto a
   crowded slide, while the product logic worked every time it was reached). It now
-  draws a 9-shape chart, on the least loaded slide, straight after "an update
-  follows a moved chart", declines to start on a sick host, and files a stalled
-  draw or redraw as a skip whose reason says what was and was not observed. A
-  chimera or a lost resize still fails. Not yet seen on the live host.
+  draws a 9-shape chart in one batch, straight after "an update follows a moved
+  chart", declines to start on a sick host, and files a stalled draw or redraw as a
+  skip whose reason says what was and was not observed. A chimera or a lost resize
+  still fails. **The first version of this was wrong live, and it was found only
+  live** (rounds 506 and 507, `885b28e`): it drew on the probe slide the run had
+  loaded least, which is always a slide the probe ADDED, and there the chart drew
+  and grouped and the host then would not read its group, so both rounds skipped it
+  with the question never asked (19 of 20 passed, no draw stalled in either). The
+  fake host cannot refuse a fresh slide's id, so no test could see it; the scenario's
+  own docstring already said to draw on a slide the deck had, and the brief that
+  asked for the quietest slide did not weigh that. It draws on the first probe
+  chart's slide again, and when the group still cannot be read it traces what the
+  host would answer (slide, list, group) beside the skip. Not yet seen to ask its
+  question on the live host since the rebuild.
 
 **What the fixes left undone, found while reading them:**
 
