@@ -13097,7 +13097,7 @@ export interface SeenOnTheSlide {
  * and the line could not choose between them — and it was read, for a day, as the
  * first.
  */
-function rawRead(read: () => unknown): number | string {
+export function rawRead(read: () => unknown): number | string {
   try {
     const v = read();
     if (typeof v === "number") return Number.isFinite(v) ? Math.round(v * 100) / 100 : String(v);

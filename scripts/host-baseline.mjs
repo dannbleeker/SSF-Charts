@@ -82,6 +82,12 @@ export const FAKE_BASELINE = {
   "getitemat-past-end": "threw",
   "picture-then-shape-read": "yes",
   "group-of-existing-shape-readable": "2",
+  // The healthy fake answers all eight readings (a name, a width and a height from
+  // each of two members, and the group's own width and height) and they are what
+  // was drawn. It is the withholding switches (`faults.groupMembersSilentOn`,
+  // `groupSilentOn`) that make it say `partial` or `no`, and they are OFF here:
+  // the real host is what this question is for, and nothing says it withholds.
+  "group-members-report-geometry": "yes",
   "slide-layout-readable": "yes",
   "layouts-readable": "yes",
   "untrack-available": "no",
@@ -997,6 +1003,8 @@ export const PENDING_QUESTIONS = {
   // answers it, and nowhere else. `rounds-gate.mjs` prints any id left here
   // that the ARCHIVE has already answered, which is what stopped
   // `named-preset-resolves` sitting here for another fifty rounds.
+  "group-members-report-geometry":
+    "Added 2026-10-25 with the group-size detector. `tryInPlaceUpdate` compares a chart's members' names and sizes with the scene before it writes a shape, and skips any field the host does not give; the update's `checked {names, sizes}` count cannot say WHY it counted nothing (a host that withholds the fields, a load that lands as `undefined`, a name the scene has no node for), and a task brief read it as the first on the strength of two retitles and a deck-built chart. Rounds 498-501 already show `sizes: 8` on every geometry-writing update, so the expected answer is `yes`; this asks the plain form on a group nobody touched, in a LATER batch than the one that grouped it, with the raw readings in the detail (`threw PropertyNotLoaded` and `undefined` are different hosts). Its partner is the self-test scenario `an edit after the person resizes a chart`, which reads the same fields off a chart this add-in drew, on a real slide: this question is asked on the scratch slide, which the host answers differently, so a `no` here is not yet a fact about charts.",
 };
 
 /**

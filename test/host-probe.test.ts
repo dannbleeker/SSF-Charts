@@ -793,6 +793,8 @@ describe("the fake host's answer sheet", () => {
         "addgroup-returns-usable",
         "group-reports-its-children",
         "group-of-existing-shape-readable",
+        // Needs two shapes to name, size and group, then a group to read them from.
+        "group-members-report-geometry",
         "picture-then-shape-read",
         // Needs six shapes to see which of them a short read keeps.
         "which-end-a-short-read-drops",

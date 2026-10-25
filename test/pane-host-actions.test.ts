@@ -618,6 +618,16 @@ vi.mock("../src/render/powerpoint", () => ({
     return !host.refuseSlideDelete.includes(id);
   }),
   isTimeout: vi.fn(() => false),
+  // `host-probe.ts` reads the raw value of a property the same way the update's
+  // trace does, so it imports the one reader. Nothing here asks a host, so the
+  // double only has to be a function that names what it was given.
+  rawRead: vi.fn((read: () => unknown) => {
+    try {
+      return String(read());
+    } catch {
+      return "threw";
+    }
+  }),
   requirementSets: vi.fn(() => ["1.1", "1.5"]),
   ScratchSlideUnavailable: class ScratchSlideUnavailable extends Error {},
   withProbeContext: vi.fn(async () => {

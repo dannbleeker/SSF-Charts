@@ -38,6 +38,7 @@ import {
   deleteTrailingSlides,
   deleteSlideById,
   isTimeout,
+  rawRead,
   requirementSets,
   ScratchSlideUnavailable,
   withProbeContext,
@@ -1161,6 +1162,97 @@ function idsOf(made: PowerPoint.Shape[]): string[] {
   });
   if (ids.some((id) => !id)) throw new ProbeSetupFailed("the host would not read back the shapes' ids");
   return ids as string[];
+}
+
+/**
+ * What `group-members-report-geometry` drew, and what it reads back.
+ *
+ * Two members of different sizes, so a value that merely arrived can be told
+ * from one that is right: 20x20 and 30x25 side by side, 5pt apart.
+ */
+const GEOMETRY_BOXES: ProbeBox[] = [
+  { left: 350, top: 210, width: 20, height: 20 },
+  { left: 375, top: 210, width: 30, height: 25 },
+];
+/** The box a group around them takes: 350..405 across, 210..235 down. */
+const GEOMETRY_GROUP = { width: 55, height: 25 };
+
+/**
+ * One shape's readings as the update path asks for them, each as `rawRead` words
+ * it: the number, `undefined`, `string:<name>`, or `threw <code>`.
+ */
+type GeometryRead = { id: number | string; name: number | string; width: number | string; height: number | string };
+
+/**
+ * The verdict on a group's members and the group itself, from what was read.
+ *
+ * ONE QUESTION WITH EIGHT READINGS (a name, a width and a height from each of two
+ * members; a width and a height from the group), so the word has to say how many
+ * arrived and the detail which:
+ *
+ *   `yes`        all eight, and each is what was drawn
+ *   `partial`    some arrived and some did not, or they arrived and are not what
+ *                was drawn — the detail names which, with the raw reading
+ *   `no`         members listed (they answer an id) and none of the eight arrived
+ *   `short-N`    the group listed fewer than the two members it holds
+ *
+ * That is the same vocabulary `shapes-items-count-honest` and the other
+ * collection questions use for `yes`, `no` and `short`, so a sheet diffs against
+ * the fake without a new word.
+ *
+ * WHY THIS IS ASKED AT ALL. `tryInPlaceUpdate` loads `items/id,items/name,
+ * items/width,items/height` off a chart's group and compares what comes back
+ * with the scene it should be drawing; each field it does not get is skipped as
+ * "no evidence". The archive's `checked` counts show the fields arriving on
+ * charts the add-in wrote, and say nothing about the one thing a hand resize
+ * puts in question: a group resized by a person. This asks the plain version of
+ * it on a group nobody has touched, so a `no` here would mean the guard cannot
+ * work on this host, and a `yes` that the guard's silence has some other cause.
+ *
+ * ASKED ON THE SCRATCH SLIDE, WHICH THIS HOST ANSWERS DIFFERENTLY FROM A REAL
+ * ONE (`group-members-real-slide` listed a group that `group-children-via-getcount`
+ * said it could not). So a `no` or `threw` here is not yet a fact about charts:
+ * its partner is the self-test scenario `an edit after the person resizes a
+ * chart`, which reads the same fields off a chart this add-in drew on a slide of
+ * its own, and the two are read together.
+ *
+ * Pure, so the words can be checked without a host.
+ */
+export function groupGeometryVerdict(o: {
+  asked: number;
+  listed: GeometryRead[];
+  group: { width: number | string; height: number | string };
+}): { answer: string; detail: string } {
+  const size = (v: unknown) => typeof v === "number" && v > 0;
+  const arrived = {
+    // `string:` and then at least one character: the empty string is no name.
+    name: o.listed.filter((m) => typeof m.name === "string" && /^string:./.test(m.name)).length,
+    width: o.listed.filter((m) => size(m.width)).length,
+    height: o.listed.filter((m) => size(m.height)).length,
+  };
+  const groupOk = { width: size(o.group.width), height: size(o.group.height) };
+  const got = arrived.name + arrived.width + arrived.height + Number(groupOk.width) + Number(groupOk.height);
+  const all = o.asked * 3 + 2;
+  // What arrived must be what was drawn: the members' sizes as a sorted set (the
+  // listing order is the host's), and the group's against the box around them.
+  const near = (a: unknown, b: number, within: number) => typeof a === "number" && Math.abs(a - b) <= within;
+  const wantW = GEOMETRY_BOXES.map((b) => b.width).sort((a, b) => a - b);
+  const wantH = GEOMETRY_BOXES.map((b) => b.height).sort((a, b) => a - b);
+  const sorted = (key: "width" | "height") => o.listed.map((m) => m[key]).sort((a, b) => (a as number) - (b as number));
+  const right =
+    sorted("width").every((v, i) => near(v, wantW[i], 0.5)) &&
+    sorted("height").every((v, i) => near(v, wantH[i], 0.5)) &&
+    near(o.group.width, GEOMETRY_GROUP.width, 1) &&
+    near(o.group.height, GEOMETRY_GROUP.height, 1);
+  const first = o.listed[0];
+  const detail =
+    `listed ${o.listed.length} of ${o.asked}; arrived ${got} of ${all} ` +
+    `(names ${arrived.name}/${o.asked}, widths ${arrived.width}/${o.asked}, heights ${arrived.height}/${o.asked}, ` +
+    `group width ${groupOk.width ? "yes" : "no"}, height ${groupOk.height ? "yes" : "no"}); ` +
+    `first member ${first ? JSON.stringify(first) : "none"}; group ${JSON.stringify(o.group)}`;
+  if (o.listed.length < o.asked) return { answer: `short-${o.listed.length}`, detail };
+  if (got === 0) return { answer: "no", detail };
+  return { answer: got === all && right ? "yes" : "partial", detail };
 }
 
 /**
@@ -2912,6 +3004,95 @@ const PROBES: Probe[] = [
         return typeof n === "number"
           ? { answer: String(n), detail: `members via ${via}` }
           : { answer: "unreadable", detail: `members via ${via}` };
+      } catch (err) {
+        return { ...threw(err), detail: `members via ${via}` };
+      }
+    },
+  },
+  {
+    id: "group-members-report-geometry",
+    // PENDING since the commit that added it (`PENDING_QUESTIONS` in
+    // `scripts/host-baseline.mjs` carries the reason), and a pending question is
+    // marked for the shortlist the later passes fall back to — a test holds the
+    // mark and the table to each other.
+    resample: true,
+    question:
+      "Read in a later batch than the one that grouped them, does a group's collection report each member's name, width and height, and the group its own width and height?",
+    // The update path's own read, asked in the plainest form. `tryInPlaceUpdate`
+    // resolves a chart's group by id, loads `left,top,type,name,width,height` off
+    // it, loads `items/id,items/name,items/width,items/height` off its members in
+    // the same sync, and compares what comes back with the scene before it writes
+    // a shape. A field the host does not give is skipped as "no evidence", so a
+    // host that withholds them runs the update as though the guard were not there
+    // — and the success line's `checked {names: 0, sizes: 0}` cannot say whether
+    // that is this host. Three readings fit it and want different fixes: the
+    // members never load a name, width or height; the load lands and reads back
+    // `undefined`; or the names read and do not match.
+    //
+    // MIRRORS THE LOAD, not the neighbours'. `group-of-existing-shape-readable`
+    // asks for a CHILD COUNT, which this host is known to give where it will not
+    // list; the update path asks for the properties, and the properties are the
+    // question. The members are named and grouped in one batch, the group's id
+    // read in a second, and the group resolved by that id in a THIRD — "a later
+    // batch than the one that drew and grouped the shapes", as the update path
+    // reaches a chart it did not just draw.
+    //
+    // The members are given names and sizes of their own (20x20 and 30x25) so a
+    // reading can be told from a right one: a width that arrives and is not what
+    // was drawn is `partial`, not `yes`. Every reading is the raw one — `threw
+    // PropertyNotLoaded` and `undefined` are different hosts, and
+    // `loadedValue` in the product cannot tell them apart.
+    ask: async (ctx) => {
+      const { members, via } = await groupMembers(ctx, GEOMETRY_BOXES);
+      let groupId: string | undefined;
+      try {
+        // Named in the batch that groups them, as the add-in names every shape it draws.
+        members.forEach((m, i) => {
+          (m as unknown as { name: string }).name = `probe-${i}`;
+        });
+        const made = (
+          probeShapes(ctx) as unknown as { addGroup(shapes: unknown[]): { load(p: string): void; id: string } }
+        ).addGroup(members);
+        await ctx.sync();
+        made.load("id");
+        await ctx.sync();
+        groupId = readShapeId(made);
+      } catch (err) {
+        return { ...threw(err), detail: `members via ${via}` };
+      }
+      // An ANSWER, as `group-of-existing-shape-readable` has it: a host that will
+      // not name a group it just made cannot be asked the later-batch question.
+      if (!groupId) return { answer: "no-group-id", detail: "the host would not name the group it just made" };
+      try {
+        const found = probeShape(ctx, groupId) as unknown as {
+          load(p: string): void;
+          width: number;
+          height: number;
+          group: { shapes: { load(p: string): void; items: Record<string, unknown>[] } };
+        };
+        found.load("left,top,type,name,width,height");
+        const kids = found.group.shapes;
+        kids.load("items/id,items/name,items/width,items/height");
+        await ctx.sync();
+        // The collection itself not populating is a different fact from its
+        // members not answering a field, and the verdict is only about the second.
+        let items: Record<string, unknown>[];
+        try {
+          items = kids.items;
+        } catch (err) {
+          return { ...unreadable(err), detail: `members via ${via}; the group's collection did not populate` };
+        }
+        const verdict = groupGeometryVerdict({
+          asked: GEOMETRY_BOXES.length,
+          listed: items.map((m) => ({
+            id: rawRead(() => m.id as string),
+            name: rawRead(() => m.name as string),
+            width: rawRead(() => m.width as number),
+            height: rawRead(() => m.height as number),
+          })),
+          group: { width: rawRead(() => found.width), height: rawRead(() => found.height) },
+        });
+        return { ...verdict, detail: `members via ${via}; ${verdict.detail}` };
       } catch (err) {
         return { ...threw(err), detail: `members via ${via}` };
       }
