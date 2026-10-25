@@ -1,5 +1,5 @@
 import type { ChartConfig, ChartStyle, Decorations } from "../types";
-import { textWidth, type SceneNode } from "../scene";
+import { textWidth, type SceneNode, type TextNode } from "../scene";
 import { formatNumber, resolveFormat } from "../format";
 import { maxOf, minOf } from "../agg";
 import { seriesColor } from "../style";
@@ -7,6 +7,7 @@ import { lerpColor } from "../color";
 import {
   titleInkBottom,
   aboveMarkFontSize,
+  bandFontSize,
   baselineNode,
   chromeNodes,
   computeFrame,
@@ -27,6 +28,79 @@ const SUMMARY_ROWS: [keyof FiveNum, RegExp][] = [
 ];
 const MEAN_ROW = /^mean$/i;
 const OUTLIER_ROW = /^outliers?\b/i;
+
+/**
+ * The ink of the mean marker `×`, as a multiple of the size it is drawn at.
+ *
+ * Read off the node `layoutBoxplot` draws it in — a `valign: middle` glyph in a
+ * box `fs * 1.4` tall centred on the mean — by the rule the frame gate measures
+ * ink with: the ink runs from 0.44 above the mean's position to 0.57 below it
+ * (the 0.57 the median number's own fit below already uses), and is as wide as
+ * the glyph is.
+ */
+const MEAN_INK_W = textWidth("×", 1, true);
+const MEAN_INK_UP = 0.44;
+const MEAN_INK_DOWN = 0.57;
+
+/**
+ * The mean marker for the mean at `at`, or null when the plot has no room for one
+ * that can be read.
+ *
+ * A mark is drawn AROUND its position, and this one sits at the one place on the
+ * chart a layout cannot move it from: the mean's value. So it gives up size
+ * instead, the answer `markInFrame` gives a line's markers, and is dropped below
+ * `MIN_LABEL_FS` — the box and its whiskers still say where the data is. It was
+ * drawn at the chart font whatever the plot could hold, and over raw
+ * observations that put it through four neighbours at once (53 overlapping
+ * pairs in the overlap sweep): the next category's `×`, the title, the category
+ * names under the plot, and the value-axis ticks under a sideways one.
+ *
+ * Four bounds, each by `bandFontSize` so a marker that already fits keeps the
+ * chart font to the last bit, and its box scales by a RATIO that is exactly 1
+ * then (the median number's rule: a ratio keeps every ordinary chart's geometry
+ * identical, where re-deriving the box from the new size moves it by a rounding):
+ *   - the PLOT, every side of it: the glyph is centred on the mean, so its ink must
+ *     stay inside the rectangle the data is drawn in, below the title's ink — the
+ *     band a squeezed plot is grown up into.
+ *   - the NEIGHBOUR along the category axis: `pitch` is the distance to the next
+ *     mean marker, the slot (or a group's sub-slot), and what the glyph needs of
+ *     it is its width upright and its height sideways. Two markers abut at worst.
+ */
+function meanMark(
+  cfg: ChartConfig,
+  style: ChartStyle,
+  frame: { x: number; y: number; w: number; h: number },
+  at: { x: number; y: number },
+  pitch: number,
+  sideways: boolean,
+  name: string,
+): TextNode | null {
+  const fs = style.fontSize;
+  const top = Math.max(frame.y, titleInkBottom(cfg, style));
+  const fits = [
+    bandFontSize(fs, 2 * Math.min(at.x - frame.x, frame.x + frame.w - at.x), MEAN_INK_W),
+    bandFontSize(fs, at.y - top, MEAN_INK_UP),
+    bandFontSize(fs, frame.y + frame.h - at.y, MEAN_INK_DOWN),
+    bandFontSize(fs, pitch, sideways ? MEAN_INK_UP + MEAN_INK_DOWN : MEAN_INK_W),
+  ];
+  if (!fits.every((f) => f > 0)) return null;
+  const size = Math.min(...fits);
+  const k = size / fs;
+  return {
+    kind: "text",
+    x: at.x - fs * 0.6 * k,
+    y: at.y - fs * 0.7 * k,
+    w: fs * 1.2 * k,
+    h: fs * 1.4 * k,
+    text: "×",
+    fontSize: size,
+    bold: true,
+    color: style.neutral,
+    align: "center",
+    valign: "middle",
+    name,
+  };
+}
 
 interface FiveNum {
   min: number;
@@ -343,23 +417,14 @@ export function layoutBoxplot(cfg: ChartConfig, style: ChartStyle, decor: Decora
         );
       }
       nodes.push(segLine(p - medHalf, qMed, p + medHalf, qMed, 1.75, fill, `median-${c}${gSuffix}`));
-      if (b.mean != null) {
-        const m = pt(p, qOf(b.mean));
-        nodes.push({
-          kind: "text",
-          x: m.x - fs * 0.6,
-          y: m.y - fs * 0.7,
-          w: fs * 1.2,
-          h: fs * 1.4,
-          text: "×",
-          fontSize: fs,
-          bold: true,
-          color: style.neutral,
-          align: "center",
-          valign: "middle",
-          name: `mean-${c}${gSuffix}`,
-        });
-      }
+      // Settled before the median number below, which has to clear it. The nearest
+      // other marker along the category axis is the next slot, or the next group's
+      // sub-slot, and a lone box has none.
+      const pitch = nG > 1 ? subW : n > 1 ? slotW : Infinity;
+      const mean =
+        b.mean != null ? meanMark(cfg, style, frame, pt(p, qOf(b.mean)), pitch, H, `mean-${c}${gSuffix}`) : null;
+      if (mean) nodes.push(mean);
+      const meanFs = mean?.fontSize ?? 0;
       // Jitter overlay: every raw observation as a deterministically offset dot
       // over the box. Golden-ratio spacing keeps it byte-deterministic (no RNG).
       const jitter = !!opts.jitter && !!b.samples;
@@ -431,8 +496,9 @@ export function layoutBoxplot(cfg: ChartConfig, style: ChartStyle, decor: Decora
          * and no overlap gate can measure it. Counted by hand rather than left
          * to a mutation run's verdict.
          */
-        const meanY = b.mean != null ? qOf(b.mean) : null;
-        const meanInkBottom = meanY != null && meanY < qMed ? meanY + fs * 0.57 : -Infinity;
+        // A marker that was not drawn (see `meanMark`) is nothing to clear.
+        const meanY = b.mean != null && meanFs > 0 ? qOf(b.mean) : null;
+        const meanInkBottom = meanY != null && meanY < qMed ? meanY + meanFs * MEAN_INK_DOWN : -Infinity;
         const medBandTop = Math.max(titleInkBottom(cfg, style), meanInkBottom);
         const medFs = H ? fs * 0.9 : aboveMarkFontSize(fs * 0.9, qMed, medBandTop, 1.3);
         const medScale = medFs / (fs * 0.9);
@@ -455,7 +521,7 @@ export function layoutBoxplot(cfg: ChartConfig, style: ChartStyle, decor: Decora
           if (H || meanY == null || medFs <= 0) return true;
           const boxY = qMed - fs * 1.5 * medScale;
           const base = boxY + fs * 1.3 * medScale - medFs * 0.25;
-          return base + medFs * 0.21 <= meanY - fs * 0.8 || base - medFs * 0.8 >= meanY + fs * 0.57;
+          return base + medFs * 0.21 <= meanY - meanFs * 0.8 || base - medFs * 0.8 >= meanY + meanFs * MEAN_INK_DOWN;
         })();
         if (medFs > 0 && medInkClearsMean && gBoxW >= fs * 1.2 && (H || gBoxW >= textWidth(label, medFs) + 4)) {
           nodes.push(

@@ -329,7 +329,9 @@ the first series is drawn, and the colour scale follows it alone.
 
 **Butterfly stacked flanks** (`butterfly.split`): the first `split` series
 stack on the left flank and the rest stack on the right (a legend replaces the
-two headers). Omit for the classic two-series butterfly (series 0 vs series 1).
+two headers; it wraps onto more rows when the names do not fit one, and is left
+out when the room for it would leave the bars no plot). Omit for the classic
+two-series butterfly (series 0 vs series 1).
 
 **Radar per-spoke scales** (`radar.perSpoke`): normalise each spoke to its own
 maximum so spokes carrying different KPI units become comparable in shape; the

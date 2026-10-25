@@ -53,18 +53,47 @@ export function layoutButterfly(cfg: ChartConfig, style: ChartStyle, decor: Deco
         name: `legend-${si}`,
       }))
     : [];
-  const headerH =
-    fs *
-    1.6 *
-    Math.max(
-      1,
-      legendRowCount(
-        legendEntries.map((e) => e.label),
-        fs,
-        valueW,
-        cfg.width - 4,
-      ),
-    );
+  // Counted from `valueW` and drawn from `plot.x` below: the same place, to within
+  // the last bit of a float, because `fitPlot` only moves a plot it has to floor
+  // and the chrome budget above keeps the plot at least half the chart wide. Not
+  // unified into one variable on purpose — `plot.x` is `valueW + plot.w - plot.w`
+  // and differs from it in the last digit on 3,375 of 4,305 widths and fonts
+  // tried, which would move every stacked-flank legend by that much in the deck.
+  const legendRows = legendRowCount(
+    legendEntries.map((e) => e.label),
+    fs,
+    valueW,
+    cfg.width - 4,
+  );
+  const footH = footnoteH(cfg, style, decor);
+  /**
+   * The stacked legend is drawn only if the frame can pay for ALL of its rows.
+   *
+   * Reserving them was never the gap — the rows counted and the rows drawn agree,
+   * to the row, in every cell the sweep flagged. What nothing asked is whether the
+   * reservation fits the frame. The band is priced in rows of `fs * 1.6`, so a
+   * narrow chart wraps three names onto three rows (48pt at the default font, 86
+   * at 18) and the title above it takes another 22 to 35: on an 80x60 chart that
+   * is 70pt of chrome for 60pt of chart, and the third row is drawn 8pt below the
+   * foot of it (57.6 at 18pt, 27.6 on a 120x90) — six of the 32 cells of the
+   * `butterfly.split` sweep, none of them at 480x300 or 960x540.
+   *
+   * A fit and a clamp, and the clamp wins: `fitPlot` floors the plot at
+   * `MIN_PLOT_SIDE` and grows it back UP from the bottom edge, so the plot rises
+   * through the legend that was reserved above it while the legend's rows keep
+   * walking down. Chrome that cannot be paid for is not drawn — the answer the
+   * tile map's glyph key, the scatter's group legend and the radar's key give. The
+   * test is the one the value axis below already makes (the plot it leaves must
+   * reach `MIN_PLOT_SIDE`), taken with the footnote subtracted as the plot itself
+   * subtracts it, so a legend that is kept is a legend whose every row is on the
+   * chart. A chart whose legend leaves a plot keeps it: over a grid of 11,020
+   * widths, heights, fonts and series counts, the cells whose legend or bars moved
+   * are exactly the ones that lost their legend.
+   */
+  const legendFits = stacked && cfg.height - titleH - fs * 1.6 * legendRows - 6 - footH >= MIN_PLOT_SIDE;
+  // The classic two-series butterfly reserves one row for its two headers; a
+  // stacked one reserves the rows it will draw, or none when it draws no legend.
+  const headerH = stacked ? (legendFits ? fs * 1.6 * Math.max(1, legendRows) : 0) : fs * 1.6;
   /**
    * A value axis reserves a strip at the bottom for tick labels on both flanks —
    * and only when the frame can pay for it.
@@ -176,9 +205,10 @@ export function layoutButterfly(cfg: ChartConfig, style: ChartStyle, decor: Deco
         name: `header-${i}`,
       });
     });
-  } else {
+  } else if (legendFits) {
     // Stacked flanks: one legend of all series across the top, via the shared
     // wrapping row — the forked single-row walk marched chips off the canvas.
+    // Gated by the predicate that reserved its rows (see `legendFits`).
     nodes.push(...legendRow(cfg, style, plot.x, titleH, { maxX: cfg.width - 4, entries: legendEntries }));
   }
 

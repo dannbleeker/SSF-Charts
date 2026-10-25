@@ -72,6 +72,114 @@ export interface LayoutResult {
 /** Minimum segment thickness (relative to font size) before its label is hidden. */
 const LABEL_FIT = 1.25;
 
+/**
+ * The air between the centre of a 1.5pt stem or connector and the ink of a label
+ * lifted off it: the line's half-width, and as much again.
+ */
+const LINE_CLEAR = 1.5;
+
+/**
+ * Where the line a SIDEWAYS dot hangs from ends along the value axis (x), or null
+ * when it hangs from none: a lollipop's stem runs to `baseline`, and a dumbbell's
+ * connector between the two series' dots is drawn BY series 1 and reaches series 0,
+ * so the label of either end can ask where it runs.
+ *
+ * The rules for when a connector exists are the ones the dot block draws it by: it
+ * needs a first value (a zero is one) and a second series with a dot to draw it
+ * from, which a zero is not on a range — only a dot or a lollipop marks a
+ * measured zero.
+ */
+function dotLineEnd(
+  barStyle: string,
+  si: number,
+  c: number,
+  series: ChartConfig["data"]["series"],
+  frame: Frame,
+  qOf: (v: number) => number,
+  baseline: number,
+): number | null {
+  if (barStyle === "lollipop") return baseline;
+  if (barStyle !== "range" || series.length < 2) return null;
+  const first = series[0].values[c];
+  const second = series[1].values[c];
+  if (first == null) return null;
+  if (si === 1) return frame.x + qOf(first);
+  return si === 0 && second != null && second !== 0 ? frame.x + qOf(second) : null;
+}
+
+/**
+ * The label of a dot, lollipop or range mark: BESIDE the dot along the value axis,
+ * centred on it across — and, sideways, lifted clear of the line the dot hangs
+ * from when it would otherwise be drawn through it.
+ *
+ * `val` is the dot's place on the value axis and `cross` its place across it; the
+ * line it hangs from is `dotLineEnd`'s, asked only sideways. Upright, a stem is
+ * vertical and the label hangs beside it, so this is a sideways defect only.
+ *
+ * A lollipop's stem and a range's connector run along the value axis at the dot's
+ * own row, and the label is centred on that same row — so a label on the
+ * line's side of its dot has the line drawn through the middle of its digits. The
+ * edge flip in `labelBesidePoint` is what put one there: a dot at the scale
+ * maximum has no canvas on its right, and "left of the dot" is where the stem is
+ * (the 30 of `[12, 30]` at 480x300, a stem crossing it at mid-height). The same
+ * holds, unflipped, for a lollipop below zero (its stem runs back to the baseline
+ * on the label's side) and for the near dot of a dumbbell, whose connector runs
+ * toward the far one.
+ *
+ * The label stays on its side and is LIFTED, its ink resting `LINE_CLEAR` above
+ * the line's centre: an overlapping number still reads where a dropped one does
+ * not, and moving it to the dot's other side is not on offer where that is the
+ * side with no canvas (or, below zero, with the category names). Lifted, it leaves
+ * its own bar band, so it is fitted to the room between this row's line and the
+ * neighbour's (`pitch`, the nearer of the next bar and the next category) and
+ * where that cannot carry a readable number it keeps its place on the line, as it
+ * did, rather than vanishing.
+ */
+function dotLabel(
+  ctx: DotLabelContext,
+  label: string,
+  fs: number,
+  barStyle: string,
+  si: number,
+  c: number,
+  val: number,
+  cross: number,
+  dotR: number,
+  pitch: number,
+): Omit<TextNode, "kind" | "name"> {
+  const ptX = ctx.sideways ? val : cross;
+  const ptY = ctx.sideways ? cross : val;
+  const lineEnd = ctx.sideways ? dotLineEnd(barStyle, si, c, ctx.series, ctx.frame, ctx.qOf, ctx.baseline) : null;
+  const beside = labelBesidePoint(ptX, label, fs, dotR + 2, ctx.canvasW);
+  let size = fs;
+  let y = ptY - fs * 0.7;
+  if (lineEnd != null) {
+    const ink = textWidth(label, fs);
+    const x0 = beside.align === "left" ? beside.x : beside.x + beside.w - ink;
+    const lifted = bandFontSize(fs, pitch - dotR - 3, 1.6);
+    if (lifted > 0 && x0 < Math.max(ptX, lineEnd) && x0 + ink > Math.min(ptX, lineEnd)) {
+      size = lifted;
+      // The ink of a `valign: middle` label reaches 0.57 of its size below the
+      // centre of its box (the rule the frame gate measures by).
+      y = ptY - LINE_CLEAR - lifted * (0.7 + 0.57);
+    }
+  }
+  return { ...beside, y, h: size * 1.4, text: label, fontSize: size, color: ctx.color, valign: "middle" };
+}
+
+/** What `dotLabel` needs of the chart, which does not change from one dot to the next. */
+interface DotLabelContext {
+  sideways: boolean;
+  canvasW: number;
+  series: Series[];
+  frame: Frame;
+  /** The value axis' map from a value to its distance along the axis from the frame edge. */
+  qOf: (v: number) => number;
+  /** Where the baseline is along x, which a stem runs back to. */
+  baseline: number;
+  color: string;
+}
+
 /** How one series' rectangles are painted, once IBCS notation is applied. */
 interface MarkPaint {
   fill: string;
@@ -406,6 +514,7 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
     : chromeNodes(cfg, style, decor, frame, centers, scale);
   const zeroQ = qOf(0);
   const y0 = H ? frame.x + zeroQ : frame.y + frame.h - zeroQ;
+  const dots = { sideways: H, canvasW: cfg.width, series: data.series, frame, qOf, baseline: y0, color: style.text };
   const columnTop: number[] = [];
   /**
    * The DATA value `columnTop` is drawn at, per category.
@@ -437,6 +546,11 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
     const barW = stacked ? stackThick : colThick / (1 + (nBars - 1) * (1 - overlapFrac));
     const barStep = stacked ? stackThick : barW * (1 - overlapFrac);
     const barThick = barW;
+    // From a mark's centre line to its nearest neighbour's along the category axis:
+    // the next bar of the cluster, or the next category's — whichever is nearer,
+    // since the first bar of a cluster has the category gap above it and the others
+    // have a bar. A lone bar per category has the whole slot.
+    const dotPitch = nBars > 1 ? Math.min(barStep, slotLen - (nBars - 1) * barStep) : slotLen;
     /**
      * A bar's drawn thickness, after the 1pt gap that separates it from its
      * neighbour.
@@ -604,16 +718,11 @@ export function layoutColumns(cfg: ChartConfig, style: ChartStyle, decor: Decora
           if (dotFs > 0)
             nodes.push({
               kind: "text",
-              // Clear of the dot along the value axis, centred on it across — and
-              // on the other side of it when the canvas ends first, which a dot
-              // at the scale maximum always meets.
-              ...labelBesidePoint(H ? val : cross, label, dotFs, dotR + 2, cfg.width),
-              y: (H ? cross : val) - dotFs * 0.7,
-              h: dotFs * 1.4,
-              text: label,
-              fontSize: dotFs,
-              color: style.text,
-              valign: "middle",
+              // Beside the dot along the value axis, centred on it across — and on
+              // the other side of it when the canvas ends first, which a dot at the
+              // scale maximum always meets; sideways, lifted off its own stem or
+              // connector (see `dotLabel`).
+              ...dotLabel(dots, label, dotFs, barStyle, si, c, val, cross, dotR, dotPitch),
               name: `label-${si}-${c}`,
             });
         }

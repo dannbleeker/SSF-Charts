@@ -386,7 +386,9 @@ count of how many of its options are currently on.
   weekday × week grid with month labels (contributions view). Only the first
   series is drawn, and the colour scale follows it alone.
 - **Butterfly stacked flanks** (`butterfly.split`): stack more than one
-  series on each side of a butterfly chart.
+  series on each side of a butterfly chart. The series legend above them wraps
+  onto more rows when the names do not fit one, and is left out when the room
+  for it would leave the bars no plot.
 - **Radar per-spoke scales** (`radar.perSpoke`): normalize each spoke to its
   own maximum so mixed-unit KPIs compare by shape.
 - **Missing-data bridge** (`bridgeGaps`): connect a line straight across

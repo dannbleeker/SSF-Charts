@@ -346,33 +346,30 @@ describe("every option in the sweep takes effect", () => {
 });
 
 /**
- * OVERFLOWS THE SWEEP FOUND WHEN TWO OF ITS OPTIONS BEGAN TO TAKE EFFECT, which no
- * layout has been fixed for yet — kept out of the sweep by NODE, never by option,
- * so the rest of those charts is still measured, and kept honest by the test
- * after this one, which fails the day each stops overflowing.
+ * OVERFLOWS THE SWEEP FOUND WHEN ITS OPTIONS BEGAN TO TAKE EFFECT, and that no layout
+ * has been fixed for yet — kept out of the sweep by NODE, never by option, so the
+ * rest of those charts is still measured, and kept honest by the test after this
+ * one, which fails the day each stops overflowing.
  *
- * It is the series legend of a mode the sweep had never drawn, and the same
- * mistake the sweep exists to catch:
+ * EMPTY NOW, and the mechanism stays for the next one. Both were the series legend
+ * of a mode the sweep had never drawn, and the same mistake the sweep exists to
+ * catch:
  *
- *   - `butterfly.split`: with the flanks stacked, `layoutButterfly` reserves
- *     header rows for the legend by `legendRowCount(…, valueW, width - 4)` and
- *     then draws it from `plot.x`, so the legend wraps onto more rows than it
- *     reserved and the last is drawn up to 55pt below the chart; 6 of 32.
+ *   - `tilemap.glyph`: the glyph legend advanced a chip, a gap and a measured
+ *     name per series along one row and never asked whether the next fit. It
+ *     wraps now.
+ *   - `butterfly.split`: with the flanks stacked the legend wraps onto three rows
+ *     on a narrow chart, and the last was drawn up to 58pt below it (6 of 32
+ *     cells, none at 480x300 or 960x540). The rows were reserved and drawn by the
+ *     same walk all along; what nothing asked was whether the reservation fit the
+ *     frame, so the plot's floor rose back through the legend while its rows kept
+ *     walking down. The legend is drawn only if the plot it leaves reaches the
+ *     floor, and dropped otherwise.
  *
- * It does not show at 480x300 or 960x540, the sizes a chart is normally placed
- * at, which is why this is recorded and not blocking. Fix the layout, delete the
- * entry, and the sweep covers it.
- *
- * (`tilemap.glyph` was the other: the glyph legend advanced a chip, a gap and a
- * measured name per series along one row and never asked whether the next fit.
- * It wraps now, so its entry is gone and the sweep holds the whole chart.)
+ * Add an entry here when a sweep option exposes an overflow that is recorded
+ * rather than fixed; delete it when the test below says it no longer overflows.
  */
-const KNOWN_OPEN: Record<string, { nodes: RegExp; what: string }> = {
-  "butterfly.split": {
-    nodes: /^legend(-chip)?-\d+$/,
-    what: "the stacked legend wraps below the chart",
-  },
-};
+const KNOWN_OPEN: Record<string, { nodes: RegExp; what: string }> = {};
 
 /** The nodes of `key`'s sweep that are held to the frame: everything but its recorded open overflow. */
 const outsideKnownOpen = (key: string) => (name: string) => !KNOWN_OPEN[key]?.nodes.test(name);
@@ -538,6 +535,15 @@ describe("no top-level option draws outside the chart's frame", () => {
 });
 
 describe("the overflows recorded as open are still open", () => {
+  // A suite with no test in it is an error, and the table is empty when nothing is
+  // recorded as open — so this is also the one test that is always there.
+  it("records only options the sweep applies", () => {
+    expect(
+      Object.keys(KNOWN_OPEN).filter((key) => !(key in OPTIONS)),
+      "a KNOWN_OPEN entry names no option in OPTIONS, so it exempts nothing and its test below measures a plain chart",
+    ).toEqual([]);
+  });
+
   for (const [key, open] of Object.entries(KNOWN_OPEN)) {
     it(`${key}: ${open.what}`, () => {
       let worst = 0;

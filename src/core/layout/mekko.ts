@@ -1,7 +1,7 @@
-import type { ChartConfig, ChartStyle, Decorations } from "../types";
+import type { ChartConfig, ChartStyle, Decorations, NumberFormat } from "../types";
 import { contrastInk, textWidth, type SceneNode } from "../scene";
 import { clipToWidth } from "../elements";
-import { formatNumber, formatPercent, resolveFormat } from "../format";
+import { authoredDecimals, formatNumber, formatPercent, resolveFormat, segmentLabel } from "../format";
 import { seriesColor } from "../style";
 import {
   printsOnTitle,
@@ -18,6 +18,39 @@ import {
 } from "./frame";
 import { legendRow, namesWithoutMark, seriesLabelNodes, type LayoutResult } from "./column";
 import { columnPositiveTotal } from "./totals";
+
+/**
+ * What a mekko segment prints: the pane's "Label content" menu applied to it, as it
+ * is to a stacked column's segment.
+ *
+ * This printed `formatNumber` whatever the menu said, so picking "%" or
+ * "Series + value" changed every other column kind and left the mekko showing bare
+ * values. The share is the segment's part of ITS column — the proportion the drawn
+ * height encodes; the caller has returned for a segment with no value or a column
+ * with no total, so `total` is a real divisor. Value alone is the default, which is
+ * what it always printed.
+ *
+ * An empty `labelContent` list means "no label" and prints nothing, which the
+ * caller turns into no text node rather than an empty box PowerPoint has to create.
+ */
+function segmentText(
+  cfg: ChartConfig,
+  decor: Decorations,
+  fmt: NumberFormat,
+  value: number,
+  total: number,
+  series: string,
+  category: string,
+): string {
+  return segmentLabel(decor.labelContent ?? ["value"], {
+    value,
+    fraction: value / total,
+    series,
+    category,
+    fmt,
+    percentDecimals: authoredDecimals(cfg.numberFormat),
+  });
+}
 
 /**
  * Mekko (Marimekko) chart, think-cell style. Two variants:
@@ -149,8 +182,8 @@ export function layoutMekko(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       const roomAcross = r.h >= fs * 1.25;
       const roomAlong = !H || r.w >= fs * 1.25;
       if (decor.segmentLabels && roomAcross && roomAlong) {
-        const label = formatNumber(v, fmt);
-        if (textWidth(label, fs) <= r.w + 2) {
+        const label = segmentText(cfg, decor, fmt, v, totals[c], s.name, data.categories[c]);
+        if (label && textWidth(label, fs) <= r.w + 2) {
           nodes.push({
             kind: "text",
             x: r.x - 2,

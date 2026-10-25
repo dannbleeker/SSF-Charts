@@ -3197,6 +3197,15 @@ none is a task yet: each is an owner call or a measurement.
    legend wrapping up to 55pt below a tiny chart, and a boxplot with raw
    observations and `showMean` adding 53 overlaps that `BUDGET` has no row for
    (the boxplot is declared UNPREPARED in the overlap budget until it does).
+   **Both fixed 2026-10-25 (`x2-overflows-the-guards-now-see`).** The legend's rows
+   were reserved and drawn by the same walk all along; nothing asked whether they
+   fit the frame, so on a narrow chart the plot's floor rose through the legend
+   while its last row walked off the foot. It is drawn only if the plot it leaves
+   reaches the floor, and dropped otherwise. The mean `×` is the one mark a layout
+   cannot move, so it gives up size to the plot and to its neighbour and is dropped
+   below the readable floor; the four overlap shapes are zero, the boxplot is
+   prepared in the overlap budget, and `KNOWN_OPEN` is empty. The tile map's glyph
+   legend, the other entry, had already gone in `39f85c1`.
 9. **Not measured on the live host.** The in-place applier now writes transparency
    and `lineFormat.visible` unconditionally; whether `setSolidColor` resets an old
    transparency and whether setting a line colour reveals a hidden outline are
@@ -3211,8 +3220,11 @@ none is a task yet: each is an owner call or a measurement.
     plain cell pasted goes to the browser's default. A negative bubble is drawn as
     an outline. A Gantt's unowned tasks take the header `labels.other`. A
     half-typed boxplot summary (four of five rows) is read as observations. An
-    `hsl()` hue in `turn`, `rad` or `grad` is unreadable, not converted. Mekko
-    segment labels still ignore `labelContent`. `round.mjs --check` and a
+    `hsl()` hue in `turn`, `rad` or `grad` is unreadable, not converted. (Mekko
+    segment labels read `labelContent` now, as of 2026-10-25.) A sideways
+    lollipop's or dumbbell's label that sits on its own stem or connector is lifted
+    clear of it, or keeps its place where the row has no room to lift into.
+    `round.mjs --check` and a
     `no-run-button` refusal now run no battery and hold the previous session place.
 
 ### Grouping refusals are NOT rare — the "usually 0" baseline is a median, and a quarter of rounds refuse. CLOSED 2026-09-29
