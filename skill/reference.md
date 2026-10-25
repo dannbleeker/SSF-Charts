@@ -58,7 +58,7 @@ Everything the SSF Charts engine accepts. All lengths in points (1pt = 1/72").
                                       // chart with room keeps both.
     gridShape?: "polygon" | "circle", // radar grid web (default polygon)
     fillOpacity?: number,             // radar series fill (default 0.18)
-    labelContent?: ("value"|"percent"|"series"|"category")[],
+    labelContent?: ("value"|"percent"|"series"|"category")[],  // a combo's line points read it too ("percent" alone: they keep their value)
     cagr?: { from: number, to: number, series?: number },        // category indices
     difference?: { from, to, percent?, series?, fromValueLine? },
     valueLines?: ({mode:"mean"} | {mode:"value", value:number})[],
@@ -161,7 +161,8 @@ Everything the SSF Charts engine accepts. All lengths in points (1pt = 1/72").
   secondaryAxis?: boolean,                  // combo: right-hand axis for line series
   labelOffsets?: { [nodeName]: {dx, dy} },  // manual label nudges
   numberFormat?: { decimals?: number|"auto", suffix?: string,
-                   forceSign?: boolean, locale?: "de-DE"|... },
+                   forceSign?: boolean, locale?: "de-DE"|...,
+                   grouping?: boolean },   // false: no thousands separator (years on a scatter's x axis: 2015, not 2,015). Default true
   style?: { palette?: string[], fontSize?, negative?, neutral?,   // series ink
             text?, mutedText?, axis?, gridline?, background? },   // canvas ink
   render?: "shapes"|"image"                 // "shapes" (default): native, editable PPT shapes.

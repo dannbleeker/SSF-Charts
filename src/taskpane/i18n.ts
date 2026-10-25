@@ -97,6 +97,7 @@ export const EN = {
   "Auto-update chart": "Auto-update chart",
   "Total row": "Total row",
   "Datamark axis (ticks only)": "Datamark axis (ticks only)",
+  "Thousands separator": "Thousands separator",
   "Use deck theme": "Use deck theme",
   // Chart-type families (grouped picker) + its search.
   "Columns & bars": "Columns & bars",

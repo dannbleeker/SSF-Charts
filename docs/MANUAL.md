@@ -404,7 +404,14 @@ count of how many of its options are currently on.
   hold both it yields to the title — see *Chrome yields to the title* below.
 - **Labels**: decimals / suffix ("€m") / locale (1.234,5 for de-DE — it sets how
   the numbers are written; month names and words such as "Today" stay English),
-  and **label content** — any combination of value, %, series, category.
+  **Thousands separator** (`numberFormat.grouping`, ticked unless the chart says
+  `false`: untick it for numbers that are not quantities, so a scatter whose X
+  values are years reads 2015 … 2018 on its axis and beside its points, not
+  2,015 — it covers axis ticks, value labels, totals and point labels, and
+  every chart that is not unticked is unchanged),
+  and **label content** — any combination of value, %, series, category. A
+  combo's line points read it too; a share belongs to a column, not to a point,
+  so a line whose content has nothing else to print (just `%`) keeps its value.
 - **Footnote / source** — every good chart cites its source; renders
   bottom-left.
 - **Explode slices** (pie/doughnut).

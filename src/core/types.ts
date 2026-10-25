@@ -377,6 +377,24 @@ export interface NumberFormat {
   forceSign?: boolean;
   /** BCP-47 locale for separators, e.g. "de-DE" → 1.234,5. Default en-US. */
   locale?: string;
+  /**
+   * Group the thousands (1,234 / 1.234). Default true; `false` prints 1234.
+   *
+   * For a number that is not a quantity: a scatter or bubble chart whose X values
+   * are YEARS printed "2,015" … "2,018" on its axis and beside its points, and
+   * nothing in the data says a 2015 is a year and not two thousand and fifteen.
+   * The author says so. Read strictly (`=== false`), so anything else a hand-edited
+   * config writes there leaves the separator on, which is what it always did.
+   *
+   * Reaches every number the chart prints through `formatNumber` with the chart's
+   * format — ticks, value labels, totals, a scatter's point labels. Percent labels
+   * (a CAGR arrow, a share) keep their separator: they are quantities by
+   * construction. NOT YET reached: the three formats that pick `decimals` and
+   * `locale` out of this object by hand (the bubble Size key and the scatter Color
+   * legend in `scatter.ts`, a Gantt `Column` cell in `gantt.ts`); they would take
+   * `grouping` with them.
+   */
+  grouping?: boolean;
 }
 
 export interface ChartStyle {

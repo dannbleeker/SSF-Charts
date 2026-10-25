@@ -81,11 +81,13 @@ Re-record deliberately with
 — growth is allowed, hiding it is not. Note that raw lines and code lines rank
 very differently here: `groupAndTagAll` is 827 lines and 267 of code.
 
-**Adding a `SceneNode` kind: six seams fail loudly, one does not.** Four fail
+**Adding a `SceneNode` kind: seven seams fail loudly, one does not.** Five fail
 at the SOURCE, as compile errors — `nodeToSvg` (`src/render/svg.ts`), `addNode`
-(`src/render/powerpoint.ts`), the coordinate chain in `test/fuzz.test.ts`, and
+(`src/render/powerpoint.ts`), the coordinate chain in `test/fuzz.test.ts`,
 `translateNodes` in `src/core/chart.ts`, which carries an explicit `never`
-guard for exactly this.
+guard for exactly this, and `REQUIRED_NUMBERS` in `src/core/scene.ts`, the table
+`finiteNodes` reads to drop a node with a coordinate MISSING (typed per field,
+so a number added to an existing node is a compile error there too).
 
 Two more fail in CI rather than at the source, each through a
 `Record<SceneNode["kind"], …>` in a test that cannot be filled in without

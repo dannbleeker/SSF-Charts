@@ -68,6 +68,7 @@ describe("user manual coverage", () => {
       "Segment order",
       "Axis break",
       "label content",
+      "Thousands separator",
       "Footnote",
       "Explode slices",
       "Same scale",

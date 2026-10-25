@@ -1780,6 +1780,24 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       : fmt,
   );
   /**
+   * The text of line `li`'s label at category `c`, which the pane's "Label content"
+   * writes like it does for every other point label (`pointLabelText`).
+   *
+   * The combo's lines printed `formatNumber` whatever it said, so a Pareto asked
+   * for ["category"] drew the cumulative percentages beside every point, upright and
+   * sideways alike. ONE function, because the two fits below measure this text and
+   * the emitter draws it, and a fit that measures a label the chart does not draw
+   * is how a number comes to be cut.
+   *
+   * A list with nothing a point can print (a share is a column's, not a point's, so
+   * `["percent"]` is only meant for the columns beside it; `[]` is "no parts") keeps
+   * the value the line has always carried: it is the only setting these labels
+   * share with the columns, and on independent axes they are how the real values
+   * are read at all.
+   */
+  const pointText = (li: number, c: number, v: number): string =>
+    pointLabelText(decor, v, lines[li].name, cfg.data.categories[c], lineFmts[li]) || formatNumber(v, lineFmts[li]);
+  /**
    * Each line's value→coordinate map, hoisted out of the draw loop.
    *
    * It was computed inside `lines.forEach`, which was fine while nothing else
@@ -1834,7 +1852,7 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       const here = lines
         .map((s, li) => ({ li, v: s.values[c] }))
         .filter((e): e is { li: number; v: number } => e.v != null)
-        .map((e) => ({ li: e.li, q: toYs[e.li](e.v), em: textWidth(formatNumber(e.v, lineFmts[e.li]), 1) }))
+        .map((e) => ({ li: e.li, q: toYs[e.li](e.v), em: textWidth(pointText(e.li, c, e.v), 1) }))
         .sort((a, b) => a.q - b.q);
       for (let i = 0; i < here.length; i++) {
         const me = here[i];
@@ -1915,7 +1933,7 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       // Width at one point, so the pair constraint solves for size directly:
       // two centred labels clear when their half-widths together fit the gap,
       // i.e. size <= 2 * gap / (emWidth(a) + emWidth(b)).
-      const em = s.values.map((v, c) => (drawn[c] ? textWidth(formatNumber(v as number, lineFmts[li]), 1) : 0));
+      const em = s.values.map((v, c) => (drawn[c] ? textWidth(pointText(li, c, v as number), 1) : 0));
       return s.values.map((_v, c) => {
         if (!drawn[c]) return 0;
         let worst = Infinity;
@@ -1985,8 +2003,18 @@ export function layoutCombo(cfg: ChartConfig, style: ChartStyle, decor: Decorati
       // on 2026-10-24 on the rule that an overlapping label still reads where a
       // dropped one does not; this emitter was the sibling that was missed.
       const plotRight = anchors.plot.x + anchors.plot.w;
-      const comboLabelW = Math.max(0, Math.min(60, plotRight - (pt.x + r + 2)));
-      const comboText = formatNumber(v, lineFmts[li]);
+      const comboText = pointText(li, c, v);
+      // The 60pt it always used is a NUMBER's box. The label can be a name now (see
+      // `pointText`), and capped at 60 a "Packaging damage" that fits the room
+      // beside its mark was not drawn at all: the cap decided that, not the room.
+      // So a label that carries a name is as wide as the name needs. The plain
+      // number keeps exactly the box it had, which is the only reason this is
+      // asked of the text and not of `Math.max(60, ink)` for every label: a number
+      // wider than 60pt (six digits at 20pt) is dropped by that cap today, and
+      // whether it should be is not this change's to decide.
+      const labelCap =
+        comboText === formatNumber(v, lineFmts[li]) ? 60 : Math.max(60, textWidth(comboText, rowFs[li][c]));
+      const comboLabelW = Math.max(0, Math.min(labelCap, plotRight - (pt.x + r + 2)));
       // Bounded by the plot on BOTH sides: left of it are the category names, which
       // is the collision the right bound exists to avoid, one edge over.
       const beside = H ? labelBesidePoint(pt.x, comboText, rowFs[li][c], r + 2, plotRight, comboLabelW) : null;

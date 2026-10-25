@@ -1,7 +1,7 @@
 import type { ChartData } from "../core/types";
 import { maxOf, minOf } from "../core/agg";
 import { isTotalToken } from "../core/layout/waterfall";
-import { GANTT_DATE_ROW, parseDateToken } from "../core/format";
+import { GANTT_DATE_ROW, localeTag, parseDateToken } from "../core/format";
 
 export interface SheetModel {
   /** Raw cell text; row 0 = category names, column 0 = series names. */
@@ -86,8 +86,16 @@ function plainNumber(text: string): number {
   return text.includes(",") ? NaN : Number(text);
 }
 
-/** "1,234" / "1,234.5" — the US thousands grouping Excel copies. */
-const US_GROUPED = /^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$/;
+/**
+ * "1,234" / "1,234.5" — the US thousands grouping Excel copies.
+ *
+ * The first group opens with a NON-ZERO digit, and so does `EU_GROUPED`'s: a
+ * number never starts with a zero group, so "0,500" is not five hundred, it is the
+ * decimal 0.5 a Dane's Excel prints at three decimals. It matched as a US group,
+ * read as 500 by `plainNumber`, and counted as AMERICAN evidence in
+ * `looksEuropean` — so the rest of a Danish block was refused its conversion too.
+ */
+const US_GROUPED = /^[+-]?[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/;
 
 /**
  * "12,34,567.89" / "1,00,000" — the Indian grouping en-IN and hi-IN print: ONE
@@ -99,8 +107,16 @@ const US_GROUPED = /^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$/;
  */
 const LAKH_GROUPED = /^[+-]?\d{1,2}(,\d{2})+,\d{3}(\.\d+)?$/;
 
-/** "1.234" / "1.234.567,89" — dot groups, optionally with a comma decimal. */
-const EU_GROUPED = /^[+-]?\d{1,3}(\.\d{3})+(,\d+)?$/;
+/**
+ * "1.234" / "1.234.567,89" — dot groups, optionally with a comma decimal.
+ *
+ * A thousands group cannot START with a zero (see `US_GROUPED`), and the first one
+ * is the group whose digits this pattern did not check: "0.500" matched, lost its
+ * dot in `fromEuropeanNumber` and was stored as 500 — a silent 1000x error on a
+ * dot decimal inside a block that was judged European for other cells' sake. It
+ * matches nothing now, is returned as typed, and the sheet reads it as 0.5.
+ */
+const EU_GROUPED = /^[+-]?[1-9]\d{0,2}(\.\d{3})+(,\d+)?$/;
 
 /** "987,5" — a plain comma decimal, no grouping. */
 const EU_DECIMAL = /^[+-]?\d+,\d+$/;
@@ -235,10 +251,19 @@ const bareNumber = (cell: unknown): string => {
   return readNumberText(t)?.core ?? t;
 };
 
-/** The decimal mark a locale writes: "," for da-DK, de-DE and fr-FR, "." otherwise (and for a locale the runtime does not know). */
+/**
+ * The decimal mark a locale writes: "," for da-DK, de-DE and fr-FR, "." otherwise (and for a locale the runtime does not know).
+ *
+ * Through `localeTag`, the engine's own reading of the string, so the pane parses
+ * numbers in the locale the chart PRINTS in. It asked Intl for `de_DE` as written,
+ * which Intl refuses, so a config that spelled its locale the POSIX way had a chart
+ * printing 1.234,5 beside boxes that read the typed "3.000" as three (a dot-mark
+ * locale's decimal) and "1,500" as fifteen hundred, the reverse of what a German
+ * reader means by either.
+ */
 export function decimalMark(locale: string): "." | "," {
   try {
-    return new Intl.NumberFormat(locale).format(1.5).includes(",") ? "," : ".";
+    return new Intl.NumberFormat(localeTag(locale)).format(1.5).includes(",") ? "," : ".";
   } catch {
     // `RangeError` for a tag the runtime cannot parse: a config's locale is user JSON.
     return ".";
@@ -455,7 +480,10 @@ export function looksEuropean(cells: string[][]): boolean {
       // A US grouping (or its Indian cousin, "12,34,567.89" — a comma that is a
       // thousands mark all the same), or a dot decimal that CANNOT be a group
       // because it does not carry exactly three digits ("987.5", "1.2"). A bare
-      // "1.234" is not evidence either way and is deliberately not counted.
+      // "1.234" is not evidence either way and is deliberately not counted. Nor is
+      // "0.500": a leading zero means it is no group, but it is 0.5 in either
+      // reading, and counting it as American would take the conversion away from
+      // every European cell beside it.
       if (US_GROUPED.test(t) || LAKH_GROUPED.test(t)) american = true;
       else if (/^[+-]?\d+\.\d+$/.test(t) && !/^[+-]?\d{1,3}(\.\d{3})+$/.test(t)) american = true;
     }

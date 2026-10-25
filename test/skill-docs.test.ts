@@ -153,6 +153,8 @@ describe("skill documentation coverage", () => {
       "stacked",
       "sizeEncode",
       "cluster",
+      // The field, not the word: "grouping" also turns up in two unrelated sentences.
+      "grouping?: boolean",
     ]) {
       expect(reference).toContain(key);
     }

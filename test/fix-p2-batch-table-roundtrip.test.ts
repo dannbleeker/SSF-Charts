@@ -337,6 +337,37 @@ describe("r2-23 — Table from datasheet shows what the datasheet computes, not 
     expect(texts).toEqual(["", "Q1", "Q2", "North", "10", "20", "South", "30", "40", "Total", "40", "60"]);
   });
 
+  it("prints a computed number with the chart's thousands separator, or without it when the chart has none", async () => {
+    await deckWithPane();
+    const cfg = {
+      kind: "clustered",
+      data: {
+        categories: ["Q1"],
+        series: [
+          { name: "North", values: [1000] },
+          { name: "South", values: [1015] },
+          { name: "Total", values: [0] },
+        ],
+      },
+    };
+    importConfig(cfg);
+    typeCell(3, 1, "=SUM(B2:B3)");
+    $("table-insert").click();
+    await idle("the table to insert");
+    expect(textsOf(hold.inserts[0].scene as Scene), "the default groups").toContain("2,015");
+
+    // `tableCells` picked `{ decimals, locale }` off the config by hand and left
+    // the switch behind, so a chart of years was tabled as "2,015" beside a chart
+    // that said 2015.
+    importConfig({ ...cfg, numberFormat: { grouping: false } });
+    typeCell(3, 1, "=SUM(B2:B3)");
+    $("table-insert").click();
+    await idle("the second table to insert");
+    const second = textsOf(hold.inserts[1].scene as Scene);
+    expect(second).toContain("2015");
+    expect(second).not.toContain("2,015");
+  });
+
   it("prints a waterfall total as the total the chart draws, not as its 'e' token", async () => {
     await deckWithPane();
     importConfig(sampleConfig("waterfall"));

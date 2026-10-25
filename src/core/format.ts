@@ -14,21 +14,26 @@ const safeDecimals = (d: number): number => (Number.isFinite(d) ? Math.min(100, 
 /**
  * Intl.NumberFormat instances are expensive to construct but immutable and
  * reusable, and a chart formats hundreds of labels sharing a handful of
- * (locale, decimals, style) triples. `Number.prototype.toLocaleString(locale,
+ * (locale, decimals, style, grouping) tuples. `Number.prototype.toLocaleString(locale,
  * opts)` is specified to construct a fresh NumberFormat on every call, so caching
- * by that triple and reusing `.format()` is byte-identical output at a fraction
+ * by that tuple and reusing `.format()` is byte-identical output at a fraction
  * of the cost.
+ *
+ * `grouping` is part of the key and `useGrouping` is passed ONLY when it is off:
+ * the default option is locale-dependent (es-ES and pl-PL do not group four-digit
+ * numbers at all), so spelling out `true` would change what those print.
  */
 const NUMBER_FORMATTERS = new Map<string, Intl.NumberFormat>();
-function numberFormatter(locale: string, decimals: number, style?: "percent"): Intl.NumberFormat {
+function numberFormatter(locale: string, decimals: number, style?: "percent", grouping = true): Intl.NumberFormat {
   const tag = localeTag(locale);
-  const key = `${tag} ${decimals} ${style ?? ""}`;
+  const key = `${tag} ${decimals} ${style ?? ""} ${grouping ? "" : "ungrouped"}`;
   let nf = NUMBER_FORMATTERS.get(key);
   if (!nf) {
     const opts: Intl.NumberFormatOptions = {
       style,
       minimumFractionDigits: decimals,
       maximumFractionDigits: decimals,
+      ...(grouping ? {} : { useGrouping: false }),
     };
     // A malformed BCP-47 tag (an authored config, a hand-edited shape tag)
     // makes the Intl constructor throw a RangeError — fall back to en-US
@@ -53,8 +58,14 @@ function numberFormatter(locale: string, decimals: number, style?: "percent"): I
  * Only a string is rewritten. A locale arrives from JSON and is not always one;
  * whatever else it is goes to the constructor untouched, whose try/catch is the
  * only place that was ever allowed to find that out.
+ *
+ * Exported because the pane reads typed numbers in the chart's locale too, and it
+ * must read the locale the way the chart PRINTS it: `decimalMark` asked Intl about
+ * `de_DE` directly, was refused, and fell back to a dot, so a chart that printed
+ * 1.234,5 had its Axis scale box read a typed "3.000" as three and "1,500" as
+ * fifteen hundred.
  */
-function localeTag(locale: string): string {
+export function localeTag(locale: string): string {
   return typeof locale === "string" ? locale.replace(/_/g, "-") : locale;
 }
 
@@ -75,7 +86,9 @@ export function formatNumber(v: number, fmt: Partial<NumberFormat> = {}): string
   // non-Latin digits in others — no pattern match on the output survives all
   // three, and -0 leaked through in every locale that does any of them.
   if (Number(v.toFixed(decimals)) === 0) v = 0;
-  let s = numberFormatter(f.locale ?? "en-US", decimals).format(v);
+  // `!== false`, not truthiness: a config is JSON, and only the documented `false`
+  // takes the separator off. See `NumberFormat.grouping`.
+  let s = numberFormatter(f.locale ?? "en-US", decimals, undefined, f.grouping !== false).format(v);
   if (f.forceSign && v > 0) s = "+" + s;
   if (f.suffix) s += f.suffix;
   return s;

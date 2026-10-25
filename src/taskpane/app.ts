@@ -108,6 +108,13 @@ interface AppState {
   decimals: string; // "auto" | "0" | "1" | "2"
   suffix: string;
   locale: string;
+  /**
+   * `numberFormat.grouping`, ticked unless the chart says `false`. The same read
+   * the engine makes (`!== false`), so a hand-written `"no"` is a ticked box over
+   * a chart that groups, and the box never describes a chart other than the one
+   * in front of the user.
+   */
+  grouping: boolean;
   labelContent: string; // comma-joined parts, "" = default
   paletteName: string;
   /**
@@ -293,6 +300,7 @@ function stateFromConfig(cfg: ChartConfig): Omit<AppState, "editTarget"> {
     decimals: cfg.numberFormat?.decimals != null ? String(cfg.numberFormat.decimals) : "auto",
     suffix: cfg.numberFormat?.suffix ?? "",
     locale: cfg.numberFormat?.locale ?? "en-US",
+    grouping: cfg.numberFormat?.grouping !== false,
     labelContent: labelContentList(cfg.decorations?.labelContent).join(","),
     paletteName: paletteNameFor(cfg.style?.palette),
     style: cfg.style ? { ...cfg.style } : undefined,
@@ -533,21 +541,30 @@ function currentConfig(): ChartConfig {
     .map((v) => Number(v.trim()) - 1)
     .filter((v) => Number.isInteger(v) && v >= 0);
   // pie / waterfall / numberFormat are half pane-driven, half carried in extras:
-  // the control owns explode / total "e" tokens / decimals+suffix+locale, but an
-  // imported chart's semi, breakout, variableRadius, detailGroups, spacerIndices
-  // and forceSign live only in extras and would be lost if the control overwrote
-  // the whole object. Merge so the pane wins its own fields and the rest survives.
+  // the control owns explode / total "e" tokens / decimals+suffix+locale+grouping,
+  // but an imported chart's semi, breakout, variableRadius, detailGroups,
+  // spacerIndices and forceSign live only in extras and would be lost if the
+  // control overwrote the whole object. Merge so the pane wins its own fields and
+  // the rest survives.
   const pieBase = { ...(state.extras.pie ?? {}) };
   delete pieBase.explode;
   const pie =
     explode.length || Object.keys(pieBase).length ? { ...pieBase, ...(explode.length ? { explode } : {}) } : undefined;
   const numberFormat: ChartConfig["numberFormat"] =
-    state.decimals !== "auto" || state.suffix || state.locale !== "en-US" || state.extras.numberFormat
+    state.decimals !== "auto" ||
+    state.suffix ||
+    state.locale !== "en-US" ||
+    !state.grouping ||
+    state.extras.numberFormat
       ? {
           ...(state.extras.numberFormat ?? {}),
           decimals: state.decimals === "auto" ? "auto" : Number(state.decimals),
           suffix: state.suffix || undefined,
           locale: state.locale !== "en-US" ? state.locale : undefined,
+          // Written only when OFF, like `render: "image"`: the default is spelled by
+          // omission, so a chart nobody touched exports byte-identically. Over the
+          // spread above, so ticking the box again also clears a loaded `false`.
+          grouping: state.grouping ? undefined : false,
         }
       : undefined;
   // The engine's one injected word ("Other"); pass a localized override only when
@@ -626,14 +643,18 @@ function currentConfig(): ChartConfig {
  * in a table — `HUNDRED_ROW` also matches a plain "100%" row label, which is a
  * perfectly good thing to label a row of text.
  *
- * Numbers are printed the way the chart prints them (its decimals and locale,
- * through the same `formatNumber`), without the suffix or forced sign that the
- * typed cells beside them do not carry.
+ * Numbers are printed the way the chart prints them (its decimals, locale and
+ * thousands separator, through the same `formatNumber`), without the suffix or
+ * forced sign that the typed cells beside them do not carry.
  */
 function tableCells(): string[][] {
   const { cells } = state.sheet;
   const cfg = currentConfig();
-  const fmt = { decimals: cfg.numberFormat?.decimals ?? "auto", locale: cfg.numberFormat?.locale };
+  const fmt = {
+    decimals: cfg.numberFormat?.decimals ?? "auto",
+    locale: cfg.numberFormat?.locale,
+    grouping: cfg.numberFormat?.grouping,
+  };
   const bars = state.kind === "waterfall" ? waterfallChain(cfg) : [];
   return cells.map((row, r) =>
     row.map((raw, c) => {
@@ -1802,6 +1823,21 @@ function renderOptions() {
   nfLoc.setAttribute("aria-label", "Label locale");
   nf.append("Labels: decimals ", nfDec, " suffix ", nfSuffix, " locale ", nfLoc);
   G.labels.body.appendChild(nf);
+
+  // `numberFormat.grouping`: untick it for numbers that are not quantities. A scatter
+  // whose X values are years prints "2,015" on its axis and beside its points, and
+  // nothing in the data says otherwise. Ticked is the default and is spelled by
+  // omission (`currentConfig`), so no existing chart changes.
+  const grp = document.createElement("label");
+  const grpCb = document.createElement("input");
+  grpCb.type = "checkbox";
+  grpCb.checked = state.grouping;
+  grpCb.addEventListener("change", () => {
+    state.grouping = grpCb.checked;
+    renderPreview();
+  });
+  grp.append(grpCb, "Thousands separator");
+  G.labels.togs.appendChild(grp);
 
   // Footnote / source line — good charts always cite their source.
   const fn = document.createElement("label");

@@ -226,10 +226,62 @@ export type { SymbolShape };
  * loses that one node and keeps the rest of the chart, which is what a reader
  * can actually interpret.
  *
+ * A MISSING coordinate is not finite either. `allNumbersFinite` walks the numbers
+ * a node HAS, so a field that is absent or `undefined` is a number it never meets:
+ * an arrow with `y1: undefined` (a decoration indexed `columnTop[0.5]`) passed
+ * this gate, and the SVG printed `y1="NaN"` where the two PowerPoint renderers
+ * wrote an EMU of NaN. `REQUIRED_NUMBERS` names the fields each kind cannot be
+ * drawn without, and a node lacking one is dropped like any other that cannot be
+ * placed.
+ *
  * For a valid config this drops nothing, so it is a floor and not a filter.
  */
 export function finiteNodes(nodes: SceneNode[]): SceneNode[] {
-  return nodes.filter((n) => allNumbersFinite(n) && !degeneratePolygon(n));
+  return nodes.filter((n) => allNumbersFinite(n) && hasRequiredNumbers(n) && !degeneratePolygon(n));
+}
+
+/** The keys of node type `N` that are a required `number`: not optional, not a string or a list. */
+type RequiredNumberKeys<N> = {
+  [K in keyof N]-?: undefined extends N[K] ? never : N[K] extends number ? K : never;
+}[keyof N];
+
+/**
+ * The numbers each kind cannot be drawn without, as a map from kind to field.
+ *
+ * Typed so that it cannot go stale in either direction: a field added to a node
+ * interface is a missing property here, and one renamed or removed is an unknown
+ * one, both at compile time. A polygon's numbers live in its point list, which
+ * `hasRequiredNumbers` reads directly. The OPTIONAL fields (`strokeWidth`, `dash`,
+ * `fillOpacity`) are absent from every list on purpose: leaving one out is how a
+ * node says "the default", and only a number that IS there has to be finite, which
+ * `allNumbersFinite` already asks.
+ */
+const REQUIRED_NUMBERS: {
+  [K in SceneNode["kind"]]: Record<RequiredNumberKeys<Extract<SceneNode, { kind: K }>>, true>;
+} = {
+  rect: { x: true, y: true, w: true, h: true },
+  polygon: {},
+  line: { x1: true, y1: true, x2: true, y2: true },
+  text: { x: true, y: true, w: true, h: true, fontSize: true },
+  ellipse: { cx: true, cy: true, rx: true, ry: true },
+  wedge: { cx: true, cy: true, r: true, innerR: true, startAngle: true, endAngle: true },
+  chevron: { x: true, y: true, w: true, h: true },
+  symbol: { cx: true, cy: true, size: true },
+  arrowhead: { x: true, y: true, angle: true, size: true },
+};
+
+/** Does the node carry a real number in every field its kind is drawn from? */
+function hasRequiredNumbers(n: SceneNode): boolean {
+  // A kind this table does not know is not the table's to judge: it never was,
+  // and a scene is built by code that cannot name one outside the union.
+  const need = REQUIRED_NUMBERS[n.kind];
+  if (!need) return true;
+  const fields = n as unknown as Record<string, unknown>;
+  for (const key of Object.keys(need)) if (typeof fields[key] !== "number") return false;
+  return (
+    n.kind !== "polygon" ||
+    (Array.isArray(n.points) && n.points.every((p) => typeof p?.x === "number" && typeof p?.y === "number"))
+  );
 }
 
 /**
