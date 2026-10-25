@@ -979,7 +979,14 @@ describe("task pane — overflow menu accessibility (ARIA menu pattern)", () => 
     btn.click();
     expect(menu.hidden).toBe(false);
     expect(btn.getAttribute("aria-expanded")).toBe("true");
-    expect(document.activeElement).toBe(items[0]);
+    // The first item a BROWSER would give focus to. `items[0]` is "Insert as new",
+    // which is display:none until a chart is open for editing, and jsdom focuses a
+    // display:none button where a browser does not — so this asserted `items[0]`
+    // and passed on a menu that left focus on the ⋯ button. fix-k5-pane-state-and-ui
+    // runs the same open under the browser's rule.
+    const first = items.find((i) => !i.disabled && i.style.display !== "none")!;
+    expect(first).not.toBe(items[0]);
+    expect(document.activeElement).toBe(first);
 
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect(menu.hidden).toBe(true);

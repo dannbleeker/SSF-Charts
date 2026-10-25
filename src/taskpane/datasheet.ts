@@ -1198,6 +1198,68 @@ function pasteGrid(cells: string[][], grid: string[][], ri: number, ci: number):
 }
 
 /**
+ * EVERY CELL SAYS WHERE IT IS, because a screen reader has nothing else to go
+ * on. These are bare `<input>`s in bare `<td>`s — no label, no `<th>`, no
+ * caption — so the pane's primary data-entry surface announced "edit, blank"
+ * twenty times over, and a keyboard user had no way to tell the 2023 column from
+ * the 2024 one.
+ *
+ * Named from the sheet's OWN headers, which is what a sighted user reads off the
+ * first row and column: "Enterprise, 2024". The header cells name themselves by
+ * axis instead — their own text is already the label, and repeating it would
+ * announce "2024, 2024".
+ *
+ * Asked again on every render AND on every keystroke in a header cell
+ * (`relabelUnder`): renaming a series has to rename the cells under it, and typing
+ * the name is the ordinary way to rename one — which never rebuilds the grid, so
+ * a name set only at render time went on announcing "Enterprise, 2022" under a
+ * row the person had just retitled "Sales" until a button rebuilt the grid.
+ */
+function cellName(cells: string[][], ri: number, ci: number): string {
+  const rowName = cells[ri]?.[0]?.trim();
+  const colName = cells[0]?.[ci]?.trim();
+  return ri === 0 && ci === 0
+    ? "Corner cell, not editable"
+    : ri === 0
+      ? `Column ${ci} heading`
+      : ci === 0
+        ? `Row ${ri} heading`
+        : `${rowName || `Row ${ri}`}, ${colName || `column ${ci}`}`;
+}
+
+/** A header cell was typed in: the data cells in its row (or column) are named from it. */
+function relabelUnder(host: HTMLElement, cells: string[][], ri: number, ci: number): void {
+  const under = ci === 0 ? `input[data-row="${ri}"]` : `input[data-col="${ci}"]`;
+  host.querySelectorAll<HTMLInputElement>(under).forEach((el) => {
+    el.setAttribute("aria-label", cellName(cells, Number(el.dataset.row), Number(el.dataset.col)));
+  });
+}
+
+/**
+ * Where focus is inside the grid, as something that survives the grid being
+ * rebuilt: the cell it is on, or which of the buttons under the table it is.
+ */
+function focusPlace(host: HTMLElement): { cell: [number, number] } | { button: number } | null {
+  const el = document.activeElement;
+  if (!(el instanceof HTMLElement) || !host.contains(el)) return null;
+  if (el instanceof HTMLInputElement && el.dataset.row !== undefined)
+    return { cell: [Number(el.dataset.row), Number(el.dataset.col)] };
+  const at = Array.from(host.querySelectorAll(".sheet-controls button")).indexOf(el);
+  return at >= 0 ? { button: at } : null;
+}
+
+/** Put focus back where `focusPlace` found it — the nearest cell that is still there. */
+function restoreFocus(host: HTMLElement, cells: string[][], place: NonNullable<ReturnType<typeof focusPlace>>): void {
+  if ("button" in place) {
+    host.querySelectorAll<HTMLButtonElement>(".sheet-controls button")[place.button]?.focus();
+    return;
+  }
+  const row = Math.min(place.cell[0], cells.length - 1);
+  const col = Math.min(place.cell[1], (cells[row]?.length ?? 1) - 1);
+  host.querySelector<HTMLInputElement>(`input[data-row="${row}"][data-col="${col}"]`)?.focus();
+}
+
+/**
  * Editable datasheet grid: an HTML table of inputs with Excel-style TSV paste.
  * Calls onChange with the raw sheet on every edit.
  */
@@ -1253,6 +1315,13 @@ export function mountDatasheet(
   }
 
   function render() {
+    // THE GRID IS REBUILT FROM SCRATCH, AND THE ELEMENT THE PERSON WAS ON GOES WITH
+    // IT. After a paste, "+ Row" or "- Row", "+/- Column", Transpose, Ctrl+Z and
+    // Ctrl+Y keyboard focus fell to the page: the next arrow key or character
+    // went nowhere until a cell was clicked, and a keyboard user who had pressed a
+    // button lost their place in the pane. Measured: `activeElement` was BODY after
+    // each of them. The way out is back to the same cell or button.
+    const place = focusPlace(host);
     host.innerHTML = "";
     const table = document.createElement("table");
     table.className = "datasheet";
@@ -1266,35 +1335,10 @@ export function mountDatasheet(
         input.dataset.col = String(ci);
         if (ri === 0 || ci === 0) input.classList.add("header");
         if (ri === 0 && ci === 0) input.disabled = true;
-        /**
-         * EVERY CELL SAYS WHERE IT IS, because a screen reader has nothing else
-         * to go on. These are bare `<input>`s in bare `<td>`s — no label, no
-         * `<th>`, no caption — so the pane's primary data-entry surface
-         * announced "edit, blank" twenty times over, and a keyboard user had no
-         * way to tell the 2023 column from the 2024 one.
-         *
-         * Named from the sheet's OWN headers, which is what a sighted user reads
-         * off the first row and column: "Enterprise, 2024". The header cells name
-         * themselves by axis instead — their own text is already the label, and
-         * repeating it would announce "2024, 2024".
-         *
-         * Recomputed on every render, which is why it is here and not set once:
-         * renaming a series has to rename the cells under it.
-         */
-        const rowName = model.cells[ri]?.[0]?.trim();
-        const colName = model.cells[0]?.[ci]?.trim();
-        input.setAttribute(
-          "aria-label",
-          ri === 0 && ci === 0
-            ? "Corner cell, not editable"
-            : ri === 0
-              ? `Column ${ci} heading`
-              : ci === 0
-                ? `Row ${ri} heading`
-                : `${rowName || `Row ${ri}`}, ${colName || `column ${ci}`}`,
-        );
+        input.setAttribute("aria-label", cellName(model.cells, ri, ci));
         input.addEventListener("input", () => {
           editCell(model.cells, ri, ci, readBreaks(input.value), onStructure);
+          if (ri === 0 || ci === 0) relabelUnder(host, model.cells, ri, ci);
           onChange(model);
         });
         input.addEventListener("focus", () => {
@@ -1367,6 +1411,7 @@ export function mountDatasheet(
       }),
     );
     host.appendChild(controls);
+    if (place) restoreFocus(host, model.cells, place);
   }
 
   function handlePaste(e: ClipboardEvent, ri: number, ci: number) {

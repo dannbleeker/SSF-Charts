@@ -40,8 +40,12 @@
         <button id="generate" class="primary">Generate from selection</button>
         <button id="copy">Copy</button>
       </div>
-      <textarea id="output" rows="14" spellcheck="false"></textarea>
-      <p class="hint" id="note"></p>
+      <textarea id="output" rows="14" spellcheck="false" aria-label="Chart configuration JSON"></textarea>
+      <!-- A live region, because this line is the pane's only voice: Generated,
+           Failed and Copied all land here, and a screen-reader user who pressed
+           Copy heard nothing — a refused clipboard included. Same pair as the
+           PowerPoint pane's `#host-note`. -->
+      <p class="hint" id="note" role="status" aria-live="polite"></p>
     </section>
 
     <script type="module" src="./excel.ts"></script>

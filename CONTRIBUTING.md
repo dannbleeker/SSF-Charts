@@ -42,9 +42,13 @@ language is translation-only, no code changes:
 `localizePane` auto-selects the dictionary from the host display language (or
 `?lang=`); `t()` covers runtime status strings, including `{placeholder}`
 templates; and the one engine-injected word ("Other") is passed into the pure
-core via `ChartConfig.labels.other`. Chart numbers and dates already localize
-via `NumberFormat.locale`. Right-to-left scripts need engine layout work and are
-out of scope for a translation-only add.
+core via `ChartConfig.labels.other`. Chart _numbers_ localize via
+`NumberFormat.locale`; everything else a chart prints does not — month names,
+"Today", "Less"/"More", "no data", "CAGR n/a", "Gap" and the alt text are
+English whatever the language, and so are the pane's JS-built control labels
+and its `title`/`aria-label` attributes. The header of `src/taskpane/i18n.ts`
+lists what a language reaches. Right-to-left scripts need engine layout work and
+are out of scope for a translation-only add.
 
 ## Snapshots
 

@@ -699,7 +699,14 @@ describe("r2-17 — never two writes to one chart at once", () => {
 
     hold.updateGate = null;
     slow.open();
-    await until("the held edit to go out once Explode was done", () => hold.updates.length === 2, 4000);
+    await idle("Explode to finish");
+    // What the pane holds now is the chart Explode re-read off the slide, which
+    // replaced the title typed meanwhile, so it has nothing of its own to push.
+    // This used to wait here for a second update and got one — carrying the
+    // re-read title "A", not "edited during Explode": the load's own render was
+    // arming it (r3-30), and the typed edit never reached the slide either way.
+    await sleep(1400);
+    expect(hold.updates, "a chart the pane had just re-read was written back").toHaveLength(1);
   });
 
   it("makes Same Scale wait for an auto-update's write to one of its charts", async () => {

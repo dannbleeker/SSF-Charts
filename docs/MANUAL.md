@@ -136,10 +136,15 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
    reporting Done — insert it again if you need to keep editing it, or undo
    (Ctrl+Z) to get back the version that was editable.
 6. **Auto-update chart** pushes every pane edit to the slide live (debounced).
-   Writes to the slide take turns: a push, an **Update chart** click, **Same
-   scale** and **Explode** never run on the same chart at once — the later one
-   waits for the earlier to finish. A write always goes to the chart it started
-   from, even if you open another chart in the pane while it runs.
+   Opening a chart is not an edit: **Edit selected chart**, the banner's **Edit
+   it** and **Explode** read the chart off the slide and push nothing back until
+   you change something. Writes to the slide take turns: a push, an **Update
+   chart** click, **Same scale** and **Explode** never run on the same chart at
+   once — the later one waits for the earlier to finish. A write always goes to
+   the chart it started from, even if you open another chart in the pane while
+   it runs. An **Update chart** click that waited behind a push which lost the
+   chart (the note says why) does nothing more: it never turns into an
+   **Insert**, which would leave a second copy beside the first.
 7. Ctrl+Z / Ctrl+Y undo and redo datasheet edits, including the rows, columns
    and series colours that go with them; picking a series colour is a step of
    its own (one drag of the picker is one step). Inside any other text box — the chart
@@ -381,8 +386,9 @@ count of how many of its options are currently on.
   the chart's width and anything longer is clipped. Put the explanation in the
   title or the footnote; this is a unit, not a subtitle. On a chart too short to
   hold both it yields to the title — see *Chrome yields to the title* below.
-- **Labels**: decimals / suffix ("€m") / locale (1.234,5 for de-DE), and
-  **label content** — any combination of value, %, series, category.
+- **Labels**: decimals / suffix ("€m") / locale (1.234,5 for de-DE — it sets how
+  the numbers are written; month names and words such as "Today" stay English),
+  and **label content** — any combination of value, %, series, category.
 - **Footnote / source** — every good chart cites its source; renders
   bottom-left.
 - **Explode slices** (pie/doughnut).
@@ -489,7 +495,13 @@ count of how many of its options are currently on.
   pane says which and changes nothing rather than reporting a shared scale the
   deck does not have. If the chart open in the pane is one of
   them, the pane follows it to its redrawn shape and takes over the shared
-  axis scale, so the next **Update chart** does not undo it.
+  axis scale, so the next **Update chart** does not undo it — also when the
+  run reached only some of the charts. (Only when two of the charts on the open
+  chart's slide were asked and one answered can the pane not tell which was
+  redrawn; the note then says to click the chart and press **Edit it**.) A chart
+  whose stored settings cannot be read — a tag that is not JSON, or one with no
+  chart data in it, such as an agenda slide an older skill deck marked as a
+  chart — is left out and named in the note, and the rest are rescaled.
 - **Download SVG / Download PNG** (overflow menu) save the preview as a vector
   or a 2× raster image — handy for email or chat, where the native-shape output
   can't go. The real deliverable is still **Insert into slide** (editable shapes).
@@ -518,7 +530,10 @@ count of how many of its options are currently on.
 ## Colors and style
 
 - **Palette** presets, per-series color pickers, and **Use deck theme** —
-  reads the presentation's Accent 1–6 theme colors (PowerPointApi 1.10).
+  reads the presentation's Accent 1–6 theme colors (PowerPointApi 1.10). There
+  is one picker per series in the datasheet, named for it; the list follows rows
+  you add, delete, rename or undo, and shows the palette's colour for a series
+  you have not picked one for.
 - **Export style / Import style**: a corporate style file (JSON: palette,
   font, negative/total colors) applied to every chart you make. Export gives you
   the style the pane is currently drawing with — which is not always your own
@@ -1066,5 +1081,12 @@ numbers Excel stores:
 - **Other languages** — the pane is translation-ready and localizes itself from
   `Office.context.displayLanguage`, but **no dictionary ships today**: every
   string is English. Adding one is a single entry in `DICTS` in
-  `src/taskpane/i18n.ts`. This line used to promise German, which the repo's
-  own test asserts the pane does not have.
+  `src/taskpane/i18n.ts`, and it reaches the pane's status and error messages,
+  and the static labels whose text is a catalogue key. It does not reach
+  everything: the labels of the controls the pane builds in code (Axis scale
+  min, Segment order, Labels: decimals …) and its `title`/`aria-label`
+  attributes stay English, and so does what a chart prints beyond its numbers —
+  month names on a Gantt or heatmap, "Today", "Less"/"More", "no data",
+  "CAGR n/a", "Gap", and the alt text. A chart set to da-DK writes its numbers
+  the Danish way (1.234,5) and the rest in English. This line used to promise
+  German, which the repo's own test asserts the pane does not have.

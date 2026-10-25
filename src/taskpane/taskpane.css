@@ -328,7 +328,9 @@ body {
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--fg);
+  /* `var(--fg)` was written here, which is declared nowhere and so computed to
+     the same thing — the inherited colour — by accident. */
+  color: inherit;
 }
 .steps:empty::before {
   content: "Steps appear here while a run is going.";
@@ -701,6 +703,17 @@ textarea {
   gap: 8px;
   margin-bottom: 7px;
   flex-wrap: wrap;
+}
+/* The same trap as `.action-bar[hidden]` below, and the template-name row fell
+   in it: `display: flex` above is an author rule and beats the UA's
+   `[hidden] { display: none }`, so the "Template name" box with its Save and
+   Cancel sat open under the template picker from the first load and the
+   attribute `askTemplateName` sets and clears changed nothing on screen (the
+   2026-09-28 accessibility snapshot of the real PowerPoint pane lists all
+   three, with no click on "Save as template"). `test/fix-k5-pane-state-and-ui`
+   sweeps every element the pane hides for this. */
+.element-row[hidden] {
+  display: none;
 }
 .element-row label {
   display: flex;
@@ -1446,8 +1459,12 @@ input[type="checkbox"] {
   color: var(--muted, #6b7280);
   cursor: pointer;
 }
+/* `--ink`, which has a value in both schemes. This said `var(--fg, #1a202c)`, and
+   `--fg` is declared nowhere, so the light theme's ink was used in the dark
+   scheme as well: #1a202c on the button's #12202f fill is 1.01:1, and the label
+   vanished exactly when the pointer was on it. */
 .status-stop:hover:not(:disabled) {
-  color: var(--fg, #1a202c);
+  color: var(--ink);
   border-color: var(--muted, #6b7280);
 }
 .status-stop:disabled {

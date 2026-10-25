@@ -755,9 +755,10 @@ function offerNativeInsteadOfPicture(shapes: number): Promise<"own-slide" | "pic
   here.hidden = true;
   picture.hidden = false;
   box.hidden = false;
-  text.textContent =
-    `That chart is ${shapes} shapes — too many for PowerPoint on the web to draw onto this slide. ` +
-    `It can go on a slide of its own as editable shapes, or stay on this one as a picture.`;
+  text.textContent = t(
+    "That chart is {shapes} shapes — too many for PowerPoint on the web to draw onto this slide. It can go on a slide of its own as editable shapes, or stay on this one as a picture.",
+    { shapes },
+  );
   return new Promise((resolve) => {
     const done = (choice: "own-slide" | "picture") => () => {
       own.removeEventListener("click", onOwn);
@@ -913,7 +914,20 @@ function applyConfig(cfg: ChartConfig, editTarget: EditTarget | null, fresh = fa
   resetHistory();
   renderGallery();
   renderOptions();
-  renderPreview();
+  if (editTarget) {
+    // A chart handed over WITH its target was just read off the slide, so the pane
+    // is learning what the slide already shows — the same case as `adoptKeptSize`,
+    // and pushing it back is what that one declines to do. `renderPreview` arms
+    // Auto-update, which wrote the pane's reconstruction of the chart over it a
+    // second later with nothing edited: the browser or deck style file is merged
+    // into the config the pane builds, so a chart stored without a style came back
+    // recoloured (fills #2a78d6 -> #112233 in the measured case), and every update
+    // runs the host's delete-and-redraw. Nothing the pane had pending applies any
+    // more either: it is a different chart, or the same one re-read.
+    clearTimeout(renderTimer);
+    clearTimeout(autoUpdateTimer);
+    drawPreview();
+  } else renderPreview();
   renderActionState();
 }
 
@@ -1085,11 +1099,17 @@ function thumbButton(kind: ChartKind, label: string): HTMLButtonElement {
   cap.textContent = label;
   b.append(pic, cap);
   b.addEventListener("click", () => {
+    // The pick rebuilds the whole gallery, and this tile with it.
+    const wasFocused = document.activeElement === b;
     applyConfig(sampleConfig(kind), null, true);
     // Auto-collapse the (tall) type grid once a kind is chosen — the summary
     // then shows the current kind, click to re-expand.
     const acc = document.getElementById("type-acc") as HTMLDetailsElement | null;
     if (acc) acc.open = false;
+    // Keyboard focus was on the tile that is now gone, inside a section that has
+    // just closed: it fell to the page, and the next Tab started from the top.
+    // The summary is the one thing left of this section, and it names the pick.
+    if (wasFocused) acc?.querySelector("summary")?.focus();
   });
   return b;
 }
@@ -1229,33 +1249,66 @@ function wireActionsMenu() {
     it.setAttribute("role", "menuitem");
     it.tabIndex = -1;
   });
-  const focusItem = (i: number) => items[(i + items.length) % items.length]?.focus();
-  const setOpen = (open: boolean, restoreFocus = false) => {
+  /**
+   * An item a browser will actually give focus to: drawn, and not disabled.
+   *
+   * `focus()` on anything else is a silent no-op, and the menu used to call it
+   * blind. "Insert as new" is the FIRST item and is `display: none` until a chart
+   * is open for editing — the pane's usual state — so opening the menu from the
+   * keyboard left focus on the ⋯ button, the arrow keys (bound to the menu, not
+   * the button) never arrived, Tab skips every item (`tabIndex = -1`), and Edit
+   * selected chart, Same scale, Download and Copy link could only be reached with
+   * a mouse. The first item that IS focusable was still wrong in a browser tab,
+   * where the host-only items are disabled, and while `guard()` has a clicked one
+   * disabled: an arrow key walked onto the dead one and stopped.
+   */
+  const canFocus = (it: HTMLButtonElement) => !it.disabled && !it.hidden && it.style.display !== "none";
+  /** Focus the first usable item from `from`, walking `step` (+1 or -1) round the list; false when none is. */
+  const focusItem = (from: number, step = 1): boolean => {
+    for (let n = 0; n < items.length; n++) {
+      const it = items[(((from + n * step) % items.length) + items.length) % items.length];
+      if (canFocus(it)) {
+        it.focus();
+        return true;
+      }
+    }
+    return false;
+  };
+  const setOpen = (open: boolean, restoreFocus = false, from = 0, step = 1) => {
     menu.hidden = !open;
     btn.setAttribute("aria-expanded", String(open));
     if (open)
-      focusItem(0); // move into the menu so the keyboard lands there
+      focusItem(from, step); // move into the menu so the keyboard lands there
     else if (restoreFocus) btn.focus(); // Escape/close returns focus to the trigger
   };
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     setOpen(menu.hidden);
   });
+  // The menu-button pattern: ArrowDown opens it onto the first item and ArrowUp
+  // onto the last. The arrow handler below is on the menu, which never sees a key
+  // typed on the button beside it.
+  btn.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    if (e.key === "ArrowDown") setOpen(true, false, 0, 1);
+    else setOpen(true, false, items.length - 1, -1);
+  });
   menu.addEventListener("click", () => setOpen(false, true));
   menu.addEventListener("keydown", (e) => {
     const i = items.indexOf(document.activeElement as HTMLButtonElement);
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      focusItem(i + 1);
+      focusItem(i + 1, 1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      focusItem(i - 1);
+      focusItem(i - 1, -1);
     } else if (e.key === "Home") {
       e.preventDefault();
-      focusItem(0);
+      focusItem(0, 1);
     } else if (e.key === "End") {
       e.preventDefault();
-      focusItem(items.length - 1);
+      focusItem(items.length - 1, -1);
     }
   });
   document.addEventListener("click", (e) => {
@@ -1282,6 +1335,8 @@ const FGROUP_ICON: Record<string, string> = {
 function optGroup(name: string, iconKey: string): OptGroup {
   const details = document.createElement("details");
   details.className = "fgroup";
+  // What `renderOptions` keys the open state on across a rebuild.
+  details.dataset.group = iconKey;
   const summary = document.createElement("summary");
   summary.innerHTML =
     `<svg class="fgroup-ico" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">${FGROUP_ICON[iconKey]}</svg>` +
@@ -1496,6 +1551,10 @@ function setDatamarkAxis(d: Partial<Decorations>, on: boolean): void {
 }
 
 function renderOptions() {
+  // Read before the panel is emptied: which groups the person has open.
+  const openGroups = new Map(
+    Array.from(optionsHost.querySelectorAll<HTMLDetailsElement>(".fgroup"), (g) => [g.dataset.group ?? "", g.open]),
+  );
   optionsHost.innerHTML = "";
   const d = state.decorations;
   const nCats = () => Math.max(0, state.sheet.cells[0].length - 1);
@@ -1525,10 +1584,12 @@ function renderOptions() {
   // axis" are two boxes over ONE field, so the first has to be able to keep the
   // second honest (see `setDatamarkAxis`).
   const dmCb = document.createElement("input");
+  const toggleBoxes = new Map<keyof Decorations, HTMLInputElement>();
   for (const t of toggles) {
     const label = document.createElement("label");
     const cb = document.createElement("input");
     cb.type = "checkbox";
+    toggleBoxes.set(t.key, cb);
     // THE ENGINE'S DEFAULT WHEN THE CONFIG IS SILENT, not `false`.
     //
     // `buildChart` draws with `{ ...DEFAULT_DECOR, ...cfg.decorations }`, and
@@ -1561,7 +1622,12 @@ function renderOptions() {
   dmCb.checked = d.valueAxis === "datamarks";
   dmCb.addEventListener("change", () => {
     setDatamarkAxis(d, dmCb.checked);
-    renderOptions();
+    // The "Value axis" box next to it reads the same field, so it is set here and
+    // the panel is NOT rebuilt: the rebuild destroyed the box the person had just
+    // ticked (keyboard focus fell to the page) and shut the Axes group they were
+    // working in — the sibling toggles above already update in place.
+    const axisBox = toggleBoxes.get("valueAxis");
+    if (axisBox) axisBox.checked = !!(d.valueAxis ?? DEFAULT_DECOR.valueAxis);
     renderPreview();
   });
   dm.append(dmCb, "Datamark axis (ticks only)");
@@ -1854,7 +1920,7 @@ function renderOptions() {
   themeBtn.addEventListener("click", async () => {
     const loaded = await loadThemePalette();
     if (!loaded) {
-      themeBtn.textContent = "Theme unavailable";
+      themeBtn.textContent = t("Theme unavailable");
       return;
     }
     themePalette = loaded;
@@ -1866,36 +1932,95 @@ function renderOptions() {
     }
     state.paletteName = "Theme";
     palSel.value = "Theme";
-    renderOptions();
+    // The panel is NOT rebuilt for this: the Theme option was added above and the
+    // swatches follow the palette from the preview. The rebuild shut the Colours
+    // group the person was working in and destroyed the button they had just
+    // pressed, taking keyboard focus with it. It was also what put a "Theme
+    // unavailable" from an earlier try back to the button's own words, so that
+    // is done by hand.
+    themeBtn.textContent = t("Use deck theme");
     renderPreview();
   });
   pal.append("Palette ", palSel, " ", themeBtn);
   G.colours.body.appendChild(pal);
 
+  // The per-series swatches are FILLED by `syncSeriesSwatches`, below and from
+  // every place the sheet or the palette changes — not built here once.
   const colors = document.createElement("div");
   colors.className = "wide series-colors";
-  // Resolve through mergedStyle so the swatches show the colors the chart
-  // actually draws with — including a loaded chart's custom palette.
-  const palette = mergedStyle()?.palette ?? PALETTES.Default;
-  currentSeriesNames().forEach((name, i) => {
-    const wrap = document.createElement("label");
-    const input = document.createElement("input");
-    input.type = "color";
-    input.value = swatchColour(i, palette);
-    input.addEventListener("input", () => {
-      state.seriesColors[i] = input.value;
-      recordColourPick(i);
-      renderPreview();
-    });
-    input.addEventListener("change", endColourPick);
-    wrap.append(input, name);
-    colors.appendChild(wrap);
-  });
   G.colours.body.appendChild(colors);
 
-  for (const g of [G.labels, G.axes, G.analysis, G.layout, G.colours]) optionsHost.appendChild(g.details);
+  for (const g of [G.labels, G.axes, G.analysis, G.layout, G.colours]) {
+    // The groups the person had open stay open: this panel is rebuilt for a
+    // chart type pick and a load, and it used to snap all but Labels shut under
+    // the pointer.
+    const was = openGroups.get(g.details.dataset.group ?? "");
+    if (was !== undefined) g.details.open = was;
+    optionsHost.appendChild(g.details);
+  }
   localizeTree(optionsHost);
   updateGroupCounts();
+  syncSeriesSwatches();
+}
+
+/**
+ * One series' colour picker. Its index is its position for good: the list is
+ * kept to the sheet's series by `syncSeriesSwatches`, so swatch `i` is series
+ * `i` however many rows come and go around it.
+ */
+function seriesSwatch(i: number): HTMLLabelElement {
+  const wrap = document.createElement("label");
+  const input = document.createElement("input");
+  input.type = "color";
+  input.addEventListener("input", () => {
+    state.seriesColors[i] = input.value;
+    recordColourPick(i);
+    renderPreview();
+  });
+  input.addEventListener("change", endColourPick);
+  // The caption is the text node `syncSeriesSwatches` rewrites.
+  wrap.append(input, "");
+  return wrap;
+}
+
+/**
+ * KEEP THE COLOUR PICKERS ON THE SHEET'S SERIES — their count, their captions and
+ * the colours they show.
+ *
+ * They were built once, in `renderOptions`, and nothing after that touched them
+ * but a chart load. So "+ Row" under the first series of the default sheet left
+ * the captions at Enterprise, SMB, Consumer over a sheet of Enterprise, Series 2,
+ * SMB, Consumer, and the swatch captioned SMB wrote `seriesColors[1]` — which is
+ * the NEW series: it was painted and SMB was not, and the new series had no
+ * picker at all. "− Row" left a dead picker for a series that was gone and a
+ * caption on the wrong one; typing over a series name left the old name; and a
+ * Palette pick left the swatches on the old palette while the chart drew the new
+ * one. Each of those is a picker writing a colour to a series other than the one
+ * its caption names.
+ *
+ * Reconciled in place, by position, rather than rebuilt: swatch `i` keeps its
+ * element (and its focus, and a picker that is open) and only its caption, its
+ * colour and the length of the list change. The colour shown is the one the chart
+ * draws: the series' own pick, else the palette's colour for its position —
+ * resolved through `mergedStyle` so a loaded chart's custom palette counts.
+ */
+function syncSeriesSwatches(): void {
+  const host = optionsHost.querySelector<HTMLElement>(".series-colors");
+  if (!host) return;
+  const names = currentSeriesNames();
+  const palette = mergedStyle()?.palette ?? PALETTES.Default;
+  names.forEach((name, i) => {
+    let wrap = host.children[i] as HTMLLabelElement | undefined;
+    if (!wrap) host.appendChild((wrap = seriesSwatch(i)));
+    const input = wrap.firstElementChild as HTMLInputElement;
+    const colour = swatchColour(i, palette);
+    // Not written when it already shows it: a picker being dragged is the one
+    // input that gets read back here, and it has just said what it holds.
+    if (input.value !== colour) input.value = colour;
+    const caption = wrap.lastChild as Text;
+    if (caption.data !== name) caption.data = name;
+  });
+  while (host.children.length > names.length) host.lastElementChild?.remove();
 }
 
 /**
@@ -1958,6 +2083,9 @@ const canvasColor = (cfg: ChartConfig) => cfg.style?.background ?? "#ffffff";
  */
 function drawPreview() {
   try {
+    // Whatever moved the palette or the sheet reaches here, so the pickers are
+    // brought level in the one place every such change passes through.
+    syncSeriesSwatches();
     const cfg = currentConfig();
     const scene = buildChart(cfg);
     preview.innerHTML = sceneToSvg(scene, { background: canvasColor(cfg) });
@@ -1967,7 +2095,7 @@ function drawPreview() {
     preview.replaceChildren();
     const p = document.createElement("p");
     p.className = "hint";
-    p.textContent = `Could not render: ${err instanceof Error ? err.message : String(err)}`;
+    p.textContent = t("Could not render: {error}", { error: err instanceof Error ? err.message : String(err) });
     preview.appendChild(p);
   }
 }
@@ -2095,13 +2223,10 @@ function restore(snap: string) {
   state.seriesColors = seriesColors;
   state.seriesMeta = seriesMeta;
   sheetApi.setSheet(state.sheet);
-  // The swatches show the colours that were just put back; they are built once, in
-  // `renderOptions`, and an undone pick left its colour on the swatch while the
-  // chart beside it had gone back.
-  const palette = mergedStyle()?.palette ?? PALETTES.Default;
-  document.querySelectorAll<HTMLInputElement>(".series-colors input[type=color]").forEach((input, i) => {
-    input.value = swatchColour(i, palette);
-  });
+  // The swatches show the colours that were just put back — and the series: an
+  // undone pick left its colour on the swatch while the chart beside it had gone
+  // back, and an undone "+ Row" left a picker for a series that no longer exists.
+  syncSeriesSwatches();
   renderPreview();
 }
 /** Input types with no text of their own to undo — Ctrl+Z over them means the pane's undo. */
@@ -2151,6 +2276,9 @@ sheetApi = mountDatasheet(
   (sheet) => {
     state.sheet = sheet;
     snapshot();
+    // After the structure handler below, which the grid calls first: the pickers
+    // are positional, and the series colours they show have just been moved.
+    syncSeriesSwatches();
     renderPreview();
   },
   // seriesColors / seriesMeta are POSITIONAL, so a row or column the grid
@@ -2320,22 +2448,25 @@ async function pictureForUndrawableMarks(scene: Scene): Promise<{ png?: string; 
   const missing = dropped.what.join(" and ");
   if (!canInsertPicture())
     return {
-      warn:
-        `This PowerPoint cannot draw ${missing}, and cannot insert a picture either (that needs PowerPointApi 1.8). ` +
-        `Drawing it as shapes — ${missing} will be missing.`,
+      warn: t(
+        "This PowerPoint cannot draw {missing}, and cannot insert a picture either (that needs PowerPointApi 1.8). Drawing it as shapes — {missing} will be missing.",
+        { missing },
+      ),
     };
   const png = await boundedRaster(scene);
   return png
     ? {
         png,
-        warn:
-          `This PowerPoint cannot draw ${missing} — that needs a newer Office (PowerPointApi 1.10). ` +
-          `Inserted as a picture so it is complete; it stays an image here.`,
+        warn: t(
+          "This PowerPoint cannot draw {missing} — that needs a newer Office (PowerPointApi 1.10). Inserted as a picture so it is complete; it stays an image here.",
+          { missing },
+        ),
       }
     : {
-        warn:
-          `This PowerPoint cannot draw ${missing}, and it could not be turned into a picture either. ` +
-          `Drawing it as shapes — ${missing} will be missing.`,
+        warn: t(
+          "This PowerPoint cannot draw {missing}, and it could not be turned into a picture either. Drawing it as shapes — {missing} will be missing.",
+          { missing },
+        ),
       };
 }
 
@@ -2409,29 +2540,32 @@ async function chartPicture(cfg: ChartConfig, scene: Scene): Promise<{ png?: str
          * load it, change its data and restyle it. Only the conversion to
          * native SHAPES needs a host that can draw them.
          */
-        warn:
-          `That chart is ${shapes} shapes — too many for PowerPoint on the web to draw, so it went in as a picture. ` +
-          `You can still edit it here: select it and this pane reloads its data. ` +
-          `Turning it into native shapes needs the desktop app.`,
+        warn: t(
+          "That chart is {shapes} shapes — too many for PowerPoint on the web to draw, so it went in as a picture. You can still edit it here: select it and this pane reloads its data. Turning it into native shapes needs the desktop app.",
+          { shapes },
+        ),
       };
     // The rescue itself failed. Drawing the shapes anyway is still better than
     // refusing the user's chart, but this is precisely the case the budget
     // exists to intercept — so say so instead of silently doing the dangerous
     // thing. It used to fall through with no message at all.
     return {
-      warn: `That chart is ${shapes} shapes — too many for PowerPoint on the web to draw, and it could not be turned into a picture either. Drawing it as shapes; if PowerPoint stops responding, that is why.`,
+      warn: t(
+        "That chart is {shapes} shapes — too many for PowerPoint on the web to draw, and it could not be turned into a picture either. Drawing it as shapes; if PowerPoint stops responding, that is why.",
+        { shapes },
+      ),
     };
   }
   if (cfg.render !== "image") return {};
   if (!canInsertPicture()) {
     return {
-      warn: "This PowerPoint can't insert pictures (needs PowerPointApi 1.8) — inserted native shapes instead.",
+      warn: t("This PowerPoint can't insert pictures (needs PowerPointApi 1.8) — inserted native shapes instead."),
     };
   }
   const png = await boundedRaster(scene);
   if (png) return { png };
   console.warn("PC-IMG-RASTER could not rasterize the chart in the browser.");
-  return { warn: "Couldn't rasterize the chart — inserted native shapes instead." };
+  return { warn: t("Couldn't rasterize the chart — inserted native shapes instead.") };
 }
 
 /**
@@ -2590,14 +2724,17 @@ function phaseNote(phase: InsertPhase, detail?: string) {
 
 async function doInsert(asNew: boolean) {
   hostWorkStarted();
+  // Whether this was an UPDATE when it was asked for — read now, before it waits
+  // for a turn. See `runInsert`.
+  const updating = !asNew && state.editTarget !== null;
   try {
-    return await inWriteTurn(() => runInsert(asNew));
+    return await inWriteTurn(() => runInsert(asNew, updating));
   } finally {
     hostWorkFinished();
   }
 }
 
-async function runInsert(asNew: boolean) {
+async function runInsert(asNew: boolean, updating = false) {
   let cfg = currentConfig();
   // The chart this action works on, read BEFORE its first await and carried
   // through every one after it. `state.editTarget` is whatever the pane holds
@@ -2605,6 +2742,30 @@ async function runInsert(asNew: boolean) {
   // Reading it after `await chartPicture` sent the config of the chart the
   // action began with to whichever chart the user had loaded in the meantime.
   const began = state.editTarget;
+  /**
+   * AN UPDATE THAT WAITED FOR ITS TURN AND FOUND NO CHART TO UPDATE IS OVER, NOT A
+   * NEW INSERT.
+   *
+   * The queue (`inWriteTurn`) makes a clicked Update wait behind an auto-update's
+   * write and read the pane — config and target — only when its turn comes, so it
+   * writes to the chart the write ahead of it returned and not the one that write
+   * replaced. But "no target" decides update-versus-insert just below, and the
+   * write ahead can end by clearing the target with the chart still on the slide:
+   * lost its settings, swapped, duplicated, redrawn untagged. The click then fell
+   * through to the new-chart branch and put a SECOND copy next to it (26 shapes
+   * and two tagged charts where there had been 13 and one), over the note that
+   * explained what the first write had done, with the button reading "Insert into
+   * slide". The timer got its own guard for exactly this (`maybeAutoUpdate`);
+   * a click that was already queued had none.
+   *
+   * Nothing is said here: the write ahead ended with a note of its own, and it
+   * is the one that says why the chart cannot be updated any more. The person
+   * presses Insert again if they want a new one.
+   */
+  if (!asNew && updating && !began) {
+    trace("pane", "queued update dropped: the write before it left no chart to update");
+    return;
+  }
   if (!asNew && began) {
     const scene = buildChart(cfg);
     const { png, warn } = await chartPicture(cfg, scene);
@@ -3177,6 +3338,59 @@ export function sameScaleNote(parts: { base: string; rescued?: string; degraded?
 }
 
 /**
+ * The charts Same Scale can put on one scale, read from the tags the scan found,
+ * and the sentence about the ones it could not read (empty when there were none).
+ *
+ * A CHART THAT CANNOT BE READ IS LEFT OUT, NOT A REASON TO STOP.
+ *
+ * This was one `.map(JSON.parse).map(valueExtent)` over every tagged shape in the
+ * deck, so the first tag that threw ended the whole run before anything was
+ * touched — "Failed: chart config has no `data` object", over a deck of twenty
+ * good charts. The tag does not have to be corrupt to throw: the skill used to
+ * write `POWERCHART_CONFIG` onto the agenda slides it builds, `{kind: "agenda",
+ * chapters}` with no data, and a deck-wide scan lists the group as a chart. A
+ * hand-edited tag (`{not json`, `null`) did the same. `valueExtent` runs
+ * `normalizeConfig`, which throws on purpose for a config it cannot draw.
+ *
+ * A chart with no value axis (a pie) answers null and is passed over without a
+ * word, as it always was; one that THROWS is named in the note.
+ */
+function readChartsToRescale(charts: { target: EditTarget; configJson: string }[]): {
+  parsed: { target: EditTarget; cfg: ChartConfig; extent: { min: number; max: number } }[];
+  skipped: string;
+} {
+  const unreadable = new Map<string, number>();
+  const parsed: { target: EditTarget; cfg: ChartConfig; extent: { min: number; max: number } }[] = [];
+  for (const c of charts) {
+    let cfg: ChartConfig | undefined;
+    try {
+      cfg = JSON.parse(c.configJson) as ChartConfig;
+      const extent = valueExtent(cfg);
+      if (extent) parsed.push({ target: c.target, cfg, extent });
+    } catch {
+      // Named by its title, else by what the tag says it is (an agenda slide's is
+      // `kind "agenda"`), else as unreadable; the same name twice is counted.
+      const { title, kind } = (cfg ?? {}) as { title?: unknown; kind?: unknown };
+      const name =
+        typeof title === "string" && title.trim()
+          ? title.trim()
+          : typeof kind === "string"
+            ? `kind "${kind}"`
+            : t("an unreadable chart");
+      unreadable.set(name, (unreadable.get(name) ?? 0) + 1);
+    }
+  }
+  const names = [...unreadable].map(([name, n]) => (n > 1 ? `${name} ×${n}` : name));
+  const skipped = unreadable.size
+    ? t("Skipped {n} it could not read — {which}.", {
+        n: [...unreadable.values()].reduce((a, b) => a + b, 0),
+        which: names.slice(0, 5).join(", ") + (names.length > 5 ? ", …" : ""),
+      })
+    : "";
+  return { parsed, skipped };
+}
+
+/**
  * think-cell's Set Same Scale: pin every value-axis chart (in the deck, or
  * just the selected ones) to the union of their extents and re-render them.
  *
@@ -3201,15 +3415,17 @@ async function runSameScale(scope: "deck" | "selection") {
     });
     return;
   }
-  const parsed = charts
-    .map((c) => ({ target: c.target, cfg: JSON.parse(c.configJson) as ChartConfig }))
-    .map((c) => ({ ...c, extent: valueExtent(c.cfg) }))
-    .filter((c): c is typeof c & { extent: { min: number; max: number } } => c.extent != null);
+  const { parsed, skipped } = readChartsToRescale(charts);
   if (parsed.length < 2) {
     note(
-      scope === "deck"
-        ? "Same scale needs at least two value-axis charts in the deck."
-        : "Select two or more charts (Ctrl-click), then apply Same scale.",
+      [
+        scope === "deck"
+          ? t("Same scale needs at least two value-axis charts in the deck.")
+          : t("Select two or more charts (Ctrl-click), then apply Same scale."),
+        skipped,
+      ]
+        .filter(Boolean)
+        .join(" "),
       "err",
     );
     return;
@@ -3304,7 +3520,12 @@ async function runSameScale(scope: "deck" | "selection") {
   }
   // Before any of the early returns below: the pane's chart may have been
   // redrawn under a new id whichever way this ends.
-  followRescale(rescaled, applied);
+  const paneUnsure = followRescale(rescaled, applied);
+  // Said after the note's own sentences, and only when the pane could not tell
+  // whether the chart it holds is one that was redrawn.
+  const paneNote = paneUnsure
+    ? t("The chart open in this pane may have been redrawn — click it on the slide and press Edit it to carry on.")
+    : "";
   // Charts the host silently declined to resolve at all.
   //
   // `updateChartsInSlides` drops those — its `live`/`alive` filters are early
@@ -3316,14 +3537,18 @@ async function runSameScale(scope: "deck" | "selection") {
   const missed = rescaled.length - applied.length;
   if (stalled.length) {
     note(
-      "Same scale: PowerPoint would not redraw {n} chart(s) — {which}. They are now empty; undo (Ctrl+Z) restores them." +
-        (missed > 0 ? " {missed} more were never reached — the deck is not on one scale." : ""),
+      [
+        t(
+          "Same scale: PowerPoint would not redraw {n} chart(s) — {which}. They are now empty; undo (Ctrl+Z) restores them.",
+          { n: stalled.length, which: stalled.join(", ") },
+        ),
+        missed > 0 ? t("{missed} more were never reached — the deck is not on one scale.", { missed }) : "",
+        paneNote,
+        skipped,
+      ]
+        .filter(Boolean)
+        .join(" "),
       "err",
-      {
-        n: stalled.length,
-        which: stalled.join(", "),
-        missed,
-      },
     );
     return;
   }
@@ -3339,10 +3564,17 @@ async function runSameScale(scope: "deck" | "selection") {
   }
   if (missed > 0) {
     note(
-      "Same scale reached {n} of {total} charts — PowerPoint would not answer for the other {missed}. " +
-        "The deck is not on one scale; try again.",
+      [
+        t(
+          "Same scale reached {n} of {total} charts — PowerPoint would not answer for the other {missed}. The deck is not on one scale; try again.",
+          { n: applied.length, total: rescaled.length, missed },
+        ),
+        paneNote,
+        skipped,
+      ]
+        .filter(Boolean)
+        .join(" "),
       "err",
-      { n: applied.length, total: rescaled.length, missed },
     );
     return;
   }
@@ -3374,6 +3606,9 @@ async function runSameScale(scope: "deck" | "selection") {
         )
       : "",
     degraded: degraded ? t("{n} image chart(s) fell back to native shapes.", { n: degraded }) : "",
+    // Work the user asked for that did not happen: the deck is not entirely on
+    // one scale, and a retry will not change that.
+    setback: skipped,
   });
   note(said.text, said.status);
 }
@@ -3400,34 +3635,57 @@ async function runSameScale(scope: "deck" | "selection") {
  *    config wholesale would throw them away.
  *
  * `applied` holds one target per chart the renderer resolved, in the order they
- * were asked for, so an entry can be matched to its chart by position only when
- * every chart came back. A chart the host dropped leaves a gap no id can bridge;
- * the note then already says the deck is not on one scale, and the pane is left
- * as it was rather than guessed at.
+ * were asked for, and a chart the host dropped leaves a gap — so an entry is
+ * matched to its chart by position only where nothing was dropped. That used to
+ * be the whole deck: with any chart missing anywhere the pane was left as it
+ * was, and "as it was" is a dead id whenever the pane's own chart was one of
+ * those that WERE redrawn — the host declining a different chart, or the user
+ * deleting one mid-run, is enough. The next Update then said "That chart is no
+ * longer on the slide", flipped to "Insert into slide", and pressing it put a
+ * second copy on the slide; a retry of Same Scale could not help, because it
+ * matches on the id the pane no longer has.
+ *
+ * A target keeps its slide, so the match is made WITHIN the chart's slide: when
+ * every chart asked of that slide came back, they pair up in order, whatever
+ * happened elsewhere; when none did, the pane's chart was not touched and its
+ * target is still good. Only a slide with two or more of the asked charts and a
+ * partial answer cannot say which of them it dropped, and there the pane is left
+ * as it was and the note says so (see `runSameScale`) — a guess either way is a
+ * duplicate on the slide or a live chart the pane has let go of.
  *
  * Matched against what the pane holds NOW rather than when this started: the
  * user may have opened another chart while it ran, and that chart's target is
  * the stale one only if it was read before its redraw.
+ *
+ * Answers whether the pane could NOT tell if its chart was redrawn (the slide
+ * with two or more asked charts and a partial answer), so the note can say so.
  */
-function followRescale(rescaled: { target: EditTarget; cfg: ChartConfig }[], applied: EditTarget[]): void {
-  if (applied.length !== rescaled.length) return;
+function followRescale(rescaled: { target: EditTarget; cfg: ChartConfig }[], applied: EditTarget[]): boolean {
   const i = rescaled.findIndex((c) => sameChart(c.target, state.editTarget));
-  if (i < 0) return;
-  const back = applied[i];
+  if (i < 0) return false;
+  const slideId = rescaled[i].target.slideId;
+  const asked = rescaled.filter((c) => c.target.slideId === slideId);
+  const got = applied.filter((a) => a.slideId === slideId);
+  if (!got.length) return false;
+  if (got.length !== asked.length) return true;
+  const back = got[asked.indexOf(rescaled[i])];
   // Redrawn and not something the pane can come back to — the same two reasons
   // `runInsert` lets go of a lost target. The old id names a shape this very
   // batch deleted.
   if (back.lost) {
     dropTarget(rescaled[i].target);
-    return;
+    return false;
   }
   state.editTarget = back;
-  adoptKeptSize(back);
   const scale = rescaled[i].cfg.scale;
   state.scaleMin = scale?.min != null ? String(scale.min) : "";
   state.scaleMax = scale?.max != null ? String(scale.max) : "";
   renderOptions();
-  renderPreview();
+  // The pane is learning what the slide now shows, not editing it: drawn, but
+  // not pushed back by Auto-update. (`adoptKeptSize` draws too, at the size.)
+  if (back.size) adoptKeptSize(back);
+  else drawPreview();
+  return false;
 }
 
 async function doLoadSelection() {
@@ -3502,9 +3760,9 @@ async function runExplode() {
   const dropped = marksThisHostWillDrop(scene);
   if (dropped.nodes) {
     note(
-      `This PowerPoint cannot draw ${dropped.what.join(" and ")} — that needs a newer Office ` +
-        `(PowerPointApi 1.10) — so the chart stays a picture. Exploding it here would leave them out.`,
+      "This PowerPoint cannot draw {what} — that needs a newer Office (PowerPointApi 1.10) — so the chart stays a picture. Exploding it here would leave them out.",
       "err",
+      { what: dropped.what.join(" and ") },
     );
     return;
   }
@@ -3517,9 +3775,9 @@ async function runExplode() {
     })
   ) {
     note(
-      `That chart is ${shapes} shapes — too many for PowerPoint on the web to draw, so it stays a picture. ` +
-        `Open it on the desktop app to explode it, or make the chart simpler.`,
+      "That chart is {shapes} shapes — too many for PowerPoint on the web to draw, so it stays a picture. Open it on the desktop app to explode it, or make the chart simpler.",
       "err",
+      { shapes },
     );
     return;
   }

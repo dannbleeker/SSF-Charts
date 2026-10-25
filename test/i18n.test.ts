@@ -18,9 +18,7 @@ describe("t — runtime string resolution", () => {
   });
 
   it("fills {placeholder} templates from params", () => {
-    expect(t("Inserted {n} chart(s) on the current slide.", { n: 3 })).toBe(
-      "Inserted 3 chart(s) on the current slide.",
-    );
+    expect(t("Inserted {n} of {total} chart(s).", { n: 3, total: 4 })).toBe("Inserted 3 of 4 chart(s).");
     expect(t("Same scale applied to {n} charts (max {max}).", { n: 4, max: 90 })).toBe(
       "Same scale applied to 4 charts (max 90).",
     );

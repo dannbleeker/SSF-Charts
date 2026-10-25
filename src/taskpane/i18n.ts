@@ -1,20 +1,48 @@
 /**
- * Pane localization. The app ships English-only, but every user-facing string is
- * catalogued here so a new language is a translation-only, type-checked drop-in.
+ * Pane localization. The app ships English-only. The strings the pane SAYS AT RUN
+ * TIME — every `note()` and `t()` text — are catalogued here, so a language for
+ * them is a translation-only, type-checked drop-in. That is not every string a
+ * person can see: what a language reaches and what it does not is set out below,
+ * because this header used to say "every user-facing string" and it was not so.
  *
  * ── Adding a language ────────────────────────────────────────────────────────
  * 1. Add one entry to `DICTS`, e.g. `de: { ...every key of EN, translated }`.
  *    Its type is `Record<StringKey, string>`, so TypeScript refuses to compile
  *    the dict until EVERY key is present — a missing translation is a build error,
  *    not a silent English fallback. `test/i18n.test.ts` double-checks at runtime.
- * 2. That's it. `localizePane` auto-selects it from the host display language
- *    (or `?lang=`), the DOM sweep re-skins static markup, and `t()` covers the
- *    runtime status strings — including the `{placeholder}` templates.
+ * 2. That's it for the strings listed as reached below. `localizePane`
+ *    auto-selects it from the host display language (or `?lang=`), the DOM sweep
+ *    re-skins the static markup it covers, and `t()` covers the runtime status
+ *    strings — including the `{placeholder}` templates.
  *
- * Chart OUTPUT is already language-neutral: its text is user data, its numbers
- * and dates localize via `NumberFormat.locale`, and the one engine-injected word
- * ("Other") is fed in through `ChartConfig.labels.other` — the pane sets it to
- * `t("Other")`, the pure engine just uses whatever it's given.
+ * ── Reached by a language ────────────────────────────────────────────────────
+ *  - Every `note()` and `t()` text in the pane. `test/fix-k5-pane-state-and-ui.test.ts`
+ *    reads the source and fails when one is not an `EN` key, or is built by
+ *    interpolation (a key made at run time cannot be in the catalogue; give it a
+ *    `{placeholder}` and pass the value in `params`).
+ *  - Static markup text and input placeholders, but only on the elements in
+ *    `LOCALIZE_SELECTOR` and only where the element's own text IS an `EN` key.
+ *  - The numbers a chart prints, through `NumberFormat.locale` (separators and
+ *    decimals), and the one word the pane feeds the engine, "Other", through
+ *    `ChartConfig.labels.other` (`t("Other")`).
+ *
+ * ── NOT reached: English whatever the language or `NumberFormat.locale` ──────
+ *  - Chart output beyond the numbers. Month names (Gantt ticks and spans, heatmap
+ *    months) come from a fixed English list in `core/format.ts`, with a second copy
+ *    in the heatmap layout. The words the engine itself injects — "Today", "Less"
+ *    and "More", "no data", "CAGR n/a", "Gap" — are English literals. The alt text
+ *    `describeChart` writes ("Gantt chart. 2 data series: …") is English. A chart
+ *    set to da-DK therefore prints its numbers the Danish way and the rest in
+ *    English.
+ *  - Pane text that is not a run-time status string: much of the static markup is
+ *    not an `EN` key (Cancel, Size, Fill, Insert as picture, …) or sits outside
+ *    `LOCALIZE_SELECTOR`; the labels of the controls `renderOptions` builds (Axis
+ *    scale min, Segment order, Labels: decimals, …) are plain text and not keys;
+ *    `title` and `aria-label` attributes are never translated (`translateTree`
+ *    handles element text and input placeholders only); and the sentence
+ *    `core/insert-cost.ts` writes for the slow-insert offer is English.
+ *  - The Testing panel (`harness-ui.ts`) and the in-host battery (`selftest.ts`):
+ *    developer tools, in English by design and outside the test above.
  */
 
 /**
@@ -148,12 +176,114 @@ export const EN = {
   '{n} chart(s) were too dense for this host and went in as pictures — "Explode to native shapes" turns them back.':
     '{n} chart(s) were too dense for this host and went in as pictures — "Explode to native shapes" turns them back.',
   "{n} image chart(s) fell back to native shapes.": "{n} image chart(s) fell back to native shapes.",
-  "Inserted {n} chart(s) on the current slide.": "Inserted {n} chart(s) on the current slide.",
   "Inserting demo slides… {done} of {total}": "Inserting demo slides… {done} of {total}",
   'Loaded chart 1 of {total} — use "Insert batch" for all.': 'Loaded chart 1 of {total} — use "Insert batch" for all.',
   "Working… {phase}": "Working… {phase}",
   "PowerPoint has not answered for {secs}s. Look at the slide area: if PowerPoint is showing *Sorry, we ran into a problem*, click Refresh there — nothing behind that dialog can answer. If a test run was in progress, its steps are saved and *Download the crashed run* will offer them.":
     "PowerPoint has not answered for {secs}s. Look at the slide area: if PowerPoint is showing *Sorry, we ran into a problem*, click Refresh there — nothing behind that dialog can answer. If a test run was in progress, its steps are saved and *Download the crashed run* will offer them.",
+
+  // Runtime status — what an Update, an Insert, Insert batch, Same scale, Explode
+  // and the agenda say about what happened to the chart. Added when
+  // `test/fix-k5-pane-state-and-ui.test.ts` began reading the source for every
+  // `note()` and `t()` text: 28 literal ones in app.ts were not here, a further
+  // eight were built by interpolation (`${shapes}`, `${missing}`) and so could
+  // never be — they are `{placeholder}` templates now — and Insert batch's three
+  // had replaced the "Inserted {n} chart(s) on the current slide." this file used
+  // to hold, which no caller used any more. Catalogued, not translated.
+  "Rebuilt that slide, but PowerPoint would not remove the original — the chart is now on two slides. Delete whichever you don't want.":
+    "Rebuilt that slide, but PowerPoint would not remove the original — the chart is now on two slides. Delete whichever you don't want.",
+  "Rebuilt that slide — PowerPoint would not redraw it in place. The chart is back, but the slide was REPLACED, so any speaker notes, transition or animation on it are gone (undo restores them). Select the chart to keep editing.":
+    "Rebuilt that slide — PowerPoint would not redraw it in place. The chart is back, but the slide was REPLACED, so any speaker notes, transition or animation on it are gone (undo restores them). Select the chart to keep editing.",
+  "Redrawn, but PowerPoint would not save the chart's settings back onto it — it is no longer editable from the pane. Undo (Ctrl+Z) restores the version that was.":
+    "Redrawn, but PowerPoint would not save the chart's settings back onto it — it is no longer editable from the pane. Undo (Ctrl+Z) restores the version that was.",
+  "Redrawn, but PowerPoint would not say where the new chart landed, so the pane has lost track of it. Click the chart and press Edit it to carry on.":
+    "Redrawn, but PowerPoint would not say where the new chart landed, so the pane has lost track of it. Click the chart and press Edit it to carry on.",
+  "Redrawn as a picture — PowerPoint would not redraw it in place. Select the chart to keep editing.":
+    "Redrawn as a picture — PowerPoint would not redraw it in place. Select the chart to keep editing.",
+  "PowerPoint would not redraw that chart in place, so it was redrawn from scratch.":
+    "PowerPoint would not redraw that chart in place, so it was redrawn from scratch.",
+  "Drawn as a picture — PowerPoint would not redraw the shapes.":
+    "Drawn as a picture — PowerPoint would not redraw the shapes.",
+  "The chart is on the slide, but PowerPoint would not save its settings onto it — the pane cannot re-open this one. Insert it again if you need to keep editing it.":
+    "The chart is on the slide, but PowerPoint would not save its settings onto it — the pane cannot re-open this one. Insert it again if you need to keep editing it.",
+  "Scaled to fit the space left on the slide — drag or resize it as you like.":
+    "Scaled to fit the space left on the slide — drag or resize it as you like.",
+  "Building a slide for it…": "Building a slide for it…",
+  "Rebuilding that slide…": "Rebuilding that slide…",
+  "Adding a slide…": "Adding a slide…",
+  "Added on a slide of its own, as editable shapes. Select it and this pane reloads its data.":
+    "Added on a slide of its own, as editable shapes. Select it and this pane reloads its data.",
+  "Could not add the slide{took} — inserting here as a picture.":
+    "Could not add the slide{took} — inserting here as a picture.",
+  "Could not add a slide — inserting here instead.": "Could not add a slide — inserting here instead.",
+  "Could not render the picture you chose.": "Could not render the picture you chose.",
+  "Stopped — the chart was removed and not redrawn. Undo (Ctrl+Z) restores it.":
+    "Stopped — the chart was removed and not redrawn. Undo (Ctrl+Z) restores it.",
+  "This PowerPoint cannot draw {missing}, and cannot insert a picture either (that needs PowerPointApi 1.8). Drawing it as shapes — {missing} will be missing.":
+    "This PowerPoint cannot draw {missing}, and cannot insert a picture either (that needs PowerPointApi 1.8). Drawing it as shapes — {missing} will be missing.",
+  "This PowerPoint cannot draw {missing} — that needs a newer Office (PowerPointApi 1.10). Inserted as a picture so it is complete; it stays an image here.":
+    "This PowerPoint cannot draw {missing} — that needs a newer Office (PowerPointApi 1.10). Inserted as a picture so it is complete; it stays an image here.",
+  "This PowerPoint cannot draw {missing}, and it could not be turned into a picture either. Drawing it as shapes — {missing} will be missing.":
+    "This PowerPoint cannot draw {missing}, and it could not be turned into a picture either. Drawing it as shapes — {missing} will be missing.",
+  "This PowerPoint can't insert pictures (needs PowerPointApi 1.8) — inserted native shapes instead.":
+    "This PowerPoint can't insert pictures (needs PowerPointApi 1.8) — inserted native shapes instead.",
+  "Couldn't rasterize the chart — inserted native shapes instead.":
+    "Couldn't rasterize the chart — inserted native shapes instead.",
+  "That chart is {shapes} shapes — too many for PowerPoint on the web to draw onto this slide. It can go on a slide of its own as editable shapes, or stay on this one as a picture.":
+    "That chart is {shapes} shapes — too many for PowerPoint on the web to draw onto this slide. It can go on a slide of its own as editable shapes, or stay on this one as a picture.",
+  "That chart is {shapes} shapes — too many for PowerPoint on the web to draw, so it went in as a picture. You can still edit it here: select it and this pane reloads its data. Turning it into native shapes needs the desktop app.":
+    "That chart is {shapes} shapes — too many for PowerPoint on the web to draw, so it went in as a picture. You can still edit it here: select it and this pane reloads its data. Turning it into native shapes needs the desktop app.",
+  "That chart is {shapes} shapes — too many for PowerPoint on the web to draw, and it could not be turned into a picture either. Drawing it as shapes; if PowerPoint stops responding, that is why.":
+    "That chart is {shapes} shapes — too many for PowerPoint on the web to draw, and it could not be turned into a picture either. Drawing it as shapes; if PowerPoint stops responding, that is why.",
+  // Insert batch.
+  "The JSON box holds an empty list.": "The JSON box holds an empty list.",
+  "{n} chart(s) went on the current slide because PowerPoint would not add a slide for them.":
+    "{n} chart(s) went on the current slide because PowerPoint would not add a slide for them.",
+  "Skipped {n} — {which}.": "Skipped {n} — {which}.",
+  "; and {more} more": "; and {more} more",
+  "{n} slide(s) added for a skipped chart may be empty or half-drawn — delete them if so.":
+    "{n} slide(s) added for a skipped chart may be empty or half-drawn — delete them if so.",
+  "Nothing inserted.": "Nothing inserted.",
+  "Inserted {n} of {total} chart(s).": "Inserted {n} of {total} chart(s).",
+  "Inserted {n} chart(s), one per slide.": "Inserted {n} chart(s), one per slide.",
+  "Nothing inserted — the agenda chapters box is empty. Put one chapter per line.":
+    "Nothing inserted — the agenda chapters box is empty. Put one chapter per line.",
+  // Same scale.
+  "Same scale needs to see the whole deck first — {gap}. Try again; nothing was changed.":
+    "Same scale needs to see the whole deck first — {gap}. Try again; nothing was changed.",
+  "Same scale: PowerPoint would not redraw {n} chart(s) — {which}. They are now empty; undo (Ctrl+Z) restores them.":
+    "Same scale: PowerPoint would not redraw {n} chart(s) — {which}. They are now empty; undo (Ctrl+Z) restores them.",
+  "{missed} more were never reached — the deck is not on one scale.":
+    "{missed} more were never reached — the deck is not on one scale.",
+  "Same scale reached {n} of {total} charts — PowerPoint would not answer for the other {missed}. The deck is not on one scale; try again.":
+    "Same scale reached {n} of {total} charts — PowerPoint would not answer for the other {missed}. The deck is not on one scale; try again.",
+  "The chart open in this pane may have been redrawn — click it on the slide and press Edit it to carry on.":
+    "The chart open in this pane may have been redrawn — click it on the slide and press Edit it to carry on.",
+  "Skipped {n} it could not read — {which}.": "Skipped {n} it could not read — {which}.",
+  "an unreadable chart": "an unreadable chart",
+  // Explode.
+  "Select an inserted chart first — Explode re-draws it as native shapes.":
+    "Select an inserted chart first — Explode re-draws it as native shapes.",
+  "That chart is no longer on the slide.": "That chart is no longer on the slide.",
+  "Exploded to native shapes, but PowerPoint would not save the chart's settings onto them — it is no longer editable from the pane. Undo (Ctrl+Z) restores the picture.":
+    "Exploded to native shapes, but PowerPoint would not save the chart's settings onto them — it is no longer editable from the pane. Undo (Ctrl+Z) restores the picture.",
+  "Exploded to native shapes, but PowerPoint would not say where they landed, so the pane has lost track of them. Click the chart and press Edit it to carry on.":
+    "Exploded to native shapes, but PowerPoint would not say where they landed, so the pane has lost track of them. Click the chart and press Edit it to carry on.",
+  "Exploded to native shapes — edits now update them in place.":
+    "Exploded to native shapes — edits now update them in place.",
+  "This PowerPoint cannot draw {what} — that needs a newer Office (PowerPointApi 1.10) — so the chart stays a picture. Exploding it here would leave them out.":
+    "This PowerPoint cannot draw {what} — that needs a newer Office (PowerPointApi 1.10) — so the chart stays a picture. Exploding it here would leave them out.",
+  "That chart is {shapes} shapes — too many for PowerPoint on the web to draw, so it stays a picture. Open it on the desktop app to explode it, or make the chart simpler.":
+    "That chart is {shapes} shapes — too many for PowerPoint on the web to draw, so it stays a picture. Open it on the desktop app to explode it, or make the chart simpler.",
+  // Templates, style and the preview.
+  "Couldn't save that template — this browser is not letting the pane store data ({error}).":
+    "Couldn't save that template — this browser is not letting the pane store data ({error}).",
+  "Couldn't delete that template — this browser is not letting the pane store data ({error}).":
+    "Couldn't delete that template — this browser is not letting the pane store data ({error}).",
+  "Could not read this deck's style — leaving yours in place. Try again.":
+    "Could not read this deck's style — leaving yours in place. Try again.",
+  "Could not render: {error}": "Could not render: {error}",
+  "Theme unavailable": "Theme unavailable",
   // Insert-phase words (the {phase} fill above).
   "opening PowerPoint…": "opening PowerPoint…",
   "building shapes…": "building shapes…",
