@@ -138,6 +138,16 @@ PowerPoint against a fully green suite. `strictShapeReads` is off by default
 only because the fake's shape objects double as the surface tests assert
 geometry against — the others are always in force once armed.
 
+`groupMembersSilentOn` and `groupSilentOn` are the same family one level down:
+a group's MEMBERS answering for their id and nothing else, and the group
+answering where it is but not how big (`silentReadsAs` picks between the throw
+Office.js makes for an unpopulated field and a plain `undefined`). They exist
+because the two checks that read member sizes back are "positive evidence only",
+which makes them untestable on a fake that answers everything, and they are NOT
+a claim about the live host — the archive's `sizes: 8` says member widths and
+heights do come back there. `resize-on-a-silent-host.test.ts` is the suite that
+drives them, with `helpers/group-resize.ts` staging the hand resize.
+
 `newSlideResolvesTimes` is the one that came from an answer sheet rather than a
 crash. PowerPoint on the web resolved a freshly-added slide's id **once** and
 refused it ever after — while still listing that same id in

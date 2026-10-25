@@ -532,6 +532,44 @@ export const faults = {
   refuseGroupRead: false,
   /** Refuse the group read N times, then allow it — the case where a retry can pay. */
   refuseGroupReadTimes: 0,
+  /**
+   * Group members that answer for their id and for nothing else.
+   *
+   * The properties named here are not answered when a member is read THROUGH ITS
+   * GROUP (`shape.group.shapes.items`): the load was queued, the sync landed, and
+   * the host populated nothing for them. The same shape read off the slide's own
+   * collection still answers, because that is a different read.
+   *
+   * Why it exists. `checkShapesAgainstScene` and `liveScaleOfScene` are
+   * "positive evidence only": a field the host did not answer for is skipped, so
+   * a host that answers none behaves as it did before they existed. That is the
+   * right rule and it left them untestable on the one host they were written for,
+   * because this fake answered every name, width and height and so could not
+   * fail the way a withholding host does. Both were verified here and nowhere
+   * else (0557c3e, 693c813).
+   *
+   * What the host really answers is NOT established by this switch. Rounds
+   * 498-501 carry `sizes: 8` on every geometry-writing in-place update, so member
+   * widths and heights do come back on those charts; this models the host the
+   * guard still has to survive, not the one the archive shows.
+   *
+   * See `silentReadsAs` for what a withheld read looks like.
+   */
+  groupMembersSilentOn: [] as ("name" | "width" | "height")[],
+  /**
+   * The GROUP's own width and height, withheld the same way. `left` and `top` are
+   * never withheld: the origin tag's arithmetic reads them and the archive says
+   * they come back.
+   */
+  groupSilentOn: [] as ("width" | "height")[],
+  /**
+   * How a withheld read presents. `"throws"` is what Office.js does for a
+   * property the response did not populate (`PropertyNotLoaded`, thrown by the
+   * getter); `"undefined"` is a host that populates the field with nothing.
+   * `loadedValue` turns both into `undefined`, so the product cannot tell them
+   * apart — a probe that reads the raw property can, which is why both exist.
+   */
+  silentReadsAs: "throws" as "throws" | "undefined",
   /** See `settleAddedSlideId`. Null is off; N settles the id after N lookups. */
   newSlideIdSettlesAfter: null as number | null,
   /**
@@ -1094,6 +1132,38 @@ function makeTagProxy(store: Map<string, string>, key: string, onUntrack?: () =>
   };
 }
 
+/**
+ * A property the host took the load for and did not populate, presented as
+ * `faults.silentReadsAs` says. The message is the one `strictShapeReads` throws,
+ * so a probe or a trace that parses `code=PropertyNotLoaded` reads it the same.
+ */
+function withheldRead(prop: string): undefined {
+  if (faults.silentReadsAs === "undefined") return undefined;
+  throw new Error(
+    `The property '${prop}' is not available. Before reading the property's value, call the load ` +
+      'method on the containing object and call "context.sync()" on the associated request context. ' +
+      `| code=PropertyNotLoaded | errorLocation=Shape.${prop}`,
+  );
+}
+
+/**
+ * A group member as `group.shapes.items` hands it over: the shape itself, with
+ * the properties `faults.groupMembersSilentOn` names withheld. Writes go through
+ * to the one real shape, because a write needs no load and the in-place applier
+ * writes members whose sizes it was never told.
+ */
+function memberView<T extends object>(member: T): T {
+  if (!faults.groupMembersSilentOn.length) return member;
+  return new Proxy(member, {
+    get(target, prop) {
+      if (typeof prop === "string" && (faults.groupMembersSilentOn as string[]).includes(prop))
+        return withheldRead(prop);
+      return Reflect.get(target, prop, target);
+    },
+    set: (target, prop, value) => Reflect.set(target, prop, value),
+  });
+}
+
 export function makeShape(
   type: string,
   geo: string | undefined,
@@ -1380,7 +1450,7 @@ export function makeShape(
         shapes: {
           getCount: () => ({ value: live().length }),
           get items() {
-            return live();
+            return live().map((member) => memberView(member));
           },
           load() {},
         },
@@ -1489,6 +1559,11 @@ function freshHandle(shape: FakeShape, override?: { id: string }): FakeShape {
       // tag written through it was refused, which is the fake refusing a fix the
       // host allows (`collection-read-poisons-the-creation-handle: yes`).
       if (prop === "viaFreshHandle") return true;
+      // See `faults.groupSilentOn`: the group answers where it is, and not how big
+      // it is. Keyed on the handle's type, so a member read off the slide's own
+      // collection is untouched.
+      if ((prop === "width" || prop === "height") && target.type === "group" && faults.groupSilentOn.includes(prop))
+        return withheldRead(prop);
       // `tags` has to be rebound too. The shape's own tags object closes over
       // the shape's age, so a fresh handle reaching for `.tags` would get a
       // writer that still consults the STALE number and refuses — the handle
@@ -3263,6 +3338,9 @@ export function installHost(
   failSyncsOn.clear();
   stallSyncOn.clear();
   faults.strictGroup = false;
+  faults.groupMembersSilentOn = [];
+  faults.groupSilentOn = [];
+  faults.silentReadsAs = "throws";
   faults.strictTags = false;
   faults.refuseCustomXmlWrites = false;
   faults.refuseCustomXmlReads = false;
