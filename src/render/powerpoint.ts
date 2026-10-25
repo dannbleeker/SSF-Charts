@@ -678,6 +678,36 @@ export interface EditTarget {
 }
 
 /**
+ * What `updateChartsInSlides` answers: the targets of the charts it resolved,
+ * exactly as it has always returned them, and which of the charts it was ASKED
+ * about each one is.
+ *
+ * The list alone could not say. A chart whose slide or shape the host would not
+ * resolve is dropped from it, one a Stop came before is in it with the target it
+ * went in with, and so is a chart written in place where it stands — so a caller
+ * holding N charts and getting fewer than N back could pair them up by position
+ * only where nothing had been dropped. `followRescale` was that caller: a slide
+ * with two asked charts and one answer left the pane unable to tell a chart that
+ * was redrawn (its id is dead) from one that was never touched (its id is live),
+ * and it could only say it did not know.
+ *
+ * `perItem` is one entry per chart asked, in the order asked:
+ *
+ * - **a target** — the chart was written: redrawn, or updated in place. It is
+ *   the entry the list carries for it, `lost` and all, so a chart whose delete
+ *   committed and whose redraw then failed answers with its spent target
+ *   (`unknown-shape`), not with `null`.
+ * - **`null`** — the call never touched it: the host would not resolve its slide
+ *   or its shape, a Stop came before it, or a redraw failed before the delete
+ *   committed. The target the caller passed in is still the truth about it.
+ *
+ * A property on the list rather than a different return, so every caller that
+ * reads the targets keeps reading them. Not enumerable, so the list is still
+ * exactly what a comparison, a spread or `JSON.stringify` sees it as.
+ */
+export type UpdatedTargets = EditTarget[] & { readonly perItem: readonly (EditTarget | null)[] };
+
+/**
  * Where an insert has got to. A host that stops answering does not throw — the
  * sync promise simply never settles — so without this a stall is
  * indistinguishable from slow work, and there is nothing to report but a
@@ -2888,6 +2918,54 @@ function withoutSize(target: EditTarget): EditTarget {
 }
 
 /**
+ * `targets` with the per-chart answer attached — see `UpdatedTargets`.
+ *
+ * `touchedAs` maps an index in `targets` to the index of the chart asked about
+ * that it answers for, and holds ONLY the charts this call touched: the rest stay
+ * `null`. Built from the call's own bookkeeping rather than read back off the
+ * targets, because a target cannot say it: the one a Stop left alone and the one
+ * an in-place edit returned are the same object.
+ */
+function withPerItemAnswer(targets: EditTarget[], touchedAs: Map<number, number>, asked: number): UpdatedTargets {
+  const perItem = Array.from({ length: asked }, (): EditTarget | null => null);
+  for (const [i, k] of touchedAs) perItem[k] = targets[i] ?? null;
+  return Object.defineProperty(targets, "perItem", { value: perItem }) as UpdatedTargets;
+}
+
+/**
+ * The charts an update drew whose config tag did not land, as the settle pass
+ * wants them — keyed by their index in `updated`.
+ *
+ * Same contract as the insert path: charts whose config tag the drawing context
+ * could not write, settled and tagged from a fresh one afterwards. This is the
+ * path `same scale across the deck` drives, and the one that reported "3 of 8
+ * charts carry the shared scale" on a real host.
+ */
+function chartsToSettle(
+  updated: EditTarget[],
+  planned: (string | undefined)[],
+  untargeted: Set<number>,
+): { key: string; slideId: string; tagData: string; shapeId?: string }[] {
+  return (
+    updated
+      // `planned`, not `items` — the two are different index spaces the moment a
+      // single item is filtered out, and mixing them tagged the wrong chart.
+      .map((t, i) => ({ t, i, tagData: planned[i] }))
+      .filter(({ t, tagData }) => t.lost === "no-config" && tagData)
+      .map(({ t, i, tagData }) => ({
+        key: String(i),
+        slideId: t.slideId,
+        tagData: tagData!,
+        // Omitted for a chart whose new shapes were never read back: its
+        // `shapeId` names the shape THIS call deleted. Handing that to the settle
+        // buys a guaranteed failure on a dead id in place of the collection
+        // search that is the only thing left with a chance.
+        shapeId: untargeted.has(i) ? undefined : t.shapeId,
+      }))
+  );
+}
+
+/**
  * Replace any number of existing SSF charts in place, in ONE request context.
  *
  * Every Office.js sync is a round-trip to PowerPoint, so the thing that must not
@@ -3191,28 +3269,28 @@ export async function deleteShapesById(slideId: string, ids: string[]): Promise<
   }
 }
 
+/**
+ * Replace SSF charts in place — see the block above `UpdateWreckage` for the
+ * batching and the failure contract. Answers `UpdatedTargets`: the targets of the
+ * charts it resolved, and, in `perItem`, one answer for every chart asked.
+ */
 export async function updateChartsInSlides(
   asked: { scene: Scene; target: EditTarget; opts?: InsertOptions }[],
   onFailed?: (item: { scene: Scene; target: EditTarget; opts?: InsertOptions }, err: unknown) => void,
-): Promise<EditTarget[]> {
+): Promise<UpdatedTargets> {
   // `EditTarget.size` is an ANSWER and never a question. A caller hands back the
   // target its last update returned, so one that carries a size would be echoed
   // by every path that returns the target it was given (an in-place edit, a
   // chart the host never resolved), and the pane would take over, after an edit
   // that resized nothing, a size it had since changed.
   const items = asked.map((it) => (it.target.size ? { ...it, target: withoutSize(it.target) } : it));
-  if (!items.length) return [];
+  if (!items.length) return withPerItemAnswer([], new Map(), 0);
   for (const it of items) slidesWithALostChart.delete(it.target.slideId);
   // A REFUSAL IN AN EARLIER BATCH SAYS NOTHING ABOUT THIS ONE — see
   // `forgetGroupReadRefusal`. Latched for the session, one refusal turned every
   // later update in the round into a redraw: 46 of them across the last 25
   // rounds, against 0 before the latch fired.
   forgetGroupReadRefusal();
-  // Same contract as the insert path: charts whose config tag the drawing
-  // context could not write, settled and tagged from a fresh one afterwards.
-  // This is the path `same scale across the deck` drives, and the one that
-  // reported "3 of 8 charts carry the shared scale" on a real host.
-  const untagged: { key: string; slideId: string; tagData: string; shapeId?: string }[] = [];
   /**
    * Charts that reached the slide and came back with NO tagged target.
    *
@@ -3242,6 +3320,12 @@ export async function updateChartsInSlides(
    * `items` is not that space. See where this is filled, inside the map below.
    */
   const planned: (string | undefined)[] = [];
+  /**
+   * Which chart ASKED about each returned target answers for, and only for the
+   * charts this call touched — the key is an index in `updated`, the same space
+   * as `planned`, and the value an index in `items`. See `withPerItemAnswer`.
+   */
+  const touchedAs = new Map<number, number>();
   const updated = await ppRun(async (context) => {
     // 1. Resolve every old shape — one sync for all of them.
     //
@@ -3250,10 +3334,12 @@ export async function updateChartsInSlides(
     // on a stale id — "InvalidParam passed to GetItem(id)", code 5010, which is
     // a normal condition wearing a crash's clothes. A chart whose slide is gone
     // is not an error, it is nothing to do.
-    const found = items.map((it) => {
+    // `k` is the chart's place in what was asked. The filters below drop charts,
+    // and once they have nothing else says which ones — see `withPerItemAnswer`.
+    const found = items.map((it, k) => {
       const slide = context.presentation.slides.getItemOrNullObject(it.target.slideId);
       queueNullCheck(slide);
-      return { it, slide };
+      return { it, slide, k };
     });
     await boundedSync(context, "resolving the charts' slides");
 
@@ -3261,7 +3347,7 @@ export async function updateChartsInSlides(
     // would not answer for is one we cannot safely delete a chart off.
     const live = found.filter(({ slide }) => isLive(slide));
     if (!live.length) return [];
-    const withOld = live.map(({ it }) => {
+    const withOld = live.map(({ it, k }) => {
       // A FRESH handle for the lookups, not the one the liveness check above
       // just resolved — that one is a sync old by now, and a sync-old by-id
       // handle on a slide added this session is what the web host refuses. The
@@ -3365,7 +3451,7 @@ export async function updateChartsInSlides(
       // round to measure rather than restructured on that theory — the batch
       // shape here has three shipped-broken fixes on record behind it.
       const groupMembers = parts.length ? undefined : queueGroupMembers(old);
-      return { it, old, parts, groupMembers, wasConfig, wasScene };
+      return { it, k, old, parts, groupMembers, wasConfig, wasScene };
     });
     // WHAT THE BATCH ARRIVED CARRYING — the measurement the comment above asks
     // for, taken before the sync that may refuse it.
@@ -3587,8 +3673,13 @@ export async function updateChartsInSlides(
      * chart is left on the slide. That is the regression the test "tells the
      * caller what EVERY stalled chart destroyed" exists to prevent, arriving
      * through a different door.
+     *
+     * Their indices in `alive` rather than a count, because the per-chart answer
+     * has to know WHICH landed: an edit that moved nothing is handed back as the
+     * target it went in with, which is also what a chart a Stop came before is
+     * handed back as. See `withPerItemAnswer`.
      */
-    let landedInPlace = 0;
+    const landedInPlace = new Set<number>();
     /**
      * The targets in-place landings hand back that are NOT the caller's own, by
      * index in `alive` — the same index `placed` uses. An edit that moved the
@@ -3639,7 +3730,7 @@ export async function updateChartsInSlides(
         // would hand `groupAndTagAll` a chart whose shapes it never drew, and
         // shift every later chart's `placed` index onto another chart's ids.
         if (landed !== it.target) movedInPlace.set(i, landed);
-        landedInPlace++;
+        landedInPlace.add(i);
         continue;
       }
       // The redraw, at the size the person gave the chart if they resized it.
@@ -3789,7 +3880,7 @@ export async function updateChartsInSlides(
     // it just deleted. `landedInPlace` is what stops a partly-successful batch
     // taking this exit: with one item a chart cannot both land in place and
     // fail, so the single-chart contract is untouched.
-    if (!rendered.length && !landedInPlace && firstFailure !== undefined) throw firstFailure;
+    if (!rendered.length && !landedInPlace.size && firstFailure !== undefined) throw firstFailure;
 
     // 4-5. Group, then tag — one sync each, however many charts.
     const tagged = await step("grouping and tagging the redrawn charts", () =>
@@ -3807,7 +3898,7 @@ export async function updateChartsInSlides(
     //    existed, was filtered out as "the user deleted this chart", and did
     //    nothing at all — silently. Auto-update died the same way after its
     //    first push. Returning the new target is what lets a caller stay live.
-    return alive.map(({ it, at }, i) => {
+    return alive.map(({ it, at, k }, i) => {
       // The config THIS entry's chart carries, captured here and nowhere else.
       //
       // The settle plan below used to read `items[i]`, and `i` counts `alive`,
@@ -3824,6 +3915,11 @@ export async function updateChartsInSlides(
       // to resolve one shape with the 5010 this repo has logged 66 times in a
       // single run.
       planned[i] = it.opts?.tagData;
+      // TOUCHED means written: landed in place, or its old shapes are committed
+      // gone — `wrecked` holds a redraw that finished as well as one that failed.
+      // A chart a Stop came before, or whose redraw failed before the delete
+      // committed, is in neither, and its entry below is the target it went in with.
+      if (landedInPlace.has(i) || wrecked.has(i)) touchedAs.set(i, k);
       const stayed = movedInPlace.get(i);
       if (stayed) return stayed;
       // Through `placed`, never by position: a chart that failed above is
@@ -3879,22 +3975,7 @@ export async function updateChartsInSlides(
 
   // Outside the run, for the reason the insert path is: the context that could
   // not write the tag cannot write it now either.
-  const wanted = updated
-    // `planned`, not `items` — the two are different index spaces the moment a
-    // single item is filtered out, and mixing them tagged the wrong chart.
-    .map((t, i) => ({ t, i, tagData: planned[i] }))
-    .filter(({ t, tagData }) => t.lost === "no-config" && tagData);
-  for (const { t, i, tagData } of wanted)
-    untagged.push({
-      key: String(i),
-      slideId: t.slideId,
-      tagData: tagData!,
-      // Omitted for a chart whose new shapes were never read back: its
-      // `shapeId` names the shape THIS call deleted. Handing that to the settle
-      // buys a guaranteed failure on a dead id in place of the collection
-      // search that is the only thing left with a chance.
-      shapeId: untargeted.has(i) ? undefined : t.shapeId,
-    });
+  const untagged = chartsToSettle(updated, planned, untargeted);
   /**
    * Every chart this batch can still call re-editable — see `namedShape`.
    *
@@ -3909,13 +3990,16 @@ export async function updateChartsInSlides(
     for (const t of ts) if (!t.lost) rememberNamedShape(t.slideId, t.shapeId);
     return ts;
   };
-  if (!untagged.length) return recordNamed(updated);
+  // The per-chart answer is attached to what the settle leaves, not to what the
+  // run returned: a settle that lands changes the target it answers with.
+  const answer = (ts: EditTarget[]) => withPerItemAnswer(recordNamed(ts), touchedAs, items.length);
+  if (!untagged.length) return answer(updated);
   const settledIds = await settleUntaggedCharts(untagged);
   // Per chart, by INDEX: a run where one settle landed and another did not must
   // not report both as re-editable, and the pane reads `lost` per target. Shape
   // id cannot do this job — the charts that most need the settle are exactly
   // the ones with no id to be keyed by.
-  return recordNamed(
+  return answer(
     updated.map((t, i) => afterSettle(t, { settled: settledIds.has(String(i)), untargeted: untargeted.has(i) })),
   );
 }

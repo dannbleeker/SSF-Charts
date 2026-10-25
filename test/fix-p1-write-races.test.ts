@@ -817,7 +817,12 @@ describe("r2-16 — Same Scale and the chart the pane is editing", () => {
     await loadSelected("A");
     // The renderer's own answer for a chart it redrew and could not tag: the OLD
     // id, marked lost. Keeping it made the next push resolve a deleted shape.
-    hold.batchAnswer = (items) => items.map((i) => ({ ...(i.target as EditTargetLike), lost: "no-config" }));
+    // And the per-chart answer that goes with the list (`UpdatedTargets.perItem`):
+    // every chart asked was written, so every entry is an answer.
+    hold.batchAnswer = (items) => {
+      const list = items.map((i) => ({ ...(i.target as EditTargetLike), lost: "no-config" }));
+      return Object.assign(list, { perItem: list });
+    };
     $("same-scale").click();
     await idle("Same Scale to finish");
     expect($("insert").textContent, "the pane kept a target Same Scale had destroyed").toBe("Insert into slide");

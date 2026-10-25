@@ -364,10 +364,21 @@ describe("a clicked Update that waited behind a write which lost the chart is no
 /* ─────────────────────────────── r3-36 ───────────────────────────────────────── */
 
 describe("Same Scale that reaches only some charts leaves the pane on a live target (r3-36)", () => {
-  /** The real batch, asked for only the charts on `keep` — the host declining the rest. */
+  /**
+   * The real batch, with the charts NOT on `keep` handed over naming a shape the
+   * slide does not answer for — the host declining the rest, inside the renderer.
+   * Leaving them out of the items instead hides them from it, and its per-chart
+   * answer (`UpdatedTargets.perItem`) is then about fewer charts than the pane asked.
+   */
   const reachOnly =
     (keep: string[]) => (items: { target: unknown }[], real: (items: unknown[]) => Promise<unknown[]>) =>
-      real(items.filter((i) => keep.includes((i.target as EditTargetLike).slideId)));
+      real(
+        items.map((i) =>
+          keep.includes((i.target as EditTargetLike).slideId)
+            ? i
+            : { ...i, target: { ...(i.target as object), shapeId: "no-such-shape" } },
+        ),
+      );
 
   async function threeCharts() {
     const deck = await deckWith(
@@ -434,7 +445,10 @@ describe("Same Scale that reaches only some charts leaves the pane on a live tar
     expect(chartsOn(deck.slides[0]).map((c) => c.cfg.title)).toEqual(["A edited"]);
   });
 
-  it("says so when it cannot tell: two charts on the pane's slide and only one came back", async () => {
+  it("tells which of two charts on the pane's slide came back, so the pane is not left guessing", async () => {
+    // This was "says so when it cannot tell": the renderer's list could not say
+    // which of the two it had dropped. Its per-chart answer can (fix-m3 has the
+    // whole matrix), so the pane's chart is left alone without a word about it.
     const deck = await deckWith(
       [
         { slide: "s1", cfg: cfgOf("A", [1, 2, 3]) },
@@ -446,14 +460,18 @@ describe("Same Scale that reaches only some charts leaves the pane on a live tar
     await bootPane();
     userSelects(deck, "s1", [deck.ids[0]]);
     await loadSelected("A");
-    // Of the two on s1 the host answers for one, and for B.
-    hold.batchAnswer = (items, real) => real([items[1], items[2]]);
+    // Of the two on s1 the host answers for one (A2), and for B.
+    hold.batchAnswer = (items, real) =>
+      real([{ ...items[0], target: { ...(items[0].target as object), shapeId: "no-such-shape" } }, items[1], items[2]]);
     $("same-scale").click();
     await idle("Same Scale to finish");
     expect(noteText()).toMatch(/Same scale reached 2 of 3 charts/);
-    expect(noteText(), "nothing told the person the pane's chart may have moved").toMatch(
-      /may have been redrawn — click it on the slide and press Edit it/,
-    );
+    expect(noteText(), "the pane was blamed for a chart that was never touched").not.toMatch(/open in this pane/);
+    typeTitle("A edited");
+    $("insert").click();
+    await idle("the update to finish");
+    expect(noteText()).toBe("Done.");
+    expect(chartsOn(deck.slides[0]).find((c) => c.cfg.title === "A edited")?.id).toBe(deck.ids[0]);
   });
 });
 

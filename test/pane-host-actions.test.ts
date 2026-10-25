@@ -412,11 +412,16 @@ vi.mock("../src/render/powerpoint", () => ({
       // this array (it comes back carrying its OLD target), which is why the two
       // signals do not double-count. `updateChartsDrops` is how a test arms the
       // silent case.
-      return items
+      const resolved = items
         .slice(host.updateChartsDrops)
         .map((it, i) =>
           host.updateChartsKept.has(i) ? { ...(it.target as object), size: host.updateChartsKept.get(i) } : it.target,
         );
+      // And the per-chart answer the real one attaches (`UpdatedTargets.perItem`):
+      // one entry for every chart ASKED, in the order asked, `null` for the ones
+      // dropped above — which is how the pane tells its own chart apart.
+      const dropped = Array.from({ length: Math.min(host.updateChartsDrops, items.length) }, () => null);
+      return Object.assign(resolved, { perItem: [...dropped, ...resolved] });
     },
   ),
   listChartsInDeck: vi.fn(async (opts: { withInventory?: boolean } = {}) => {

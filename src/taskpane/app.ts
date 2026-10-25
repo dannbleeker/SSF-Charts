@@ -45,6 +45,7 @@ import {
   dropShapeSelection,
   type EditTarget,
   type InsertPhase,
+  type UpdatedTargets,
   type UpdateWreckage,
 } from "../render/powerpoint";
 import { placeChart, type Placement } from "../core/placement";
@@ -3502,7 +3503,7 @@ async function runSameScale(scope: "deck" | "selection") {
   const destroyed: EditTarget[] = [];
   /** The Stop that cut a redraw short, if one did — `guard` says what it cost. */
   let stoppedRedraw: unknown;
-  let applied: EditTarget[];
+  let applied: UpdatedTargets;
   try {
     applied = await updateChartsInSlides(
       rescaled.map((c, i) => ({
@@ -3556,12 +3557,7 @@ async function runSameScale(scope: "deck" | "selection") {
   }
   // Before any of the early returns below: the pane's chart may have been
   // redrawn under a new id whichever way this ends.
-  const paneUnsure = followRescale(rescaled, applied);
-  // Said after the note's own sentences, and only when the pane could not tell
-  // whether the chart it holds is one that was redrawn.
-  const paneNote = paneUnsure
-    ? t("The chart open in this pane may have been redrawn — click it on the slide and press Edit it to carry on.")
-    : "";
+  followRescale(rescaled, applied);
   // Charts the host silently declined to resolve at all.
   //
   // `updateChartsInSlides` drops those — its `live`/`alive` filters are early
@@ -3570,6 +3566,12 @@ async function runSameScale(scope: "deck" | "selection") {
   // target), so these two counts never double-report the same chart. The
   // success note used to say `parsed.length`, the charts REQUESTED, which is
   // how a run that rescaled one of six reported six with nothing else said.
+  //
+  // Counted on the list, not on `applied.perItem`, on purpose: the answer's
+  // `null`s are these charts AND the ones a Stop came before and the ones that
+  // stalled before their delete — a Stop is `guard`'s to report and a stall is
+  // already in `stalled` — so counting them all would report one chart twice.
+  // For a run that reaches the success and "reached n of m" notes the two agree.
   const missed = rescaled.length - applied.length;
   if (stalled.length) {
     note(
@@ -3579,7 +3581,6 @@ async function runSameScale(scope: "deck" | "selection") {
           { n: stalled.length, which: stalled.join(", ") },
         ),
         missed > 0 ? t("{missed} more were never reached — the deck is not on one scale.", { missed }) : "",
-        paneNote,
         skipped,
       ]
         .filter(Boolean)
@@ -3605,7 +3606,6 @@ async function runSameScale(scope: "deck" | "selection") {
           "Same scale reached {n} of {total} charts — PowerPoint would not answer for the other {missed}. The deck is not on one scale; try again.",
           { n: applied.length, total: rescaled.length, missed },
         ),
-        paneNote,
         skipped,
       ]
         .filter(Boolean)
@@ -3670,47 +3670,46 @@ async function runSameScale(scope: "deck" | "selection") {
  *    over: the pane may hold edits the slide has not seen, and replacing its
  *    config wholesale would throw them away.
  *
- * `applied` holds one target per chart the renderer resolved, in the order they
- * were asked for, and a chart the host dropped leaves a gap — so an entry is
- * matched to its chart by position only where nothing was dropped. That used to
- * be the whole deck: with any chart missing anywhere the pane was left as it
- * was, and "as it was" is a dead id whenever the pane's own chart was one of
- * those that WERE redrawn — the host declining a different chart, or the user
- * deleting one mid-run, is enough. The next Update then said "That chart is no
- * longer on the slide", flipped to "Insert into slide", and pressing it put a
- * second copy on the slide; a retry of Same Scale could not help, because it
- * matches on the id the pane no longer has.
+ * The list `applied` is the targets the renderer resolved, and a chart the host
+ * dropped leaves a gap in it — so an entry can be matched to its chart by
+ * position only where nothing was dropped. That used to be the whole deck: with
+ * any chart missing anywhere the pane was left as it was, and "as it was" is a
+ * dead id whenever the pane's own chart was one of those that WERE redrawn — the
+ * host declining a different chart, or the user deleting one mid-run, is enough.
+ * The next Update then said "That chart is no longer on the slide", flipped to
+ * "Insert into slide", and pressing it put a second copy on the slide; a retry
+ * of Same Scale could not help, because it matches on the id the pane no longer
+ * has.
  *
- * A target keeps its slide, so the match is made WITHIN the chart's slide: when
- * every chart asked of that slide came back, they pair up in order, whatever
- * happened elsewhere; when none did, the pane's chart was not touched and its
- * target is still good. Only a slide with two or more of the asked charts and a
- * partial answer cannot say which of them it dropped, and there the pane is left
- * as it was and the note says so (see `runSameScale`) — a guess either way is a
- * duplicate on the slide or a live chart the pane has let go of.
+ * Matching WITHIN the chart's slide settled every slide but the one with two or
+ * more asked charts and a partial answer, where the list could not say which of
+ * them had been dropped and the pane was left as it was, with a note that it
+ * could not tell. `applied.perItem` says. It holds one answer for every chart
+ * asked, in the order asked — the new target of one that was written, `null` for
+ * one the renderer never touched — so the pane's chart is read off its own place
+ * in it, whatever happened to the others on its slide or off it:
+ *
+ *  - written: the pane adopts the new target and the scale;
+ *  - `null`: the pane is left alone. Its target is still live, and its copy of
+ *    the config never got the scale — a chart a Stop came before used to be
+ *    handed both, because the list carries it with the target it went in with;
+ *  - written and spent (`lost`): the pane lets go of it.
  *
  * Matched against what the pane holds NOW rather than when this started: the
  * user may have opened another chart while it ran, and that chart's target is
  * the stale one only if it was read before its redraw.
- *
- * Answers whether the pane could NOT tell if its chart was redrawn (the slide
- * with two or more asked charts and a partial answer), so the note can say so.
  */
-function followRescale(rescaled: { target: EditTarget; cfg: ChartConfig }[], applied: EditTarget[]): boolean {
+function followRescale(rescaled: { target: EditTarget; cfg: ChartConfig }[], applied: UpdatedTargets): void {
   const i = rescaled.findIndex((c) => sameChart(c.target, state.editTarget));
-  if (i < 0) return false;
-  const slideId = rescaled[i].target.slideId;
-  const asked = rescaled.filter((c) => c.target.slideId === slideId);
-  const got = applied.filter((a) => a.slideId === slideId);
-  if (!got.length) return false;
-  if (got.length !== asked.length) return true;
-  const back = got[asked.indexOf(rescaled[i])];
+  if (i < 0) return;
+  const back = applied.perItem[i];
+  if (!back) return;
   // Redrawn and not something the pane can come back to — the same two reasons
   // `runInsert` lets go of a lost target. The old id names a shape this very
   // batch deleted.
   if (back.lost) {
     dropTarget(rescaled[i].target);
-    return false;
+    return;
   }
   state.editTarget = back;
   const scale = rescaled[i].cfg.scale;
@@ -3721,7 +3720,6 @@ function followRescale(rescaled: { target: EditTarget; cfg: ChartConfig }[], app
   // not pushed back by Auto-update. (`adoptKeptSize` draws too, at the size.)
   if (back.size) adoptKeptSize(back);
   else drawPreview();
-  return false;
 }
 
 async function doLoadSelection() {

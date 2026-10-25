@@ -519,12 +519,13 @@ count of how many of its options are currently on.
   deck does not have. If the chart open in the pane is one of
   them, the pane follows it to its redrawn shape and takes over the shared
   axis scale, so the next **Update chart** does not undo it — also when the
-  run reached only some of the charts. (Only when two of the charts on the open
-  chart's slide were asked and one answered can the pane not tell which was
-  redrawn; the note then says to click the chart and press **Edit it**.) A chart
-  whose stored settings cannot be read — a tag that is not JSON, or one with no
-  chart data in it, such as an agenda slide an older skill deck marked as a
-  chart — is left out and named in the note, and the rest are rescaled.
+  run reached only some of the charts, however many others share its slide. If
+  the run did not reach the open chart (PowerPoint would not answer for it, or
+  you pressed Stop first) the pane stays on it as it was, with the scale it
+  still has. A chart whose stored settings cannot be read — a tag that is not
+  JSON, or one with no chart data in it, such as an agenda slide an older skill
+  deck marked as a chart — is left out and named in the note, and the rest are
+  rescaled.
 - **Download SVG / Download PNG** (overflow menu) save the preview as a vector
   or a 2× raster image — handy for email or chat, where the native-shape output
   can't go. The real deliverable is still **Insert into slide** (editable shapes).

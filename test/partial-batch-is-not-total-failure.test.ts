@@ -96,12 +96,12 @@ describe("a batch where one chart lands in place and another's redraw fails", ()
       src,
       "the nothing-landed guard counts only redrawn charts again, so a batch that updated some charts " +
         "in place and failed to redraw the rest will report total failure — and skip the wreckage sweep",
-    ).toMatch(/!rendered\.length\s*&&\s*!landedInPlace\s*&&\s*firstFailure !== undefined/);
+    ).toMatch(/!rendered\.length\s*&&\s*!landedInPlace\.size\s*&&\s*firstFailure !== undefined/);
     // And the counter must not be quietly satisfied by pushing in-place charts
     // into `rendered`, which would shift every later chart's `placed` index
     // onto another chart's shape id.
     expect(src, "in-place charts are being pushed into `rendered` — that corrupts the returned targets").toMatch(
-      /landedInPlace\+\+;\s*\n\s*continue;/,
+      /landedInPlace\.add\(i\);\s*\n\s*continue;/,
     );
   });
 });
