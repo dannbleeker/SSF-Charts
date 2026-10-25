@@ -3116,6 +3116,75 @@ What ~290 rounds against the live host have established. Kept because the
 finding outlives the fix: each one says what was measured and how, so nobody
 re-derives it. Open questions among them are marked as such.
 
+### The third bug hunt, 2026-10-25: the fixes reviewed. 84 found, 79 fixed, and what is left
+
+A third read-only hunt ran over `8f05213`, the code AFTER the 123 fixes below and the
+live rounds that validated them, with 13 angles: three finders reading the fixes
+themselves for regressions (renderer, pane and bridge, engine), a differential of the
+engine before and after today (25,000 random configs), the harness and test fixes,
+untrusted input, documentation against behaviour, a fuzz of all 25 kinds, locale,
+pane accessibility, the headless skill, build and release, and tags and persistence.
+197 agents, 92 reports, 84 confirmed by a verifier who reproduced it and a second who
+checked it against this file, tests and comments; 8 refuted or intended. Many were
+found by two or three finders; 79 distinct ones were fixed on 2026-10-25 (`f3d289c`
+to `97e91a5`), each with a test that fails without it.
+
+Two were worth checking by hand before trusting the finders, and held up. **The
+clipped axis numbers were old, not a regression:** the engine before today prints
+exactly the same `2,000…` for a chart with values to 2,000,000, so this was a defect
+in the fixed 34pt gutter, found by the differential and fixed in `9f5f591`.
+**`03-01-2026` read as 1 March was also old**, but the Excel bridge fix `c668a1d` made
+a Danish Excel date label arrive in exactly that spelling, so it newly reached users;
+the bridge now holds the display text to the serial and the engine reads dates by one
+rule (`f3d289c`, `97e91a5`).
+
+**Deliberately NOT changed, and yours to decide:**
+
+1. **Deploy Pages publishes whichever tested commit's CI finishes last** (`pages.yml`):
+   re-running CI on an OLDER main commit rolls the live site back. Release machinery,
+   so left alone. A fix would deploy only when the run's sha is main's tip.
+2. **`skill-latest`** (the rolling skill release) has a tag that never moves, 1,411
+   commits behind, and a CI re-run on an old commit overwrites its zip with an older
+   build.
+3. **`release.yml` dispatched from a non-default ref** builds and tests that ref but
+   creates the tag on the default branch's head.
+4. **Formulas typed in the datasheet are not stored in the chart tag**, so reopening a
+   chart replaces every formula with its value. A data-format decision; the manual
+   now says so.
+5. **Control borders and grid hairlines are under 3:1** against the pane's panels
+   (1.49:1 light, 1.33:1 dark; datasheet hairlines 1.23:1 and 1.16:1; the grid header
+   fill 1.13:1 and 1.16:1). Only the Stop button's hover, which was a plain bug
+   (1.01:1, an undeclared token), was fixed. A design decision.
+6. **Label line breaks in the remaining layouts** (the earlier item 4 in the list
+   below): the third hunt added callout text, heatmap row and column names, combo line
+   names and the waffle legend to the sites that still box a break as one line.
+
+**What the fixes left undone, found while reading them:**
+
+- **Years on a scatter's x axis print `2,015`:** `NumberFormat` has no grouping
+  switch. Options: add `numberFormat.grouping` (default true) with a pane toggle, or
+  detect integer year-like X (all in 1900-2100) and ungroup.
+- The pane reads typed numbers for a config that says `de_DE` with a dot: `decimalMark`
+  in `datasheet.ts` does not apply the `_` to `-` rewrite the engine now does.
+- `scene.ts` `allNumbersFinite` cannot see a MISSING coordinate (the decor source of
+  the `y1: undefined` was fixed, the guard's hole was not); the sideways combo's
+  `labelContent` half of the label flip is unchanged.
+- Same Scale reaching only some charts on a slide that holds two or more asked charts
+  cannot tell which came back (`updateChartsInSlides` drops the unreached entries
+  instead of marking them): the pane is left as it was and says so.
+- Skill-made charts carry no scene fingerprint (`sceneFingerprint` is not exported
+  from `src/index.ts`; a full redraw on the first edit stamps one, as documented),
+  and a deck the OLD `pptx-deck.ts` wrote still carries the old four-element origin
+  anchor, so its first edit moves the chart by its ink offset.
+- Explode's closing `applyConfig` replaces the pane with the chart it re-read, so an
+  edit typed while Explode ran is discarded (true before; a fixed write-back had
+  masked it). `fromEuropeanNumber` turns `0.500` into 500 inside a block judged
+  European (a thousands group cannot start with 0; low reachability).
+- The other value-axis call sites (`line.ts`, `boxplot.ts`, `candlestick.ts`,
+  `violin.ts`) get the new shrink-then-drop fallback, so no number is cut, but do not
+  yet ask the layout for its tick width to widen the gutter as the column and
+  waterfall layouts do.
+
 ### The two bug hunts of 2026-10-19: 123 defects found and fixed, and what each fix left undone — 2026-10-25
 
 Two read-only hunts over `949e27c` found 63 and then 60 distinct defects, the

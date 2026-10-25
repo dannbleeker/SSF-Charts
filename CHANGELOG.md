@@ -111,6 +111,62 @@ hunts of 2026-10-19") lists what each fix left undone.
   as two lines, and the generated deck keeps a dark slide background, alt text
   and a full-ring wedge without a seam.
 
+### A third review, of the fixes themselves: 79 more defects
+
+A third read-only hunt, of the code after the fixes above, found these. Several
+were gaps in the earlier fixes; some were old.
+
+- **A number is never printed cut in half.** The value axis was a fixed 34pt
+  column, so a chart with values to 2,000,000 read `2,000…`, a sideways chart's
+  last tick read `4,0…`, a scatter's x axis `5,…` and a waterfall's delta
+  `+1,400,0…`. The column is now sized to the numbers (capped at 40% of the
+  chart), end ticks stay on the chart, upright waterfall labels fit the box they
+  are clipped to, a combo's secondary axis takes a gutter of its own where its
+  numbers would be cut, and a sideways clustered-stacked chart prints one total
+  per stack instead of one grand total. Charts whose numbers already fit are
+  byte-identical, and none of the 123 showcase slides changed.
+- **Dates are read by one rule.** `03-01-2026` was read as 1 March while
+  `03.01.2026` was read as 3 January, and `15-01-2026` was refused. A date with
+  one possible reading is now taken, one with two is read day-first only when the
+  chart's locale says so and refused otherwise, as slash dates already were. The
+  Excel bridge keeps the text Excel shows for a date label unless the pane would
+  read a different day from it, and then delivers the date itself.
+- **The datasheet reads more of what Excel writes:** the Swiss apostrophe
+  (`1'234.50`), the Indian grouping (`12,34,567.89`), `R$` and `US$`, and
+  Arabic-Indic digits; the Axis scale, Axis break and Value line boxes take the
+  decimal comma; a deeply nested or long-chained formula can no longer freeze or
+  crash the pane; a date-formatted Excel cell holding a huge number no longer
+  fails Generate; a style file with a null palette is refused; *Insert as
+  picture* keeps its remembered default; and a series colour pick is an undo
+  step.
+- **Blank categories and wrong-typed options.** Candlestick, boxplot, violin and
+  mekko count a blank category as nothing (as the other layouts now do), a Pareto
+  with a Target row above the data keeps its bars, a calendar heatmap with a
+  one-character year typo no longer builds a 216,000-shape scene, a scalar where
+  an index list belongs (`waterfall.totalIndices: 5`, `pie.explode: 0`) no longer
+  crashes the chart, a fractional difference-arrow index no longer prints
+  `NaN`, and a sideways combo flips a label that would not fit.
+- **Locale:** the 100% chart's axis uses the chart's own percent format (`25 %`
+  in de-DE), `de_DE` is read as `de-DE`, `decimals: "2"` is read as 2, a label cut
+  by an ellipsis no longer splits a flag or a joined emoji, and a tile map whose
+  pinned grid matches none of the codes yields to the grid the codes match.
+- **The pane:** the colour pickers follow the datasheet after *+ Row*, rename and
+  delete; the template-name row hides when it should; the actions menu takes
+  focus from the keyboard; the Excel pane's output box has a name and its status
+  is announced; keyboard focus survives a rebuild of the options; cell names
+  follow the headers; the Stop button's hover is readable in the dark scheme;
+  opening a chart with *Auto-update* on no longer writes it back to the slide;
+  Same scale skips (and names) a chart whose config cannot be read instead of
+  failing the whole deck; and the Localisation notes now say what a language
+  reaches and what stays English.
+- **The headless skill and the generated deck:** a skill-made agenda slide is no
+  longer tagged as a chart (it broke Same scale and Edit), skill charts carry the
+  origin the add-in's own deck writes so an untitled chart does not jump on its
+  first edit, a no-canvas background spelling no longer paints the generated
+  slide black, the SVG previewer paints the chart's own background, the final
+  write names the path when it cannot be made, and an appended slide is deleted
+  only when a fresh read shows it blank.
+
 ## 0.6.1 — 2026-09-13
 
 **This release changes who can install SSF Charts, and that is the whole
