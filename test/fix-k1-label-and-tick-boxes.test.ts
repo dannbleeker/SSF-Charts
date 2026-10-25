@@ -403,7 +403,7 @@ describe("a tick label at the end of an axis stays on the chart (r3-3, r3-9, r3-
   });
 });
 
-describe("an upright waterfall's value label is boxed as wide as it was fitted (r3-5, r3-18)", () => {
+describe("an upright waterfall's value label is fitted to the box it is clipped to (r3-5, r3-18)", () => {
   const bridge = (values: number[], extra: Partial<ChartConfig> = {}): ChartConfig => ({
     kind: "waterfall",
     ...DEFAULT_SIZE,
@@ -431,23 +431,39 @@ describe("an upright waterfall's value label is boxed as wide as it was fitted (
     ]);
   });
 
-  it("boxes a label that needed it as wide as the label, and never wider than the slot", () => {
+  it("fits the font to the box, so the label stands inside it and the box is the one it always had", () => {
     const cfg = bridge(eight);
     const scene = buildChart(cfg);
-    const slot = 59.25;
     const wide = named<TextNode>(scene.nodes, "text", "label-1")[0];
-    // The whole label, not what is left of it: its width is measured below.
+    const bar = named<RectNode>(scene.nodes, "rect", "bar-1")[0];
+    // The whole label, not what is left of it.
     expect(wide.text).toBe("+1,400,000");
-    expect(wide.w).toBeGreaterThanOrEqual(textWidth(wide.text, wide.fontSize) + 2);
-    expect(wide.w).toBeLessThanOrEqual(slot + 1e-9);
-    // And its ink is inside its own box, which is what stops the clip.
-    const { x0, x1 } = inkSpan(wide);
-    expect(x0).toBeGreaterThanOrEqual(wide.x - 1e-9);
-    expect(x1).toBeLessThanOrEqual(wide.x + wide.w + 1e-9);
+    // The box is bar + 12, as ever, and the ink stands inside what the clip allows
+    // of it (the box less 2).
+    expect(wide.w).toBeCloseTo(bar.w + 12, 9);
+    expect(textWidth(wide.text, wide.fontSize)).toBeLessThanOrEqual(wide.w - 2);
   });
 
-  it("does not change the size: the labels keep the chart font", () => {
-    for (const t of labels(bridge(eight))) expect(t.fontSize).toBe(10);
+  it("shrinks every label together by the least that fits: one size, not the floor", () => {
+    // 10pt is 54pt of ink for a 49.5pt clip; 9pt is 48.6.
+    const sizes = labels(bridge(eight)).map((t) => t.fontSize);
+    expect(new Set(sizes).size).toBe(1);
+    expect(sizes[0]).toBe(9);
+  });
+
+  it("keeps a label's ink on its bar, to within the 5pt a label has always been allowed to overhang", () => {
+    // The contrast ink is chosen against the BAR, so the part of a label past it is
+    // white on white. Boxing the label as wide as the slot would print it whole and
+    // lose the digits at either end to the slide.
+    const scene = buildChart(bridge(eight));
+    for (const label of labels(bridge(eight))) {
+      const bar = named<RectNode>(scene.nodes, "rect", `bar-${label.name!.slice("label-".length)}`)[0];
+      // Measured the way the layout fits it, which does not know a total is bold.
+      const ink = textWidth(label.text, label.fontSize);
+      const x0 = label.x + (label.w - ink) / 2;
+      expect(x0, label.text).toBeGreaterThanOrEqual(bar.x - 5 - 1e-9);
+      expect(x0 + ink, label.text).toBeLessThanOrEqual(bar.x + bar.w + 5 + 1e-9);
+    }
   });
 
   it("leaves a label that already fits its box exactly where it was: bar + 12", () => {
