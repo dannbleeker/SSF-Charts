@@ -1876,21 +1876,20 @@ async function sweepResizeChart(
  * refuses that delete (it usually does for a shape drawn seconds earlier) the
  * verdict says so in a note and is otherwise what the question answered.
  *
- * WHICH PROBE SLIDE IS NOT FREE TO BE THE FIRST. This took `hosts[0]`, the chart
- * the deck scan lists first, which is the one slide every scenario that takes
- * `found[0]` piles onto: it drew on a slide the run had put 48-59 shapes on while
- * four other probe slides had had 9, 16, 24 and 28 (rounds 502-505, from the
- * traced batches before it began; each of those slides holds a 480x299 chart, the
- * size the probe decks build, in the round's deck inventory). At the +0.44s per
- * shape present that `leastLoadedChart` documents, the difference is 14 to 22
- * seconds on every batch. So it takes the probe chart on the slide this run has
- * drawn on least, as the scenarios around it do, by the run's own count
- * (`shapesDrawnOn`) and not by a host read: a read is a sync asked of a host that
- * may already be struggling, and the host's own count (`slideOccupancy`) takes a
- * group for ONE shape, so it would call a slide of three grouped charts as quiet
- * as one with three loose shapes. Ties keep the deck's order, which is what the
- * old pick was. The honest limit is `shapesDrawnOn`'s own: it cannot see what the
- * deck held before the run.
+ * IT DRAWS ON THE FIRST PROBE CHART'S SLIDE, which is the deck's own, and the
+ * quietest probe slide is the wrong one to want. A version of this took the probe
+ * chart on the slide the run had drawn on least (`leastLoadedChart`, as the
+ * scenarios around it do), to keep a 24-shape chart off the slide the run had put
+ * 48-59 shapes on (rounds 502-505, each batch 14-28s of a 45s limit). Rounds 506
+ * and 507 showed what that traded away: the quiet probe slides are the ones the
+ * probe ADDED, and on one of them the chart drew and grouped and the host then
+ * would not read its group (`the host would not read the chart's group right after
+ * it was drawn`, in both rounds, and in 506 the cold re-read after the draw came
+ * back short as well). That is the fresh-slide trouble the paragraph above names,
+ * reached by a route the fake cannot take, and it left the scenario asking
+ * nothing. The crowding is answered where it can be without leaving the
+ * deck's own slide: the specimen is nine shapes in one batch and the scenario runs
+ * early in the round, before the slide has been piled on.
  *
  * A HOST THAT STOPS ANSWERING IS NOT A FAILED QUESTION. Three of four live runs
  * ended `FAILED threw: PowerPoint did not respond while drawing shapes 1-10 of 24
@@ -1919,7 +1918,7 @@ async function sweepResizeChart(
 const resizeThenEdit: Scenario = async (prefix) => {
   const mark = traceMark();
   const { found: hosts, blind, gap } = await probeCharts(prefix);
-  const host = leastLoadedChart(hosts, shapesDrawnOn);
+  const [host] = hosts;
   if (!host)
     return blind ? blindSkip(gap) : { ok: false, skipped: true, detail: "no probe chart's slide to draw a chart on" };
   const slideId = host.target.slideId;
@@ -1962,13 +1961,25 @@ const resizeThenEdit: Scenario = async (prefix) => {
           detail: "the chart drew and the host would not name it afterwards, so there is no group to resize",
         };
       const drawn = await readChartShapes(target.slideId, target.shapeId);
-      if (!drawn)
+      if (!drawn) {
+        // Say what the host WOULD answer, so the next skip of this kind names its
+        // own cause: the slide not resolving by id, resolving without the group in
+        // its list, or the group simply not being readable.
+        const listed = await slideShapeList(target.slideId);
+        trace("selftest", "an edit after a resize — the group could not be read after the draw", {
+          slideId: target.slideId,
+          shapeId: target.shapeId,
+          slideReadable: listed !== null,
+          listed: listed?.length ?? null,
+          groupListed: listed ? listed.some((s) => s.id === target.shapeId) : null,
+        });
         return {
           ok: false,
           skipped: true,
           blind: true,
           detail: "the host would not read the chart's group right after it was drawn",
         };
+      }
       if (drawn.isGroup === false)
         return {
           ok: false,

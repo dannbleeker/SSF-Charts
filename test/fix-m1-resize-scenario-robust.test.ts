@@ -45,6 +45,8 @@ const wrapped = vi.hoisted(() => ({
   refuseDelete: false,
   undoTheResize: false,
   updateThrows: null as Error | null,
+  /** The host answering nothing when the group is read right after the draw. */
+  groupUnreadable: false,
 }));
 vi.mock("../src/render/powerpoint", async (importOriginal) => {
   const real = await importOriginal<typeof import("../src/render/powerpoint")>();
@@ -63,6 +65,11 @@ vi.mock("../src/render/powerpoint", async (importOriginal) => {
       return real.updateChartInSlide(...args);
     },
   });
+  Object.defineProperty(mocked, "readChartShapes", {
+    enumerable: true,
+    value: async (...args: Parameters<typeof real.readChartShapes>) =>
+      wrapped.groupUnreadable ? null : real.readChartShapes(...args),
+  });
   Object.defineProperty(mocked, "deleteShapesById", {
     enumerable: true,
     value: async (...args: Parameters<typeof real.deleteShapesById>) =>
@@ -80,8 +87,8 @@ vi.mock("../src/render/powerpoint", async (importOriginal) => {
  * chart`, kept [600,360], scale 2x via members); the scenario was a 24-shape chart
  * drawn in three batches of 14-28s onto a slide already holding 48-59 shapes, last
  * in the round, straight after the scenario that wears the host most. What these
- * hold down is that it is a fair question now: small, early, drawn where the slide
- * is quiet, silent about a host that would not answer, and still loud about a
+ * hold down is that it is a fair question now: small, early, drawn on the deck's
+ * own slide, silent about a host that would not answer, and still loud about a
  * product that gets the resize wrong.
  */
 
@@ -105,6 +112,7 @@ afterEach(() => {
   wrapped.refuseDelete = false;
   wrapped.undoTheResize = false;
   wrapped.updateThrows = null;
+  wrapped.groupUnreadable = false;
 });
 
 const freshDeck = (): FakeSlide[] => {
@@ -206,10 +214,13 @@ describe("the chart it draws", () => {
 });
 
 describe("where it draws", () => {
-  it("takes the probe slide this run has drawn on least, and not the first one the scan lists", async () => {
-    // The old pick was `hosts[0]`, the one slide every scenario that takes
-    // `found[0]` piles onto: it drew on a slide holding 48-59 shapes while four
-    // other probe slides held 9, 16, 24 and 28 (rounds 502-505).
+  it("draws on the first probe chart's slide, the deck's own, however loaded another probe slide is", async () => {
+    // A version of this took the probe slide the run had drawn on least. The quiet
+    // probe slides are the ones the probe ADDED, and on one of them the chart drew
+    // and the host then would not read its group (rounds 506 and 507, both
+    // skipped, the question never asked). The fake cannot refuse a fresh slide's
+    // id the way the host does, so what it can hold is the CHOICE: the first
+    // probe chart's slide, which is the deck's own.
     freshDeck();
     await runSelfTest("probe", "two slides claiming one slot");
     const probes = (await listChartsInDeck()).charts.filter((c) =>
@@ -230,9 +241,26 @@ describe("where it draws", () => {
     expect(result.ok, result.detail).toBe(true);
     const slides = new Set(ownBatches().map((b) => b.data?.onSlideKey));
     expect([...slides], "it drew on more than one slide").toHaveLength(1);
-    expect(slides.has(first), "it drew on the slide the run had loaded most, which is where the stalls were").toBe(
-      false,
+    expect(slides.has(first), "it left the deck's own slide for one the probe added").toBe(true);
+  });
+
+  it("says what the host would answer when it will not read the group it was just given", async () => {
+    // The skip names the host's silence; this is the evidence beside it, so the
+    // next skip of this kind says whether the slide, the list or the group was
+    // what the host would not answer.
+    freshDeck();
+    wrapped.groupUnreadable = true;
+    setTracing(true);
+    const { result } = await drive();
+    expect(result.skipped).toBe(true);
+    expect(result.blind).toBe(true);
+    expect(result.detail).toMatch(/the host would not read the chart's group right after it was drawn/);
+    const said = traceLog().entries.find(
+      (e) => e.message === "an edit after a resize — the group could not be read after the draw",
     );
+    expect(said, "a skip with nothing beside it to say why").toBeDefined();
+    expect(said?.data).toMatchObject({ slideReadable: true, groupListed: true });
+    expect(Number(said?.data?.listed)).toBeGreaterThan(0);
   });
 });
 
