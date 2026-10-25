@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  describeSelfTest,
   judgeResizeKept,
   runSelfTest,
   scenarioBlame,
@@ -17,12 +18,15 @@ import type { ChartConfig } from "../src/core/types";
 import { faults, installHost, makeSlide, type FakeSlide } from "./helpers/office-host";
 
 /**
- * One switch on the product's update, for the single case no fake fault reaches
- * on its own: an update that redraws a chart and comes back with a target the
- * host would not name (`lost`), which the scenario must not read as the chart.
- * Off, the wrapper is the real function.
+ * Two switches on the product, for the two cases no fake fault reaches on its own.
+ * `lost`: an update that redraws a chart and comes back with a target the host
+ * would not name, which the scenario must not read as the chart. `refuseDelete`:
+ * the by-id delete the scenario takes its chart away with, which the live host
+ * refuses for a shape drawn seconds earlier (369 of 419 sweeps in the archive) —
+ * it answers 0 and deletes nothing, the way a refused sweep does. Off, both
+ * wrappers are the real functions.
  */
-const wrapped = vi.hoisted(() => ({ lost: false }));
+const wrapped = vi.hoisted(() => ({ lost: false, refuseDelete: false }));
 vi.mock("../src/render/powerpoint", async (importOriginal) => {
   const real = await importOriginal<typeof import("../src/render/powerpoint")>();
   return {
@@ -31,6 +35,8 @@ vi.mock("../src/render/powerpoint", async (importOriginal) => {
       const back = await real.updateChartInSlide(...args);
       return back && wrapped.lost ? { ...back, lost: "no-config" as const } : back;
     },
+    deleteShapesById: async (...args: Parameters<typeof real.deleteShapesById>) =>
+      wrapped.refuseDelete ? 0 : real.deleteShapesById(...args),
   };
 });
 
@@ -50,6 +56,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   setTracing(false);
   wrapped.lost = false;
+  wrapped.refuseDelete = false;
 });
 
 const NAME = "an edit after the person resizes a chart";
@@ -82,6 +89,7 @@ describe("the scenario, driven against the fake host", () => {
     expect(result.ok, result.detail).toBe(true);
     expect(result.detail).toMatch(/at one scale and at the size the person made it/);
     expect(result.detail).toMatch(/redrawn/);
+    expect(result.detail, "a clean sweep needs no note").not.toMatch(/note, not part of the verdict/);
     // The slide holds what it held: the chart it drew went with it, and the probe
     // charts it drew beside were not taken with it.
     const left = chartTitles(deck);
@@ -170,6 +178,69 @@ describe("the scenario, driven against the fake host", () => {
     expect(result.skipped, result.detail).toBe(true);
     expect(chartTitles(deck).filter((t) => /resize/.test(t))).toEqual([]);
     expect(chartTitles(deck).filter((t) => /twice/.test(t))).toHaveLength(4);
+  });
+});
+
+describe("a host that refuses to take the scenario's chart away", () => {
+  /**
+   * The by-id delete is the call this host refuses for a shape drawn seconds
+   * earlier, so on the first live round a leftover chart is the likeliest outcome
+   * and not a defect of ours. The cleanup is best effort: what the question
+   * answered stays the verdict, and the leftover is a note on it.
+   */
+  const leftOf = (deck: FakeSlide[]) => chartTitles(deck).filter((t) => /resize/.test(t));
+
+  it("keeps a PASS a pass, with the leftover in a note", async () => {
+    const deck = freshDeck();
+    faults.groupResizeScalesMembers = true;
+    wrapped.refuseDelete = true;
+    const { result, all } = await drive();
+    expect(leftOf(deck), "the refusal did not leave the chart behind, so nothing was tested").not.toEqual([]);
+    expect(result.skipped, result.detail).toBeFalsy();
+    expect(result.ok, result.detail).toBe(true);
+    expect(result.detail).toMatch(/at one scale and at the size the person made it/);
+    expect(result.detail).toMatch(/note, not part of the verdict: the sweep did not take this scenario's chart off/);
+    // And no consumer reads the note as a defect.
+    expect(selfTestNeedsAttention(all)).toBe(false);
+    expect(describeSelfTest(all)).toMatch(/no defects of ours/);
+  });
+
+  it("keeps a SKIP a skip, with the leftover in a note", async () => {
+    // The default fake: the group resizes and its members do not follow.
+    const deck = freshDeck();
+    wrapped.refuseDelete = true;
+    const { result, all } = await drive();
+    expect(leftOf(deck)).not.toEqual([]);
+    expect(result.ok).toBe(false);
+    expect(result.skipped, "a refused sweep turned a skip into a failure").toBe(true);
+    expect(result.detail).toMatch(/member sizes do not move with a group resize/);
+    expect(result.detail).toMatch(/note, not part of the verdict/);
+    expect(scenarioBlame(result)).toBe("not-run");
+    expect(selfTestNeedsAttention(all)).toBe(false);
+  });
+
+  it("keeps a skip that says the host got in the way exactly as blind as the question made it", async () => {
+    freshDeck();
+    faults.groupResizeScalesMembers = true;
+    faults.groupMembersSilentOn = ["name", "width", "height"];
+    faults.groupSilentOn = ["width", "height"];
+    wrapped.refuseDelete = true;
+    const { result } = await drive();
+    expect(result.skipped, result.detail).toBe(true);
+    expect(result.blind).toBe(true);
+    expect(result.detail).toMatch(/would not report the group's size after the draw/);
+  });
+
+  it("puts the leftover on the trace, where a round can count it", async () => {
+    freshDeck();
+    faults.groupResizeScalesMembers = true;
+    wrapped.refuseDelete = true;
+    setTracing(true);
+    await drive();
+    const line = traceLog().entries.find((e) => e.message === "an edit after a resize left its chart on the slide");
+    expect(line, "the leftover was not traced").toBeTruthy();
+    const data = line!.data as { before: number; after: number };
+    expect(data.after).toBeGreaterThan(data.before);
   });
 });
 
@@ -284,5 +355,112 @@ describe("judgeResizeKept", () => {
     const v = judgeResizeKept(input({ after: few, redrawn: false }));
     expect(v.ok).toBe(false);
     expect(v.skipped, "two bars were taken for a chart").toBe(true);
+  });
+
+  /**
+   * A host can answer a bar's size at one moment and not at another. The drawn and
+   * resized readings were filtered on their own and then paired by position in the
+   * filtered lists, so a bar missing from one of them threw a TypeError (a hard
+   * FAIL, `threw: ...`) or, when the lists happened to be the same length, held one
+   * bar's drawn width against another bar's resized one. Bars of different widths,
+   * so that a wrong pairing cannot hide behind equal ones.
+   */
+  describe("when the host answers a bar's size at one moment and not at the other", () => {
+    const BARS = 8;
+    const stretch = (s: Scene, by: number): Scene => ({
+      ...s,
+      width: s.width * by,
+      height: s.height * by,
+      nodes: s.nodes.map((n) => (n.kind === "rect" ? { ...n, x: n.x * by, y: n.y * by, w: n.w * by, h: n.h * by } : n)),
+    });
+    const bars: Scene = {
+      width: 400,
+      height: 200,
+      nodes: Array.from({ length: BARS }, (_, i) => ({
+        kind: "rect" as const,
+        x: i * 40,
+        y: 10,
+        w: 12 + 3 * i,
+        h: 40 + 5 * i,
+        fill: "#123456",
+        name: `bar-${i}`,
+      })),
+    };
+    const big = stretch(bars, 2);
+    const at1 = reading(bars);
+    const at2 = reading(bars, (_i, w, h) => [w * 2, h * 2], {
+      width: sceneDrawnExtent(bars)!.width * 2,
+      height: sceneDrawnExtent(bars)!.height * 2,
+    });
+    const final = reading(big);
+    const call = (over: Partial<Parameters<typeof judgeResizeKept>[0]>) =>
+      judgeResizeKept({
+        factor: 2,
+        drawn: at1,
+        resized: at2,
+        after: final,
+        redrawn: true,
+        scenes: { config: bars, kept: big },
+        ...over,
+      });
+    /** The reading with one bar's width not given. */
+    const without = (r: ResizeReading, node: number): ResizeReading => ({
+      ...r,
+      members: r.members!.map((m, i) => (i === node ? { name: m.name, height: m.height } : m)),
+    });
+    /** The reading with only these bars' sizes given. */
+    const only = (r: ResizeReading, nodes: number[]): ResizeReading => ({
+      ...r,
+      members: r.members!.map((m, i) => (nodes.includes(i) ? m : { name: m.name })),
+    });
+
+    it("passes the clean readings, which is the control for the rest", () => {
+      const v = call({});
+      expect(v.ok, v.detail).toBe(true);
+      expect(v.detail).toMatch(/members followed the resize/);
+    });
+
+    it("does not throw when the first bar's drawn width is missing, and judges the bars both moments gave", () => {
+      const v = call({ drawn: without(at1, 0) });
+      expect(v.detail).not.toMatch(/threw|undefined/);
+      expect(v.skipped, v.detail).toBeFalsy();
+      expect(v.ok, v.detail).toBe(true);
+    });
+
+    it("does not throw when the last bar's drawn width is missing", () => {
+      const v = call({ drawn: without(at1, BARS - 1) });
+      expect(v.skipped, v.detail).toBeFalsy();
+      expect(v.ok, v.detail).toBe(true);
+    });
+
+    it("does not throw when the host answered the last bar at the drawing and not after the resize", () => {
+      const v = call({ resized: without(at2, BARS - 1) });
+      expect(v.skipped, v.detail).toBeFalsy();
+      expect(v.ok, v.detail).toBe(true);
+    });
+
+    it("pairs bars on their node when different bars are missing at the two moments", () => {
+      // Both lists are seven long, so the position in each is the only thing that
+      // would line them up, and the bars after the first gap sit one place apart.
+      const v = call({ drawn: without(at1, 1), resized: without(at2, BARS - 2) });
+      expect(v.skipped, `bars were held against the wrong bars: ${v.detail}`).toBeFalsy();
+      expect(v.ok, v.detail).toBe(true);
+    });
+
+    it("skips, naming what was missing, when fewer than three bars were read at both moments", () => {
+      const v = call({ drawn: only(at1, [0, 1, 2]), resized: only(at2, [2, 3, 4, 5]) });
+      expect(v.ok).toBe(false);
+      expect(v.skipped, v.detail).toBe(true);
+      expect(v.blind).toBeFalsy();
+      expect(v.detail).toMatch(/3 bars' sizes when the chart was drawn and 4 after the resize/);
+      expect(v.detail).toMatch(/only 1 of them at both moments/);
+    });
+
+    it("still skips a group whose members really do not follow it, over the bars both moments gave", () => {
+      const stuck: ResizeReading = { ...at2, members: at1.members };
+      const v = call({ resized: without(stuck, 0) });
+      expect(v.skipped, v.detail).toBe(true);
+      expect(v.detail).toMatch(/member sizes do not move with a group resize/);
+    });
   });
 });

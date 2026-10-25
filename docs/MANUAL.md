@@ -107,8 +107,13 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
    inside the chart's group you changed (Bring to Front on a single bar or label).
    If PowerPoint will not report the sizes of the bars and labels themselves, the
    chart's own outline stands in for them: a resize of more than about 5% is still
-   kept, a smaller one is not noticed, and a chart drawn with diagonal lines, pie
-   slices or arrowheads (its outline cannot be worked out from the chart alone) is
+   kept, and a smaller one is not noticed. A chart drawn with diagonal lines, pie
+   slices or arrowheads has no outline to go by, because it cannot be worked out
+   from the chart alone — stacked columns with arrows, combo and line charts are
+   among them. For such a chart an edit that can be written shape by shape (a new
+   value, a moved bar) is written at the size the chart was drawn at, beside bars
+   at the size you made it: the half-stretched chart described above. Only an edit
+   that cannot be written that way (a new category, a different chart type) is
    redrawn at the size in the pane's settings.
 
    A chart PowerPoint would not group stays a loose set of shapes, and a copy of

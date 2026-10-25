@@ -3157,21 +3157,33 @@ none is a task yet: each is an owner call or a measurement.
    size times it, the new size is written into the config tag, and the pane takes it
    over through `EditTarget.size`. A host whose members are listed but give no width
    or height is read off the group's own box instead (`groupScaleOfScene`, only when
-   no rect's size was read, 5pt-or-5% margin, a scene with a diagonal line, wedge,
-   polygon or arrowhead abstains; one dragged bar reads as a resize there, which is
-   why the members win whenever they answer). Left undone: a chart whose group read
-   is refused outright (no member list, so no way to know the group holds every
-   shape) still redraws at the size it was drawn at; a Bring to Front is still seen
-   only through names, and `ids` on the update's `host` trace records whether the
-   members' ids ascend in the listed order, which is the evidence a reorder could be
-   seen without them; loading a resized chart from the selection shows the stored
-   size until an update keeps the live one, because the load read carries no member
-   sizes; the recovery ladder after a failed redraw (slide swap, picture) rebuilds at
-   the pane's size. Not measured on the live host: a resize itself. No round has
-   resized a chart; `an edit after the person resizes a chart` does, and its
-   detail and the `host` object on the update's trace lines (raw readings of the
-   first member and the group, how many shapes answered each field, the group's
-   drawn, live and ratio) say what the host returns for one.
+   no member of any kind gave a size, 5pt-or-5% margin, a scene with a diagonal line,
+   wedge, polygon or arrowhead abstains; one dragged bar reads as a resize there,
+   which is why the members win whenever they answer). "Any kind" is deliberate: it
+   was "no rect's size", and a scene with no rect in it (showcase scatter #41 and
+   #117, bubble #116, clustered #56) consulted the box on a host that answers every
+   member, with nothing to say the box is right for those kinds. Left undone: a
+   chart whose group read is refused outright (no member list, so no way to know
+   the group holds every shape) still redraws at the size it was drawn at; a Bring
+   to Front is still seen only through names, and `ids` on the update's `host`
+   trace records whether the members' ids ascend in the listed order, which is the
+   evidence a reorder could be seen without them; loading a resized chart from the
+   selection shows the stored size until an update keeps the live one, because the
+   load read carries no member sizes; the recovery ladder after a failed redraw
+   (slide swap, picture) rebuilds at the pane's size. The size check is NOT blind
+   on the live host: it compares there (`checked.sizes: 8` on 29 of 29
+   geometry-writing in-place updates, rounds 498, 500 and 501), so the group-box
+   path above is a fallback that stays closed wherever the members answer, as
+   they do there. Not measured on the live host, and these are the open questions: what a REAL group resize does to the members' reported
+   sizes; whether the group's own width and height arrive in the resolve sync; and
+   whether the scene-derived group extent is the live group's for scatter and
+   bubble charts (the four matches on record, clustered 480x300, 780x420 and 168x80
+   and waffle 320x220, are rect-bearing kinds). No round has resized a chart; `an
+   edit after the person resizes a chart` does, and its detail and the `host`
+   object on the update's trace lines (raw readings of the first member and the
+   group, how many shapes answered each field, the group's drawn, live and ratio —
+   recorded whenever the group's size was read, whether or not the box is acted
+   on) say what the host returns for one.
 3. **A copied ungrouped chart's tie-break (r2-19).** When two anchors name the same
    parts, the older (lower numeric shape id) owns them and an unorderable id means
    nobody does. Residuals: a copy edited this way leaves its own old parts under
@@ -3262,10 +3274,13 @@ none is a task yet: each is an owner call or a measurement.
    (`checked.sizes: 8`), and names where the chart had already been written by this
    add-in (16 to 18). The `{names: 0, sizes: 0}` lines are the retitles, which ask
    for no size by design, and deck-built charts, whose default names are no
-   evidence. So the guard compares on this host; what is not known is what a
-   RESIZED group reports, and whether the group's own width and height come back.
-   `group-members-report-geometry` asks the second of an untouched group on the
-   scratch slide; the scenario in 2 asks both of a resized chart on a real slide.
+   evidence. So the guard compares on this host and is not blind; what is not
+   known is what a RESIZED group reports of its members, whether the group's own
+   width and height arrive in the resolve sync, and (for the group-box fallback in
+   2) whether the scene-derived group extent is the live one for scatter and bubble
+   charts. `group-members-report-geometry` asks the second of an untouched group on
+   the scratch slide; the scenario in 2 asks the first two of a resized chart on a
+   real slide, and the trace's drawn, live and ratio measure the third.
 10. **Judgement calls to review.** Insert batch puts every chart on its own new
     slide, the first included. A blank row that overwrites a series row becomes a
     stack separator while one a paste appends is seeded as a series, and clearing a

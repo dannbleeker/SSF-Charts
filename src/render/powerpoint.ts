@@ -47,11 +47,12 @@ import {
   groupScaleOfScene,
   liveScaleOfScene,
   measureGroup,
+  memberSizesRead,
   planSceneUpdate,
-  rectSizesRead,
   sceneFingerprint,
   worthUpdating,
   type LiveScale,
+  type LiveShape,
   type NodeChange,
 } from "../core/scene-diff";
 import { toHex6, alphaOf, isNamedColor } from "../core/color";
@@ -13260,6 +13261,36 @@ function liveBox(shape: PowerPoint.Shape): { width?: number; height?: number } {
   return { width: loadedValue(() => shape.width), height: loadedValue(() => shape.height) };
 }
 
+/**
+ * THE GROUP'S OWN BOX AS A HAND-RESIZE READING, for a host whose members said
+ * nothing about their size, and for no other host.
+ *
+ * A box cannot tell a resize from one dragged bar, and the members can, so this
+ * abstains the moment ANY member gave a size: text boxes and ellipses count as
+ * much as rects, because whether a host answers is a fact about the host and not
+ * about the node kind. The gate used to be "no RECT size was read" (`rectSizesRead`),
+ * and a scene with no rect in it — showcase scatter #41 and #117, bubble #116 and
+ * clustered #56, four of 123 — read zero on the live host, which answers every
+ * member's size (29 of 29 geometry-writing updates in rounds 498, 500 and 501
+ * carry `sizes: 8`). Those charts consulted a box nobody has compared with the
+ * live host's, and the live effect was no longer what 0557c3e and 693c813
+ * shipped. Closed here, it is nil for a host that answers sizes.
+ *
+ * The measurement does not wait on the gate: `hostEvidence` records the box, the
+ * drawn extent and their ratio whenever the group's size was read, so the next
+ * round measures the group box for scatter and bubble charts without acting on it.
+ *
+ * `group` is the tagged shape when it IS the group, and absent for a chart that is
+ * a loose set of shapes.
+ */
+function groupScaleIfMembersSilent(
+  prev: Scene,
+  group: PowerPoint.Shape | undefined,
+  live: readonly LiveShape[],
+): LiveScale | null {
+  return group && memberSizesRead(live) === 0 ? groupScaleOfScene(prev, liveBox(group)) : null;
+}
+
 /** One shape's name, width and height, raw. */
 function rawShape(s: PowerPoint.Shape): RawShape {
   return { name: rawRead(() => s.name), width: rawRead(() => s.width), height: rawRead(() => s.height) };
@@ -13619,9 +13650,9 @@ async function tryInPlaceUpdate(
   seen.prev = prev;
   seen.host = hostEvidence(prev, anchor ? old : undefined, shapes);
   // THE GROUP'S OWN BOX, but only for a host whose members said nothing about
-  // size: a box cannot tell a resize from one dragged bar, and the members can.
-  // The tagged shape is the group exactly when `anchor` came out of it.
-  const byGroup = anchor && rectSizesRead(prev, liveShapes) === 0 ? groupScaleOfScene(prev, liveBox(old)) : null;
+  // size (see `groupScaleIfMembersSilent`). The tagged shape is the group exactly
+  // when `anchor` came out of it.
+  const byGroup = groupScaleIfMembersSilent(prev, anchor ? old : undefined, liveShapes);
   seen.scale = liveScaleOfScene(prev, liveShapes) ?? byGroup ?? undefined;
   const plan = planSceneUpdate(prev, it.scene);
   if (!plan) return no("the two scenes are not node-compatible");

@@ -418,17 +418,26 @@ export function liveScaleOfScene(prev: Scene, live: readonly LiveShape[]): LiveS
 }
 
 /**
- * How many rects the host reported BOTH sides of. Zero is a host whose members
- * said nothing about size, which is the case `groupScaleOfScene` exists for, and
- * it is a different fact from "every rect agreed with the scene" — `null` from
- * `liveScaleOfScene` and `off: null` from `checkShapesAgainstScene` are the same
- * for both.
+ * How many members the host reported BOTH sides of, whatever each is drawn as.
+ * Zero is a host whose members said nothing about size, which is the case
+ * `groupScaleOfScene` exists for, and it is a different fact from "every rect
+ * agreed with the scene" — `null` from `liveScaleOfScene` and `off: null` from
+ * `checkShapesAgainstScene` are the same for both.
+ *
+ * EVERY MEMBER COUNTS, A TEXT BOX OR AN ELLIPSE AS MUCH AS A RECT. This used to
+ * count rects only (`rectSizesRead`), which asked "did a RECT say how big it is"
+ * when the question is "does this host say how big its members are". A scene with
+ * no rect in it (showcase scatter #41 and #117, bubble #116, clustered #56: four
+ * of 123 charts) read zero on a host that answered every one of its members, so
+ * the group's box was consulted and a hand resize kept by it on the live host —
+ * with no live evidence that those charts' boxes match what the scene derives
+ * (the four matches on record are rect-bearing kinds). Whether a host answers a
+ * size is a property of the host and not of the node kind; `liveScaleOfScene` and
+ * `checkShapesAgainstScene` read the answers they get, and having none to read is
+ * what lets the box stand in.
  */
-export function rectSizesRead(prev: Scene, live: readonly LiveShape[]): number {
-  let read = 0;
-  for (let i = 0; i < Math.min(prev.nodes.length, live.length); i++)
-    if (prev.nodes[i].kind === "rect" && Number.isFinite(live[i].width) && Number.isFinite(live[i].height)) read++;
-  return read;
+export function memberSizesRead(live: readonly LiveShape[]): number {
+  return live.filter((shape) => Number.isFinite(shape.width) && Number.isFinite(shape.height)).length;
 }
 
 /** A shape's size as the host gave it; absent when it did not. */
@@ -595,16 +604,16 @@ const MAX_GROUP_SCALE = 4;
  * - **It cannot tell a resize from a dragged member.** Moving one bar inside the
  *   group moves the box too, and the per-rect agreement test that rejects that
  *   case is exactly what a silent host denies us. So the caller consults this
- *   ONLY when no rect's size was read (`rectSizesRead` is zero); once a member
- *   has answered, `liveScaleOfScene` and `checkShapesAgainstScene` are the
- *   evidence and the group's box is only traced.
+ *   ONLY when no member of any kind gave a size (`memberSizesRead` is zero); once
+ *   a member has answered, `liveScaleOfScene` and `checkShapesAgainstScene` are
+ *   the evidence and the group's box is only traced.
  * - **A scene with a rotated node has no known box** (`sceneDrawnExtent`), and
  *   answers `null`: a line chart or a pie is never read this way.
  * - **Inside the noise band an axis reads exactly 1**, so a chart stretched in one
  *   direction reads `{ x: 1.5, y: 1 }`, and a chart inside it on both reads
  *   `null` — as does a factor beyond 4x either way.
  *
- * `samples` is 0 because no rect was read; `via` says whose box it was.
+ * `samples` is 0 because no member size was read; `via` says whose box it was.
  */
 export function groupScaleOfScene(prev: Scene, group: LiveBox): LiveScale | null {
   const { drawn, ratio } = measureGroup(prev, group);

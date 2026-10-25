@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import { buildChart } from "../src/core/chart";
 import { sampleConfig } from "../src/core/samples";
 import { buildDeckBase64 } from "../src/render/pptx-deck";
-import { groupScaleOfScene, measureGroup, rectSizesRead, sceneDrawnExtent } from "../src/core/scene-diff";
+import { groupScaleOfScene, measureGroup, memberSizesRead, sceneDrawnExtent } from "../src/core/scene-diff";
 import type { Scene, SceneNode } from "../src/core/scene";
 import type { ChartConfig, ChartKind } from "../src/core/types";
 import { drawGrouped } from "./helpers/group-resize";
@@ -192,7 +192,7 @@ describe("groupScaleOfScene", () => {
   });
 });
 
-describe("measureGroup and rectSizesRead", () => {
+describe("measureGroup and memberSizesRead", () => {
   const scene = buildChart(sampleConfig("clustered"));
 
   it("gives a ratio for a chart nobody touched, which is what a trace needs", () => {
@@ -206,19 +206,40 @@ describe("measureGroup and rectSizesRead", () => {
     expect(measureGroup(scene, { width: 480 }).drawn).not.toBeNull();
   });
 
-  it("counts the rects the host gave both sides of", () => {
-    const rects = scene.nodes.flatMap((n, i) => (n.kind === "rect" ? [i] : []));
-    const live = scene.nodes.map((n) => ({
-      width: (n as { w?: number }).w,
-      height: (n as { h?: number }).h,
-    }));
-    expect(rectSizesRead(scene, live)).toBe(rects.length);
+  const sized = (n: SceneNode) => ({ width: 12, height: 9, name: n.name });
+
+  it("counts the members the host gave both sides of, and a side alone is not a size", () => {
+    const live = scene.nodes.map(sized);
+    expect(memberSizesRead(live)).toBe(scene.nodes.length);
+    expect(memberSizesRead(live.map((l) => ({ ...l, height: undefined })))).toBe(0);
+    expect(memberSizesRead(live.map((l) => ({ ...l, width: Number.NaN })))).toBe(0);
+    expect(memberSizesRead([])).toBe(0);
+    // One answer among silence is an answer: the host says how big a member is.
+    expect(memberSizesRead(live.map((l, i) => (i === 3 ? l : {})))).toBe(1);
+  });
+
+  /**
+   * The host's answer is a property of the host and not of the node kind. The gate
+   * was "no RECT size was read", so a text box or an ellipse that said how big it
+   * was did not count, and a scene with no rect in it read zero on a host that
+   * answered every member.
+   */
+  it("counts a text box and an ellipse as much as a rect", () => {
+    const only = (kind: SceneNode["kind"]) => scene.nodes.map((n) => (n.kind === kind ? sized(n) : { name: n.name }));
+    for (const kind of ["text", "rect", "line"] as const) {
+      expect(
+        scene.nodes.some((n) => n.kind === kind),
+        `the clustered sample has no ${kind} node`,
+      ).toBe(true);
+      expect(memberSizesRead(only(kind)), kind).toBe(scene.nodes.filter((n) => n.kind === kind).length);
+    }
+    const scatter = buildChart(SHOWCASE[41]);
+    expect(scatter.nodes.some((n) => n.kind === "ellipse")).toBe(true);
     expect(
-      rectSizesRead(
-        scene,
-        live.map((l) => ({ ...l, height: undefined })),
-      ),
-    ).toBe(0);
-    expect(rectSizesRead(scene, [])).toBe(0);
+      scatter.nodes.some((n) => n.kind === "rect"),
+      "showcase #41 is meant to be a scene with no rect",
+    ).toBe(false);
+    const answers = scatter.nodes.map((n) => (n.kind === "ellipse" ? sized(n) : { name: n.name }));
+    expect(memberSizesRead(answers)).toBe(scatter.nodes.filter((n) => n.kind === "ellipse").length);
   });
 });

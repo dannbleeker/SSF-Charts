@@ -1517,25 +1517,35 @@ export interface ResizeReading {
   members?: { name?: string; width?: number; height?: number }[];
 }
 
-type ComparedRect = { node: RectNode; width: number; height: number };
+/** One bar is a bar, not a chart: fewer rects than this say nothing about the chart as a whole. */
+const MIN_COMPARED_RECTS = 3;
+
+/** `index` is the rect's node in the scene, which is what two readings of one chart are paired on. */
+type ComparedRect = { index: number; node: RectNode; width: number; height: number };
 
 /**
  * The members that can be held against a scene's rects: paired by position, as the
  * update path pairs them, for every rect big enough to compare whose both sides the
  * host gave. `null` when the member list is not the scene's length (the pairing is
  * then a guess) or fewer than three can be read — one bar is a bar, not a chart.
+ *
+ * Each row carries its node's index. Two readings of one chart are compared rect by
+ * rect, and which rects a host answers for can differ between moments (it gave a
+ * bar's size when the chart was drawn and not after it was resized), so the lists
+ * are not the same length and a row's place in one says nothing about its place in
+ * the other.
  */
 function comparedRects(r: ResizeReading, scene: Scene): ComparedRect[] | null {
   const members = r.members;
   if (!members || members.length !== scene.nodes.length) return null;
   const rows: ComparedRect[] = [];
-  scene.nodes.forEach((node, i) => {
-    const m = members[i];
+  scene.nodes.forEach((node, index) => {
+    const m = members[index];
     if (node.kind !== "rect" || node.w < MIN_COMPARED_SIDE || node.h < MIN_COMPARED_SIDE) return;
     if (Number.isFinite(m.width) && Number.isFinite(m.height))
-      rows.push({ node, width: m.width as number, height: m.height as number });
+      rows.push({ index, node, width: m.width as number, height: m.height as number });
   });
-  return rows.length >= 3 ? rows : null;
+  return rows.length >= MIN_COMPARED_RECTS ? rows : null;
 }
 
 /**
@@ -1548,9 +1558,11 @@ function comparedRects(r: ResizeReading, scene: Scene): ComparedRect[] | null {
  * - **The resize has to be confirmed first.** The group's size must read about
  *   `factor` times what it was, or nothing after it means anything (`office-js#6183`
  *   is a host that accepts one axis of a write and drops the other). If the members
- *   are readable they must have scaled with it; a group that reports 2x over
- *   members that report the sizes they were drawn at is a host whose member sizes
- *   do not follow a resize — a finding about the size guard, reported as one.
+ *   are readable they must have scaled with it, judged over the rects the host
+ *   answered for at BOTH moments (fewer than three is a skip that says so); a group
+ *   that reports 2x over members that report the sizes they were drawn at is a
+ *   host whose member sizes do not follow a resize — a finding about the size
+ *   guard, reported as one.
  * - **Members readable afterwards:** every rect must match what a layout at the
  *   kept size draws (pass), or what the config draws at its own size (the resize
  *   was undone), or neither (a mix of two scales — the half-stretched chart this
@@ -1591,10 +1603,27 @@ export function judgeResizeKept(o: {
   const drawnRects = comparedRects(o.drawn, o.scenes.config);
   const resizedRects = comparedRects(o.resized, o.scenes.config);
   if (drawnRects && resizedRects) {
-    const followed = resizedRects.filter((r, i) => near(r.width, drawnRects[i].width * o.factor, 0.1)).length;
-    if (followed < Math.ceil(resizedRects.length * 0.8))
+    // ONLY THE RECTS READ AT BOTH MOMENTS, paired on their node. The two lists were
+    // paired by position in the lists, which is the node only while the host
+    // answered for the same rects both times: when it did not, the lists differ in
+    // length and the last pair is `undefined` (a TypeError, reported as a hard
+    // FAIL), or they match in length and every pair after the gap compares one
+    // bar's drawn width with another bar's resized width.
+    const atDrawn = new Map(drawnRects.map((r) => [r.index, r]));
+    const pairs = resizedRects.flatMap((resized) => {
+      const drawn = atDrawn.get(resized.index);
+      return drawn ? [{ drawn, resized }] : [];
+    });
+    if (pairs.length < MIN_COMPARED_RECTS)
       return skip(
-        `the group reports ${box(o.resized)} (was ${box(o.drawn)}) but only ${followed} of ${resizedRects.length} members report ` +
+        `the host gave ${drawnRects.length} bars' sizes when the chart was drawn and ${resizedRects.length} after the resize, ` +
+          `and only ${pairs.length} of them at both moments, so whether the members followed the group (${box(o.drawn)} drawn, ` +
+          `${box(o.resized)} resized) cannot be told`,
+      );
+    const followed = pairs.filter((p) => near(p.resized.width, p.drawn.width * o.factor, 0.1)).length;
+    if (followed < Math.ceil(pairs.length * 0.8))
+      return skip(
+        `the group reports ${box(o.resized)} (was ${box(o.drawn)}) but only ${followed} of ${pairs.length} members report ` +
           `a size that followed it, so this host's member sizes do not move with a group resize and the size guard cannot see one through them`,
       );
   }
@@ -1695,7 +1724,9 @@ export function judgeResizeKept(o: {
  * across the deck` has updated live-drawn charts on in place, so the chart is
  * drawn in the corner of a probe slide, as `a chart of rotated shapes` draws
  * beside one, and TAKEN AWAY as soon as it has been read. A measurement, not a
- * specimen: it leaves the slide holding what it held.
+ * specimen: it asks to leave the slide holding what it held, and when the host
+ * refuses that delete (it usually does for a shape drawn seconds earlier) the
+ * verdict says so in a note and is otherwise what the question answered.
  */
 const resizeThenEdit: Scenario = async (prefix) => {
   const { found: hosts, blind, gap } = await probeCharts(prefix);
@@ -1836,13 +1867,38 @@ const resizeThenEdit: Scenario = async (prefix) => {
   const doomed = [...new Set([...mine, ...strays])];
   if (doomed.length) await deleteShapesById(slideId, doomed);
   const heldAfter = await slideShapeList(slideId);
-  if (heldBefore && heldAfter && heldAfter.length > heldBefore.length)
+  // BEST EFFORT, AND A LEFTOVER IS A NOTE ON THE VERDICT, NEVER THE VERDICT.
+  //
+  // This used to rewrite whatever the question answered (a pass, a skip) into a
+  // hard `ok: false` when the slide still held more than it had. That delete is
+  // the call this host refuses for a shape drawn seconds earlier — `kindCostSpread`
+  // has the count: 369 of 419 sweeps refused, and every archived round carries
+  // seven or eight `wreckage the host would not resolve` lines — so the first live
+  // round would most likely have reported a defect of OURS that is the known sweep
+  // refusal, with the answer to the resize question buried in its detail string.
+  // `ok: false` is for a failure of the QUESTION (a chimera, a lost resize where
+  // the host said enough to tell), and the sibling scenarios that draw beside a
+  // probe chart and take their chart away by the same call (`rotatedShapePlacement`,
+  // `kindCostSpread`) never turn a refused sweep into one.
+  //
+  // `ok`, `skipped` and `blind` are left exactly as the question set them, so
+  // `selfTestNeedsAttention`, `describeSelfTest` and `scenarioBlame` (which read
+  // those and not the words) cannot read the note as a failure. The words avoid
+  // "N of M", which `poolScenarioPopulations` reads as a population count.
+  if (heldBefore && heldAfter && heldAfter.length > heldBefore.length) {
+    trace("selftest", "an edit after a resize left its chart on the slide", {
+      slideId,
+      before: heldBefore.length,
+      after: heldAfter.length,
+      asked: doomed.length,
+    });
     return {
       ...verdict,
-      ok: false,
-      skipped: undefined,
-      detail: `${verdict.detail}; and the scenario could not take its chart off the slide (${heldBefore.length} shapes before, ${heldAfter.length} after)`,
+      detail:
+        `${verdict.detail} (note, not part of the verdict: the sweep did not take this scenario's chart off the slide — ` +
+        `${heldBefore.length} shapes before, ${heldAfter.length} after; this host refuses a by-id delete of a shape drawn seconds earlier in most sweeps)`,
     };
+  }
   return verdict;
 };
 
@@ -4749,11 +4805,13 @@ const SCENARIOS: {
   // Newest, so last: it draws eight specimens and this list's rule is that an
   // unproven scenario's failure should cost the fewest verdicts behind it.
   { name: "what a chart kind costs", run: kindCostSpread },
-  // Newest, so last, and for a second reason: it adds a slide, draws a 24-shape
-  // chart on it, resizes and edits it, and the scenario ahead of it is the one
-  // with a recorded death rate. A death there costs this its turn, and nothing
-  // else its verdict. A NEW NAME, so it opens its own series and disturbs no round
-  // of history — `scenarioRegressions` compares by name.
+  // Newest, so last, and for a second reason: it draws a chart in the corner of
+  // the slide a probe chart already holds (not on a slide of its own: see
+  // `resizeThenEdit`), resizes and edits it and takes it away again, and the
+  // scenario ahead of it is the one with a recorded death rate. A death there
+  // costs this its turn, and nothing else its verdict. A NEW NAME, so it opens its
+  // own series and disturbs no round of history — `scenarioRegressions` compares
+  // by name.
   { name: "an edit after the person resizes a chart", run: resizeThenEdit },
   // Picked only for the plainest reason there is: it blocks on a human.
   { name: "edit the chart YOU click", run: editViaRealClick, pickedOnly: true },

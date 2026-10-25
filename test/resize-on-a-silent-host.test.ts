@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "fs";
 import {
   CHART_TAG,
   insertSceneIntoSlide,
@@ -42,6 +43,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
   setTracing(false);
 });
+
+const SHOWCASE: ChartConfig[] = JSON.parse(readFileSync("examples/showcase.json", "utf8"));
 
 const sayings = () => traceLog().entries.filter((e) => e.message === "updated only the shapes that changed");
 
@@ -520,5 +523,78 @@ describe("what the update's trace lines say the host returned", () => {
     setTracing(true);
     await updateChartInSlide(buildChart(aValueEdit(cfg)), target, { tagData: JSON.stringify(aValueEdit(cfg)) });
     expect(JSON.stringify(hostOf(sayings()[0])).length).toBeLessThan(700);
+  });
+});
+
+describe("a chart with no rect in it, on a host that answers every member's size", () => {
+  /**
+   * The group's box stands in for the members only for a host whose members said
+   * nothing about their size. The gate was "no RECT size was read", and a scene
+   * with no rect in it (showcase scatter #41 and #117, bubble #116, clustered #56:
+   * four of 123) read zero on a host that answered every member — the live host
+   * does, `sizes: 8` on 29 of 29 geometry-writing updates in rounds 498-501 — so
+   * those charts consulted a box nobody has compared with the live host's and kept
+   * a hand resize by it. The live effect of the detector has to be nil wherever the
+   * members answer, whatever they are drawn as.
+   */
+  const scatter = (): ChartConfig => JSON.parse(JSON.stringify(SHOWCASE[41])) as ChartConfig;
+  /** Scatter #41 drawn, then doubled by hand: its group is twice what the scene draws. */
+  const doubledScatter = async () => {
+    const cfg = scatter();
+    const { slide, group } = await drawGrouped(cfg);
+    groupBoxFollowsMembers(group);
+    const drawn = { width: group.width, height: group.height };
+    userResizes(group, 2, 2);
+    const target = (await listChartsInDeck()).charts[0].target;
+    return { cfg, slide, drawn, target };
+  };
+  /** A Y value moved: the scene changes node for node, so this one is redrawn, not written in place. */
+  const aYEdit = (cfg: ChartConfig) => edited(cfg, (c) => (c.data.series[1].values[1] = 27));
+
+  it("is a scene with no rect, whose members all answer on the default fake", async () => {
+    const { target } = await doubledScatter();
+    expect(buildChart(scatter()).nodes.some((n) => n.kind === "rect")).toBe(false);
+    expect(target.shapeId).toBeTruthy();
+  });
+
+  it("redraws at the config's own size and does not keep a size read off the group's box", async () => {
+    const { cfg, slide, drawn, target } = await doubledScatter();
+    setTracing(true);
+    const next = aYEdit(cfg);
+    const back = await updateChartInSlide(buildChart(next), target, { tagData: JSON.stringify(next) });
+
+    expect(routeTaken(), "the scene changed node for node, so it is redrawn").toBe("redraw");
+    expect(keptTrace(), "a size was kept off the group's box on a host that answers its members").toEqual([]);
+    expect("size" in back!, "the person's size was adopted from the group's box").toBe(false);
+    expect(declines().map((d) => d.data?.why)).toEqual(["the two scenes are not node-compatible"]);
+    const groups = liveGroups(slide);
+    expect(groups).toHaveLength(1);
+    expect(Math.abs(groups[0].width - drawn.width), "the redraw took the doubled size").toBeLessThan(2);
+    expect(Math.abs(groups[0].height - drawn.height)).toBeLessThan(2);
+    expect(storedConfig(groups[0])).toMatchObject({ width: 480, height: 300 });
+  });
+
+  it("still records the group's box beside the extent the scene draws, so a round measures it without acting on it", async () => {
+    const { cfg, target } = await doubledScatter();
+    setTracing(true);
+    const next = edited(cfg, (c) => (c.title = "Renamed"));
+    await updateChartInSlide(buildChart(next), target, { tagData: JSON.stringify(next) });
+    expect(routeTaken()).toBe("in place");
+    const host = hostOf(sayings()[0]);
+    expect(host.drawn, "the derived extent was not recorded").toEqual([496, 300]);
+    expect(host.live?.[0]).toBeCloseTo(992, 0);
+    expect(host.ratio?.[0]).toBeCloseTo(2, 2);
+    expect(host.ratio?.[1]).toBeCloseTo(2, 2);
+    expect(host.answered.widths, "every member answered").toBe(host.answered.of);
+  });
+
+  it("is still read off the group's box when the members say nothing, which is the case the box is for", async () => {
+    const { cfg, target } = await doubledScatter();
+    silentMembers();
+    setTracing(true);
+    const next = aYEdit(cfg);
+    const back = await updateChartInSlide(buildChart(next), target, { tagData: JSON.stringify(next) });
+    expect(back?.size).toEqual({ width: 960, height: 600 });
+    expect(keptTrace()[0].data).toMatchObject({ via: "group", samples: 0 });
   });
 });
