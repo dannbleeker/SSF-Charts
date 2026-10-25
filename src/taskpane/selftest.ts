@@ -5117,10 +5117,11 @@ export async function runSelfTest(
   /**
    * Keep the verdict, and hand it to the caller in the same breath.
    *
-   * One helper rather than a call beside each `push`, because there are three
-   * push sites and the two that report "not reached" are exactly the ones a
-   * future edit would forget — they are the verdicts of a run that is already
-   * going wrong, which is when this matters most. A sink that throws must not
+   * One helper rather than a call beside each `push`, because there are four
+   * report sites and the three that report a scenario that was not run (the
+   * abandoned one, the stopped one and the one declined on a sick host) are
+   * exactly the ones a future edit would forget — they are the verdicts of a run
+   * that is already going wrong, which is when this matters most. A sink that throws must not
    * cost the verdict it was given, let alone the run.
    */
   const report = (result: ScenarioResult, into: ScenarioResult[]) => {

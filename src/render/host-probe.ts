@@ -1213,8 +1213,8 @@ type GeometryRead = { id: number | string; name: number | string; width: number 
  * ONE (`group-members-real-slide` listed a group that `group-children-via-getcount`
  * said it could not). So a `no` or `threw` here is not yet a fact about charts:
  * its partner is the self-test scenario `an edit after the person resizes a
- * chart`, which reads the same fields off a chart this add-in drew on a slide of
- * its own, and the two are read together.
+ * chart`, which reads the same fields off a chart this add-in drew in the corner
+ * of a slide the deck already had, and the two are read together.
  *
  * Pure, so the words can be checked without a host.
  */

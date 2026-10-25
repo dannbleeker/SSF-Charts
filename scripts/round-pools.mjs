@@ -272,6 +272,11 @@ export function poolScenarioPopulations(logs) {
     const st = log?.selftest ?? [];
     for (const s of Object.keys(st).map((k) => st[k])) {
       if (!s?.name) continue;
+      // A SKIPPED scenario counted nothing: any "N of M" in its detail is somebody
+      // else's sentence. The resize scenario's stall skip quotes the host's own
+      // "drawing shapes 1-9 of 9", and read as a population it printed "PASSED ON A
+      // SMALLER POPULATION: 9, usually 24" for a scenario that never ran.
+      if (s.skipped) continue;
       // The verdict's own "N of M" — the shape every counting scenario here uses.
       const m = /\b(\d+) of (\d+)\b/.exec(String(s.detail ?? ""));
       if (!m) continue;

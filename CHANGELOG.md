@@ -178,8 +178,10 @@ were gaps in the earlier fixes; some were old.
 - **Numbers:** the pane reads typed numbers for a `de_DE` config the way it reads
   `de-DE`; `0.500` in a block of European numbers is half, not five hundred; and a
   node with a missing coordinate is dropped instead of printing `NaN`.
-- **A combo chart's line labels follow *Label content*,** upright and sideways, so
-  rotating a chart no longer changes what its labels say.
+- **A combo chart's line labels follow *Label content*.** They used to print the
+  value whatever it said, upright and sideways alike; a Pareto asked for categories
+  now shows them on the line. A list with nothing a point can print (*Percent* alone)
+  still shows the value.
 - **Same scale on a slide with several charts** now knows which of them it reached,
   so the pane keeps following the chart you have open instead of guessing.
 - **The live resize test is fairer.** It draws a small chart early in the round and

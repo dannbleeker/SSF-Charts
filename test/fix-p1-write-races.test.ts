@@ -661,7 +661,12 @@ describe("r2-17 — never two writes to one chart at once", () => {
     userSelects(deck, "s1", deck.ids[0]);
     await loadSelected("A");
     await tickAutoUpdate();
-    hold.batchAnswer = (items) => items.map((i) => i.target);
+    // The renderer's answer carries the per-chart list too (`UpdatedTargets.perItem`);
+    // a plain array here made `followRescale` throw and the test pass anyway.
+    hold.batchAnswer = (items) => {
+      const list = items.map((i) => i.target);
+      return Object.assign(list, { perItem: list });
+    };
     hold.updateAnswer = redrawnTargets("s1");
 
     const slow = gate();
@@ -678,6 +683,9 @@ describe("r2-17 — never two writes to one chart at once", () => {
     slow.open();
     await until("the held edit to go out once Same Scale was done", () => hold.updates.length === 1, 4000);
     expect(JSON.parse(hold.updates[0].tagData!).title).toBe("edited during Same Scale");
+    // And Same Scale itself finished: a throw in `followRescale` is swallowed by the
+    // guard and shows only as a "Failed: …" note, which the assertions above cannot see.
+    expect($("host-note").textContent ?? "").not.toMatch(/^Failed/);
   });
 
   it("holds an auto-update off while Explode rewrites the chart being edited", async () => {
@@ -721,7 +729,12 @@ describe("r2-17 — never two writes to one chart at once", () => {
     userSelects(deck, "s1", deck.ids[0]);
     await loadSelected("A");
     await tickAutoUpdate();
-    hold.batchAnswer = (items) => items.map((i) => i.target);
+    // The renderer's answer carries the per-chart list too (`UpdatedTargets.perItem`);
+    // a plain array here made `followRescale` throw and the test pass anyway.
+    hold.batchAnswer = (items) => {
+      const list = items.map((i) => i.target);
+      return Object.assign(list, { perItem: list });
+    };
     hold.updateAnswer = redrawnTargets("s1");
 
     const slow = gate();

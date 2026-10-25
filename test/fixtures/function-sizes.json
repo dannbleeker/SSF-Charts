@@ -24,7 +24,6 @@
   "src/core/layout/waterfall.ts::layoutWaterfall": 197,
   "src/render/powerpoint.ts::updateChartsInSlides": 190,
   "src/taskpane/app.ts::wireInsert": 180,
-  "src/taskpane/datasheet.ts::mountDatasheet": 175,
   "src/core/layout/line.ts::layoutSlope": 174,
   "src/core/demo.ts::buildResultsScene": 170,
   "src/taskpane/app.ts::runInsert": 151,

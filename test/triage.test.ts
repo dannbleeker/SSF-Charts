@@ -2247,6 +2247,29 @@ describe("a scenario that passes on a smaller population than it usually runs", 
     expect(poolScenarioPopulations(rounds)[0]).toMatchObject({ now: 4, usual: 8, ok: false });
   });
 
+  it("does not read a skipped scenario's quoted 'N of M' as a population", () => {
+    // The live resize scenario drew 24 shapes in rounds 502, 504 and 505 (each
+    // stalled, quoting the host's "shapes 1-10 of 24"); the rebuilt one draws 9. Its
+    // first stall skip quotes "1-9 of 9", which is the host's sentence and not a
+    // count the scenario took, so it must not be read as a shrunken population.
+    const stalled = (build: string, of: number) => ({
+      build,
+      selftest: [
+        {
+          name: "an edit after the person resizes a chart",
+          ok: false,
+          skipped: true,
+          detail: `the host stopped answering (PowerPoint did not respond while drawing shapes 1-${of} of ${of} (45s))`,
+        },
+      ],
+    });
+    const history = [stalled("a", 24), stalled("b", 24), stalled("c", 24), stalled("d", 9)];
+    expect(poolScenarioPopulations(history)).toEqual([]);
+    // …while the same sentence on a verdict that was NOT skipped still counts.
+    const counted = history.map((r) => ({ ...r, selftest: r.selftest.map((s) => ({ ...s, skipped: false })) }));
+    expect(poolScenarioPopulations(counted)[0]).toMatchObject({ now: 9, usual: 24 });
+  });
+
   it("says nothing when THIS round carried no count, however small the last one that did", () => {
     /**
      * Rounds 306, 307 and 308, on 2026-08-29. Each printed

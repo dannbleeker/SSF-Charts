@@ -3158,6 +3158,14 @@ rule (`f3d289c`, `97e91a5`).
 6. **Label line breaks in the remaining layouts** (the earlier item 4 in the list
    below): the third hunt added callout text, heatmap row and column names, combo line
    names and the waffle legend to the sites that still box a break as one line.
+7. **A combo's line labels under "Category + %".** Since the combo follows `labelContent`
+   (`9d59b76`), a saved combo or Pareto that chose the pane's "Category + %" now labels
+   its line points with the category, where they used to print the value, so a
+   Pareto's cumulative percentages disappear from the line on its next redraw. It is
+   the same rule the line chart already follows (a point has no share of anything),
+   documented in the manual, and `["percent"]` alone still keeps the value. The
+   alternative is to read `percent` on a line as its own value when the line is a
+   cumulative share. A design call: accept and keep, or special-case the Pareto.
 
 **Closed afterwards, the same day (`0d8b537`, `9d59b76`, `4da0937` and the commit
 after them).** Six of the leftovers below were small enough to finish, and one
@@ -3181,8 +3189,11 @@ instrument problem the live rounds had shown:
   number on a node interface or a new kind is a compile error there. A node missing
   one is dropped, as a non-finite one already was.
 - **A combo's line labels follow `labelContent`,** sideways and upright alike (one
-  shared expression, and rotating a chart must not change what its labels say). A
-  list with nothing a point can print keeps the value the line always carried.
+  shared expression). They used to print the value whatever it said. A list with
+  nothing a point can print keeps the value the line always carried, so
+  `["percent"]` is unchanged, while `["category", "percent"]` (the pane's
+  "Category + %") now labels a Pareto's cumulative line with the category and not
+  the cumulative share. That last case is item 7 under "Deliberately NOT changed".
 - **`0.500` in a European block is the decimal 0.5.** A thousands group cannot start
   with 0; `1.500` is still 1500. `US_GROUPED` had the same head (`0,500` read as 500
   and voted American, which stopped a Danish block from converting at all). Siblings

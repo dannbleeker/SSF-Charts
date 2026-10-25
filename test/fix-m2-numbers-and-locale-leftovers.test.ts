@@ -27,6 +27,28 @@ import { sceneToSvg } from "../src/render/svg";
  * `pane-state.test.ts` does; the rest are pure functions and need no DOM.
  */
 
+/**
+ * A pass-through spy on the guard `buildChart` ends with. `finiteNodes(scene.nodes)`
+ * on a finished scene is an identity (the scene is already the guard's output), so
+ * the only way to see the guard drop a real node is to watch it drop it. Records
+ * only while `recording`, and returns exactly what the real guard returns.
+ */
+const guardSpy = vi.hoisted(() => ({ recording: false, dropped: [] as { kind: string; points?: unknown[] }[] }));
+vi.mock("../src/core/scene", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../src/core/scene")>();
+  return {
+    ...real,
+    finiteNodes: (nodes: SceneNode[]) => {
+      const kept = real.finiteNodes(nodes);
+      if (guardSpy.recording) {
+        const keptSet = new Set(kept);
+        guardSpy.dropped.push(...nodes.filter((n) => !keptSet.has(n)));
+      }
+      return kept;
+    },
+  };
+});
+
 /** See `pane-state.test.ts`: the pane's last debounced render must not outlive jsdom. */
 afterAll(async () => {
   await new Promise((r) => setTimeout(r, 250));
@@ -500,13 +522,29 @@ describe("M2c: the finite-number guard sees a missing coordinate", () => {
     expect(finiteNodes([stranger])).toEqual([stranger]);
   });
 
-  it("the engine's own scenes still lose nothing to it: every sample kind, both ways round", () => {
-    for (const { kind } of CHART_KINDS) {
-      for (const horizontal of [false, true]) {
-        const scene = buildChart({ ...sampleConfig(kind), horizontal });
-        expect(finiteNodes(scene.nodes), `${kind} horizontal=${horizontal}`).toHaveLength(scene.nodes.length);
+  it("the engine's own scenes lose nothing real to it: every sample kind, both ways round", async () => {
+    // Watched where it happens (see `guardSpy`): a table that wrongly required a
+    // field some real node does not carry would drop that node here and nowhere
+    // else, and the chart would simply be missing a bar. The one drop the engine is
+    // allowed is a polygon with fewer than two points, which was always dropped.
+    //
+    // The engine is imported AGAIN, after `resetModules`: `test/setup.ts` loads it
+    // (through `render/powerpoint`) before this file's mock exists, so the static
+    // `buildChart` above still holds the real guard and a spy on it sees nothing.
+    // Without this the test passed with every rect being dropped.
+    vi.resetModules();
+    const { buildChart: build } = await import("../src/core/chart");
+    guardSpy.dropped.length = 0;
+    guardSpy.recording = true;
+    try {
+      for (const { kind } of CHART_KINDS) {
+        for (const horizontal of [false, true]) build({ ...sampleConfig(kind), horizontal });
       }
+    } finally {
+      guardSpy.recording = false;
     }
+    const real = guardSpy.dropped.filter((n) => !(n.kind === "polygon" && (n.points?.length ?? 0) < 2));
+    expect(real.map((n) => n.kind)).toEqual([]);
   });
 });
 
