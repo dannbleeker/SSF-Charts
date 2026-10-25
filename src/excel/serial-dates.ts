@@ -73,10 +73,25 @@ export function formatPattern(code: unknown): string {
  *
  * UTC throughout — a local-time Date would shift the day across a timezone and
  * hand back the wrong date for half the world, invisibly to whoever wrote it.
+ *
+ * "" WHEN THE NUMBER IS NO CALENDAR DAY, and any number can arrive: a cell with a
+ * date format holds whatever was typed or pasted into it — a Unix timestamp in
+ * milliseconds, a yyyymmdd integer, an id — and Excel shows "########" for all of
+ * them. `toISOString` THROWS RangeError past the Date range (about 1e8 serials),
+ * which took the whole Generate down with "Failed: Invalid time value" and no
+ * cell named; and between Excel's last day (2958465, 9999-12-31) and that edge it
+ * returns a signed six-digit year, which `slice(0, 10)` cut into "+057370-04" for
+ * 20260105 — a string that `sheetToData` then read as the number 20234525. The
+ * answer is checked as a string, the way the datasheet's `isoDay` checks its twin:
+ * four-digit year or nothing. The caller keeps the number it was given.
  */
 export function excelSerialToISO(serial: number, date1904 = false): string {
+  if (!Number.isFinite(serial) || Math.abs(serial) > 1e8) return "";
   const epoch = date1904 ? Date.UTC(1904, 0, 1) : Date.UTC(1899, 11, 30);
-  return new Date(epoch + Math.round(serial * 86400000)).toISOString().slice(0, 10);
+  const when = new Date(epoch + Math.round(serial * 86400000));
+  if (Number.isNaN(when.getTime())) return "";
+  const iso = when.toISOString().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso : "";
 }
 
 /**

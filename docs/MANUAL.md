@@ -45,13 +45,17 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
 2. **Type or paste your data** into the datasheet — row 1 is categories,
    column A is series names. Pasting a range from Excel (Ctrl+V) works.
 
-   Numbers are read the way Excel shows them: `(1,234)` is minus 1,234, a
-   currency sign (`$`, `€`, `£`, `kr.`) on either side of the number is
-   ignored, `−20` with a true minus sign is minus 20, and a space or no-break
-   space can group thousands (`1 234`). A paste written the European way
+   Numbers are read the way Excel shows them: `(1,234)` is minus 1,234, so is
+   `1,234-` (the trailing minus ERP exports write), a currency sign (`$`, `€`,
+   `£`, `kr.`, or one with letters in front such as `R$` and `US$`) on either
+   side of the number is ignored, `−20` with a true minus sign is minus 20, and a
+   space, no-break space or apostrophe can group thousands (`1 234`,
+   `1'234.50`). Indian grouping (`12,34,567.89`) and Arabic-Indic digits (`٢٥`,
+   `٣٫٥`) are read too. A paste written the European way
    (`1.234,50`, `987,5`) is converted when the whole block says so, and the pane
    tells you how many cells it rewrote. A cell that is not a number stays a
-   gap. A line break inside a pasted cell (Alt+Enter in Excel) shows as `↵` in
+   gap, and is never taken for a date unless it is spelled like one (see
+   *Dates* below). A line break inside a pasted cell (Alt+Enter in Excel) shows as `↵` in
    the grid and stays a line break in the label; delete the `↵` to remove it.
 3. Adjust options; the preview updates live.
 4. **Insert into slide.** If a placeholder or shape is selected, the chart
@@ -135,7 +139,8 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
    waits for the earlier to finish. A write always goes to the chart it started
    from, even if you open another chart in the pane while it runs.
 7. Ctrl+Z / Ctrl+Y undo and redo datasheet edits, including the rows, columns
-   and series colours that go with them. Inside any other text box — the chart
+   and series colours that go with them; picking a series colour is a step of
+   its own (one drag of the picker is one step). Inside any other text box — the chart
    title, the Agenda box, the Automation JSON box — they undo that box's own
    typing and leave the datasheet alone.
 
@@ -192,7 +197,10 @@ the toggle does nothing at all, and leaves the chart exactly as it was.
   cell (`35%`) counts as 35 and a date cell counts as its day — `=B3-B2`
   over two dates is a duration in days. A range may run past the end of the
   sheet (`=SUM(B2:B999)` totals the whole column), and **⇄ Transpose rewrites
-  every reference** so formula cells keep the numbers they had.
+  every reference** so formula cells keep the numbers they had. A formula that
+  cannot be answered — a reference to text, a circular reference, or one nested
+  more than 500 levels deep (parentheses, functions and cells that name cells
+  count together) — reads as empty, and the cells beside it are unaffected.
 - **Blank rows split stacks**: in a stacked chart, series separated by a
   blank row form side-by-side sub-stacks (clustered-stacked).
 - **Dates**: ISO (`2026-01-15`), `15.01.2026`, and `Jan 2026` parse as
@@ -202,7 +210,9 @@ the toggle does nothing at all, and leaves the chart exactly as it was.
   `2026-01-03` or `03.01.2026` to say which you meant. Slash dates with only one
   possible reading (`01/15/2026`, `2026/01/15`) are fine. A day that does not
   exist in its month (`04/31/2026`, `2026-02-30`, `Feb 29 2023`) reads as empty
-  rather than being moved into the next month.
+  rather than being moved into the next month. Digits alone are a date only
+  when they carry a year in full or all three parts: `1/2`, `1:100` and `5 12`
+  are not dates, and read as empty.
 
 ### Special rows (magic series names)
 
@@ -357,7 +367,12 @@ count of how many of its options are currently on.
   against.
 - **Segment order**: sheet / reversed / ascending / descending.
 - **Axis scale** min/max pinning and **Axis break** (compresses an
-  out-of-scale range, clearly marked).
+  out-of-scale range, clearly marked). The numbers typed into these two and into
+  the Value line box (a comma list, `50, 100`) are read in the *Labels* locale:
+  with a decimal-comma locale (da-DK, de-DE, fr-FR) `3.000` is three thousand
+  and the Value line list is separated by semicolons (`1,5; 2,5`); in en-US
+  `3.000` is three and `1,500` is fifteen hundred. A number with only one
+  reading (`0,5`, `1.25`, `1.234,5`) is read the same in any locale.
 - **Unit label** (`valueAxisTitle`) — a *short* unit at the top of the value
   axis: "€m", "%", "$m (log)". It shares the narrow band above the plot with
   the chart title and the topmost tick, so it is drawn at no more than 40% of
@@ -505,7 +520,8 @@ count of how many of its options are currently on.
 - **Export style / Import style**: a corporate style file (JSON: palette,
   font, negative/total colors) applied to every chart you make. Export gives you
   the style the pane is currently drawing with — which is not always your own
-  (see below).
+  (see below). A style with `"palette": null` is refused with a message and not
+  stored; leave the key out to say "no palette".
 - **Save style to deck / Use deck style**: the same style file, stored **in the
   presentation** instead of in your browser. Your imported style follows the
   browser, so a branded deck sent to a colleague used to arrive with none of it
@@ -628,7 +644,9 @@ editable PowerPoint shapes — the think-cell pattern this add-in is built for.
 `"image"` rasterises the whole chart into one picture object. In the pane it is
 the **Insert as picture** checkbox beside Auto-update; in JSON it is the
 `render` key, honoured by Insert, Update chart, Insert batch (per config),
-Same scale and the skill CLI alike.
+Same scale and the skill CLI alike. The tick is remembered in the browser and
+starts every new chart (a chart type, a template) ticked; a chart you open from
+a slide or a JSON config keeps its own `render`.
 
 Reach for it only on the densest kinds (area, violin, sunburst, tile-map,
 waffle) when a shapes-mode render would push the deck past the PowerPoint-web
@@ -1001,11 +1019,16 @@ It reads the range the way pasting it into the datasheet would, not the raw
 numbers Excel stores:
 
 - **Labels** (the first row and first column) come through as Excel shows
-  them — `Jan-26`, `10%`, `2024`.
+  them — `Jan-26`, `10%`, `2024`. A date header whose shown text the pane would
+  read as a different day than the cell holds — `05-01-2026` in a day-first
+  workbook, which a month-first reader takes for 1 May — comes through as its
+  ISO date (`2026-01-05`) instead.
 - **Percent-formatted cells** arrive as percentage points: a cell showing
   `3.5%` is `3.5`, not `0.035`, so a `%` number-format suffix labels it `3.5%`.
 - **Dates** in the data become calendar days, which is what a Gantt needs, and
-  follow the workbook's date system (1900 or 1904).
+  follow the workbook's date system (1900 or 1904). A date-formatted cell that
+  holds a number which is no date (a Unix timestamp, `20260105` — Excel shows
+  `########`) stays that number.
 - **Hidden and filtered-out rows and columns** are left out, as in Excel's own
   charts, and the note under the JSON says how many. (Excel builds that predate
   ExcelApi 1.2 cannot report them; the note says so and every row is kept.)

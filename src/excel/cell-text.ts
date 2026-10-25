@@ -6,6 +6,7 @@
  * wires the pane on import, so nothing in it can be unit-tested without a DOM,
  * and every decision here is a pure function of what Excel handed back.
  */
+import { parseDateToken } from "../core/format";
 import { excelSerialToISO, formatPattern, isDateFormat } from "./serial-dates";
 
 /**
@@ -36,6 +37,45 @@ function percentPoints(fraction: number): number {
 }
 
 /**
+ * THE DAY A DATE LABEL'S DISPLAYED TEXT NAMES — does it agree with the day the
+ * cell holds, as far as the number format shows it?
+ *
+ * The pane's date reader is month-first for a dashed date, so a Danish workbook
+ * whose headers show "05-01-2026" (5 January) handed over that spelling and the
+ * line chart read 1 May: dates out of order, the time axis abandoned or wrong.
+ * The cell also holds the serial, which has no locale, so the serial is the
+ * truth and the text only wins when it agrees.
+ *
+ * AGREES AT THE RESOLUTION THE FORMAT SHOWS, which is why this does not compare
+ * whole days. "Jan-26" is what `mmm-yy` prints for 1 January and for 31 January
+ * alike, and the reader takes it as the 1st; holding it to the day would turn
+ * every month-end header (EOMONTH is how finance writes them) into
+ * "2026-01-31" — the very thing keeping the displayed text exists to prevent.
+ * So only the parts the format has a token for are compared: year, month and day
+ * of the month. A format with no year ("mmmm") is not held to one.
+ *
+ * Text the reader does not read as a date at all ("Q1 2026", "2026", "Monday") is
+ * the user's label and is kept — except when it is spelled like a numeric date, three
+ * numbers round separators, which the reader refuses when it cannot tell day
+ * from month ("05-01-2026"). That the CELL is a date is already settled by its
+ * format, so there the serial speaks.
+ */
+const NUMERIC_DAY = /^\d{1,4}[-/. ]\d{1,2}[-/. ]\d{1,4}(?: \d{1,2}:\d{2}(?::\d{2})?)?$/;
+
+function displayNamesTheDay(shown: string, iso: string, format: unknown): boolean {
+  const day = parseDateToken(shown);
+  if (day == null) return !NUMERIC_DAY.test(shown.trim());
+  const [year, month, dayOfMonth] = iso.split("-").map(Number);
+  const read = new Date(day * 86400000);
+  const pattern = formatPattern(format).toLowerCase();
+  if (/y/.test(pattern) && read.getUTCFullYear() !== year) return false;
+  if (/m/.test(pattern) && read.getUTCMonth() + 1 !== month) return false;
+  // `d` and `dd` are the day of the month; `ddd` and `dddd` are weekday names.
+  if (/(?<!d)d{1,2}(?!d)/.test(pattern) && read.getUTCDate() !== dayOfMonth) return false;
+  return true;
+}
+
+/**
  * ONE CELL AS THE TEXT THE DATASHEET READS.
  *
  * `values` hands back what a cell STORES and the sheet reads what a cell SHOWS,
@@ -48,9 +88,14 @@ function percentPoints(fraction: number): number {
  *    percent header stays "10%", a year stays "2024". The date conversion below
  *    used to run on these too and printed "2026-01-01" under every month. A
  *    label whose displayed text did not come back is read like any other cell.
+ *    The one exception is a DATE label whose text the pane would read as a
+ *    different day than the cell holds (`displayNamesTheDay`): there the ISO date
+ *    of the serial is delivered instead, because a header that DISPLAYS as
+ *    "05-01-2026" is 5 January in Danish Excel and 1 May to the date reader.
  *  - A DATE becomes an ISO string, not its serial number, so a Gantt built from
  *    a real schedule column draws a calendar instead of a numeric axis (nothing
- *    downstream can tell 46027 from a revenue figure).
+ *    downstream can tell 46027 from a revenue figure). A number that is no
+ *    calendar day at all (`excelSerialToISO` answers "") stays the number it is.
  *  - A PERCENT is multiplied back up, because Excel stores 3.5% as 0.035 and
  *    the pane's own paste reads the displayed "3.5%" as 3.5 and stores a share
  *    as 35, never 0.35. `numberFormat.suffix` only APPENDS a "%", so a chart
@@ -64,9 +109,14 @@ export function cellText(
   how: { label: boolean; date1904: boolean },
 ): string {
   if (value == null) return "";
-  if (how.label && typeof shown === "string") return shown;
+  const date = typeof value === "number" && Number.isFinite(value) && isDateFormat(format);
+  if (how.label && typeof shown === "string") {
+    if (!date) return shown;
+    const iso = excelSerialToISO(value, how.date1904);
+    return iso && !displayNamesTheDay(shown, iso, format) ? iso : shown;
+  }
   if (typeof value === "number" && Number.isFinite(value)) {
-    if (isDateFormat(format)) return excelSerialToISO(value, how.date1904);
+    if (date) return excelSerialToISO(value, how.date1904) || String(value);
     if (isPercentFormat(format)) return String(percentPoints(value));
   }
   return String(value);

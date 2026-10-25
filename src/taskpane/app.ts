@@ -65,9 +65,13 @@ import { note, onStopRequested, setProgress, settledNotes, showStop, startElapse
 import {
   contiguousStacks,
   dataToSheet,
+  decimalMark,
   evaluateFormula,
   mountDatasheet,
   sheetToData,
+  spellNumber,
+  splitValueList,
+  typedNumber,
   type SheetModel,
 } from "./datasheet";
 import { BUILTIN_TEMPLATES } from "./templates";
@@ -219,9 +223,23 @@ function rememberedPicturePref(): boolean {
   }
 }
 
+/**
+ * The preference as the pane holds it NOW: read from storage once, here, and set
+ * by the checkbox from then on.
+ *
+ * It is what every NEW chart is seeded from (`applyConfig`'s `fresh`), and kept
+ * apart from the checkbox on purpose. The box shows the chart in front of the
+ * user — a chart loaded off a slide shows that chart's own `render` — so reading
+ * the preference back from it would hand the next new chart whatever the last
+ * LOADED one happened to be. And it is not re-read from storage, which may be
+ * blocked: a tick the pane could not store would then be forgotten on the very
+ * next chart type.
+ */
+let picturePref = rememberedPicturePref();
+
 const state: AppState = {
   ...stateFromConfig(sampleConfig("stacked")),
-  renderImage: rememberedPicturePref(),
+  renderImage: picturePref,
   editTarget: null,
 };
 
@@ -259,7 +277,7 @@ function stateFromConfig(cfg: ChartConfig): Omit<AppState, "editTarget"> {
   return {
     kind: cfg.kind,
     sheet,
-    decorations: { ...cfg.decorations },
+    decorations: ingestDecorations(cfg.decorations),
     axisUnderDatamarks: false,
     horizontal: !!cfg.horizontal,
     title: cfg.title ?? "",
@@ -418,6 +436,49 @@ function asArray<T>(v: unknown): T[] {
  */
 function labelContentList(v: unknown): string[] {
   return typeof v === "string" ? [v] : asArray<string>(v);
+}
+
+/**
+ * The entries of a list of OBJECTS that something can actually read: non-null
+ * objects, in order, or nothing at all when `v` is not an array. The pane's
+ * reading of `decorations.valueLines` — the engine's own (`cleanDecorations` in
+ * `core/chart.ts`) is private to it, so the two rules are kept in step by hand.
+ */
+function objectList<T>(v: unknown): T[] {
+  return Array.isArray(v) ? (v.filter((e) => !!e && typeof e === "object" && !Array.isArray(e)) as T[]) : [];
+}
+
+/**
+ * `decorations` as the pane keeps it: a copy, with `valueLines` repaired the way
+ * the engine repairs it.
+ *
+ * The engine draws `"valueLines": "mean"` — the obvious guess for anyone writing
+ * the JSON by hand, since the pane's checkbox is labelled "mean" — by not drawing
+ * the lines at all (`cleanDecorations`, 117c0d5). This boundary kept the raw
+ * value, so `renderOptions` threw `existing.some is not a function` on it (and
+ * `Cannot read properties of null` on `[null]`): the new title and sheet were
+ * already in place and the options panel, emptied first, stayed empty — a
+ * half-loaded pane, on a config the preview next to it would have drawn. A saved
+ * template, a share link, "Edit selected chart" on a skill-built deck, and the
+ * JSON box all come through here. An entry that is not an object is dropped, a
+ * list with none left is dropped, and a list that was fine is left as it was.
+ */
+function ingestDecorations(raw: Partial<Decorations> | undefined): Partial<Decorations> {
+  const out = { ...raw };
+  const lines: unknown = out.valueLines;
+  if (lines !== undefined) {
+    const kept = objectList<ValueLine>(lines);
+    if (!(Array.isArray(lines) && kept.length === lines.length)) {
+      if (kept.length) out.valueLines = kept;
+      else delete out.valueLines;
+    }
+  }
+  return out;
+}
+
+/** The value lines a decorations object describes: `valueLines`, else the legacy single `valueLine` as a list of one. */
+function valueLinesOf(d: Partial<Decorations>): ValueLine[] {
+  return objectList<ValueLine>(d.valueLines ?? (d.valueLine ? [d.valueLine] : []));
 }
 
 /**
@@ -820,8 +881,22 @@ function hostWorkFinished(): void {
   }
 }
 
-function applyConfig(cfg: ChartConfig, editTarget: EditTarget | null) {
+/**
+ * Make `cfg` the chart the pane holds.
+ *
+ * `fresh` says it is a NEW chart — a gallery pick, a starter or saved template,
+ * the `?kind=` link — as against one LOADED from a slide, a JSON box or a share
+ * link. A new chart starts from the remembered "Insert as picture" default; a
+ * loaded one keeps its own `render`, because that is a fact about that chart.
+ * `stateFromConfig` sets `renderImage` from the config alone, so a config that
+ * says nothing about it (every sample and every starter) unticked the box the
+ * moment a chart type was picked, while storage still said "1": the next insert
+ * drew shapes and the next reload ticked the box again. A config that does say
+ * ("shapes" or "image") is a statement, and wins.
+ */
+function applyConfig(cfg: ChartConfig, editTarget: EditTarget | null, fresh = false) {
   Object.assign(state, stateFromConfig(cfg), { editTarget });
+  if (fresh && cfg.render == null) state.renderImage = picturePref;
   sheetApi.setSheet(state.sheet);
   const titleField = document.getElementById("chart-title") as HTMLInputElement | null;
   if (titleField) titleField.value = state.title;
@@ -1010,7 +1085,7 @@ function thumbButton(kind: ChartKind, label: string): HTMLButtonElement {
   cap.textContent = label;
   b.append(pic, cap);
   b.addEventListener("click", () => {
-    applyConfig(sampleConfig(kind), null);
+    applyConfig(sampleConfig(kind), null, true);
     // Auto-collapse the (tall) type grid once a kind is chosen — the summary
     // then shows the current kind, click to re-expand.
     const acc = document.getElementById("type-acc") as HTMLDetailsElement | null;
@@ -1263,10 +1338,15 @@ export function layOutValueLines(
   wantMean: boolean,
   valuesText: string,
   anchor: number | undefined,
+  locale = "en-US",
 ): { lines: ValueLine[]; anchor: number | undefined } {
   const values: number[] = [];
-  for (const part of valuesText.split(",")) {
-    const v = Number(part.trim());
+  // In the chart's locale (`splitValueList`, `typedNumber`): where the decimal is a
+  // comma, "1,5" is ONE line at one and a half — it used to be two lines, at 1 and
+  // at 5 — and entries are separated by a semicolon. A dot-decimal locale keeps the
+  // comma list the box has always taken.
+  for (const part of splitValueList(valuesText, locale)) {
+    const v = typedNumber(part, locale);
     if (part.trim() && Number.isFinite(v)) values.push(v);
   }
   const slots: ValueLine["mode"][] = loaded.some((l) => l.mode === "mean") ? [] : ["mean"];
@@ -1293,6 +1373,110 @@ export function layOutValueLines(
   while (next < values.length) lines.push({ mode: "value", value: values[next++] });
   const landed = Number.isInteger(anchor) ? (at[slotOf[anchor as number]] ?? -1) : -1;
   return { lines, anchor: landed >= 0 ? landed : undefined };
+}
+
+/** What a Value-line box puts between entries, and in its hint: a semicolon where the locale's decimal is a comma. */
+function valueSeparator(locale: string): string {
+  return decimalMark(locale) === "," ? "; " : ", ";
+}
+
+/**
+ * The text of a Value-line box written in one locale, as the same entries written
+ * in another. Left as it is when any entry is not a number: rewriting part of a
+ * list the user is still typing would destroy what they have.
+ */
+function respellValueList(text: string, from: string, to: string): string {
+  if (!text.trim()) return text;
+  const numbers = splitValueList(text, from).map((part) => typedNumber(part, from));
+  if (numbers.some((n) => !Number.isFinite(n))) return text;
+  return numbers.map((n) => spellNumber(n, to)).join(valueSeparator(to));
+}
+
+/**
+ * An Axis scale or Axis break box's STATE as the box writes it in the chart's
+ * locale ("1.5" -> "1,5" in da-DK). State keeps the machine spelling — see
+ * `boxValue` — and anything that is not a number is shown as it was typed.
+ */
+function boxText(stored: string): string {
+  const n = Number(stored);
+  return stored.trim() !== "" && Number.isFinite(n) ? spellNumber(n, state.locale) : stored;
+}
+
+/**
+ * What an Axis scale or Axis break box puts in STATE: the number it was typed as,
+ * read in the chart's locale (`typedNumber`) and kept as plain digits.
+ *
+ * These boxes held `Number(text)` of whatever was typed, which is the machine
+ * spelling and only that: "0,5" was NaN and the setting vanished without a word,
+ * and "3.000" was 3 to someone who meant three thousand. Keeping the number and
+ * not the text is also what makes `currentConfig` independent of the locale — a
+ * stored "1.234" would be 1234 the moment the locale picked changed, silently.
+ * Text that is not a number is kept as typed, so `currentConfig` drops it as it
+ * always has and the box still shows what was typed.
+ */
+function boxValue(typed: string): string {
+  const n = typedNumber(typed, state.locale);
+  return typed.trim() !== "" && Number.isFinite(n) ? String(n) : typed;
+}
+
+type NumberBoxKey = "scaleMin" | "scaleMax" | "breakFrom" | "breakTo";
+
+/**
+ * One label holding two text boxes that each take a number — Axis scale min and
+ * max, Axis break from and to — wired to the two `state` fields `keys` name, with
+ * the label's words before the first box and between them.
+ *
+ * Both rows were written out in full, and both read `Number(box.value)`; they are
+ * one function now so that the two cannot read their boxes differently again.
+ * Each box carries its key (`data-number-key`) so a change of locale can find it.
+ */
+function numberPair(
+  [before, between]: [string, string],
+  placeholder: string,
+  keys: [NumberBoxKey, NumberBoxKey],
+): [HTMLLabelElement, HTMLInputElement, HTMLInputElement] {
+  const label = document.createElement("label");
+  label.className = "wide";
+  const boxes = keys.map((key) => {
+    const box = document.createElement("input");
+    box.type = "text";
+    box.style.width = "48px";
+    box.placeholder = placeholder;
+    box.value = boxText(state[key]);
+    box.dataset.numberKey = key;
+    return box;
+  });
+  const emit = () => {
+    state[keys[0]] = boxValue(boxes[0].value);
+    state[keys[1]] = boxValue(boxes[1].value);
+    renderPreview();
+  };
+  boxes.forEach((box) => box.addEventListener("input", emit));
+  label.append(before, boxes[0], between, boxes[1]);
+  return [label, boxes[0], boxes[1]];
+}
+
+/** The hint in an empty Value-line box: the list separator of the chart's locale. */
+function valueListHint(locale: string): string {
+  return `e.g. 50${valueSeparator(locale)}100`;
+}
+
+/**
+ * The chart's locale just changed from `was`: write every number box in the new
+ * one. The state behind the four Axis boxes is plain digits and does not move —
+ * only what the box SHOWS is spelled again ("1,5" in da-DK is "1.5" in en-US, and
+ * "1.234" is 1234 in the one and 1.234 in the other, so left as typed the same
+ * characters would now mean a different number) — and the Value-line list, which
+ * has no state of its own, is read in the old locale and written in the new.
+ */
+function respellNumberBoxes(was: string): void {
+  optionsHost.querySelectorAll<HTMLInputElement>("input[data-number-key]").forEach((box) => {
+    box.value = boxText(state[box.dataset.numberKey as NumberBoxKey]);
+  });
+  const list = optionsHost.querySelector<HTMLInputElement>("input[data-value-list]");
+  if (!list) return;
+  list.value = respellValueList(list.value, was, state.locale);
+  list.placeholder = valueListHint(state.locale);
 }
 
 /**
@@ -1443,17 +1627,21 @@ function renderOptions() {
   vl.className = "wide";
   const vlMean = document.createElement("input");
   vlMean.type = "checkbox";
-  const existing = d.valueLines ?? (d.valueLine ? [d.valueLine] : []);
+  // Through `valueLinesOf`, and not the raw field: `stateFromConfig` repairs it,
+  // but this is the line that threw when it did not, and it empties the panel.
+  const existing = valueLinesOf(d);
   vlMean.checked = existing.some((v) => v.mode === "mean");
   const vlValues = document.createElement("input");
   vlValues.type = "text";
-  vlValues.placeholder = "e.g. 50, 100";
+  vlValues.placeholder = valueListHint(state.locale);
+  vlValues.dataset.valueList = "";
   vlValues.style.width = "80px";
   vlValues.value = existing
     .filter((v): v is { mode: "value"; value: number } => v.mode === "value")
-    .map((v) => v.value)
-    .join(", ");
-  const valueLineLayout = () => layOutValueLines(existing, vlMean.checked, vlValues.value, loadedDiff?.fromValueLine);
+    .map((v) => spellNumber(v.value, state.locale))
+    .join(valueSeparator(state.locale));
+  const valueLineLayout = () =>
+    layOutValueLines(existing, vlMean.checked, vlValues.value, loadedDiff?.fromValueLine, state.locale);
   const emitVl = () => {
     const { lines, anchor } = valueLineLayout();
     d.valueLines = lines.length ? lines : undefined;
@@ -1492,53 +1680,13 @@ function renderOptions() {
   G.layout.body.appendChild(so);
 
   // Manual axis scale (think-cell's axis-handle dragging).
-  const sc = document.createElement("label");
-  sc.className = "wide";
-  const scMin = document.createElement("input");
-  const scMax = document.createElement("input");
-  for (const [el, val] of [
-    [scMin, state.scaleMin],
-    [scMax, state.scaleMax],
-  ] as const) {
-    el.type = "text";
-    el.style.width = "48px";
-    el.placeholder = "auto";
-    el.value = val;
-  }
-  const emitScale = () => {
-    state.scaleMin = scMin.value;
-    state.scaleMax = scMax.value;
-    renderPreview();
-  };
-  scMin.addEventListener("input", emitScale);
-  scMax.addEventListener("input", emitScale);
+  const [sc, , scMax] = numberPair(["Axis scale min ", " max "], "auto", ["scaleMin", "scaleMax"]);
   scMax.setAttribute("aria-label", "Axis scale maximum");
-  sc.append("Axis scale min ", scMin, " max ", scMax);
   G.axes.body.appendChild(sc);
 
   // Axis break (compresses the given value range).
-  const ab = document.createElement("label");
-  ab.className = "wide";
-  const abFrom = document.createElement("input");
-  const abTo = document.createElement("input");
-  for (const [el, val] of [
-    [abFrom, state.breakFrom],
-    [abTo, state.breakTo],
-  ] as const) {
-    el.type = "text";
-    el.style.width = "48px";
-    el.placeholder = "none";
-    el.value = val;
-  }
-  const emitBreak = () => {
-    state.breakFrom = abFrom.value;
-    state.breakTo = abTo.value;
-    renderPreview();
-  };
-  abFrom.addEventListener("input", emitBreak);
-  abTo.addEventListener("input", emitBreak);
+  const [ab, , abTo] = numberPair(["Axis break from ", " to "], "none", ["breakFrom", "breakTo"]);
   abTo.setAttribute("aria-label", "Axis break to value");
-  ab.append("Axis break from ", abFrom, " to ", abTo);
   G.axes.body.appendChild(ab);
 
   // Number format.
@@ -1579,7 +1727,9 @@ function renderOptions() {
   }
   nfLoc.value = state.locale;
   nfLoc.addEventListener("change", () => {
+    const was = state.locale;
     state.locale = nfLoc.value;
+    respellNumberBoxes(was);
     renderPreview();
   });
   nfSuffix.setAttribute("aria-label", "Label suffix");
@@ -1731,11 +1881,13 @@ function renderOptions() {
     const wrap = document.createElement("label");
     const input = document.createElement("input");
     input.type = "color";
-    input.value = state.seriesColors[i] ?? palette[i % palette.length];
+    input.value = swatchColour(i, palette);
     input.addEventListener("input", () => {
       state.seriesColors[i] = input.value;
+      recordColourPick(i);
       renderPreview();
     });
+    input.addEventListener("change", endColourPick);
     wrap.append(input, name);
     colors.appendChild(wrap);
   });
@@ -1875,17 +2027,51 @@ const redoStack: string[] = [];
  * The unit of undo is now the whole thing an edit changes. Serialising is also
  * the deep copy this needs — `seriesMeta[i].colors` is spliced in place.
  */
-function snapshot() {
-  const snap = JSON.stringify({
+function snapshotText(): string {
+  return JSON.stringify({
     cells: state.sheet.cells,
     seriesColors: state.seriesColors,
     seriesMeta: state.seriesMeta,
   });
-  if (history[history.length - 1] !== snap) {
-    history.push(snap);
-    if (history.length > 100) history.shift();
-    redoStack.length = 0;
-  }
+}
+/**
+ * The swatch whose pick is the history's NEWEST step, while a drag of its picker
+ * may still be extending it; -1 when no pick is open.
+ */
+let colourStep = -1;
+function snapshot(): boolean {
+  colourStep = -1;
+  const snap = snapshotText();
+  if (history[history.length - 1] === snap) return false;
+  history.push(snap);
+  if (history.length > 100) history.shift();
+  redoStack.length = 0;
+  return true;
+}
+/**
+ * A colour pick is an undo step.
+ *
+ * The snapshot holds `seriesColors`, so it WAS part of history — but only as
+ * cargo on the datasheet's steps. A pick made after the last edit was not a step
+ * of its own, and Ctrl+Z restored the colours of the snapshot before it: the cell
+ * edit came back and the colour went with it, silently, and Ctrl+Y returned the
+ * cell and not the colour because the redo entry predates the pick.
+ *
+ * A native picker fires `input` continuously while it is dragged, and a step per
+ * event would push the datasheet's own history out of its 100 entries in one drag
+ * — so the events of one drag extend ONE step. The picker's `change` closes it.
+ */
+function recordColourPick(i: number) {
+  if (colourStep === i && history.length > 1) history[history.length - 1] = snapshotText();
+  else if (snapshot()) colourStep = i;
+}
+/** The picker is let go: the next pick on the same swatch is a step of its own. */
+function endColourPick() {
+  colourStep = -1;
+}
+/** The colour a series' swatch shows: its own pick, else the palette's colour for its position. */
+function swatchColour(i: number, palette: string[]): string {
+  return state.seriesColors[i] ?? palette[i % palette.length];
 }
 /**
  * Start a fresh undo timeline at the current sheet — the same baseline boot
@@ -1895,9 +2081,8 @@ function snapshot() {
 function resetHistory() {
   history.length = 0;
   redoStack.length = 0;
-  history.push(
-    JSON.stringify({ cells: state.sheet.cells, seriesColors: state.seriesColors, seriesMeta: state.seriesMeta }),
-  );
+  colourStep = -1;
+  history.push(snapshotText());
 }
 function restore(snap: string) {
   const { cells, seriesColors, seriesMeta } = JSON.parse(snap) as {
@@ -1905,10 +2090,18 @@ function restore(snap: string) {
     seriesColors: AppState["seriesColors"];
     seriesMeta: AppState["seriesMeta"];
   };
+  colourStep = -1;
   state.sheet = { cells };
   state.seriesColors = seriesColors;
   state.seriesMeta = seriesMeta;
   sheetApi.setSheet(state.sheet);
+  // The swatches show the colours that were just put back; they are built once, in
+  // `renderOptions`, and an undone pick left its colour on the swatch while the
+  // chart beside it had gone back.
+  const palette = mergedStyle()?.palette ?? PALETTES.Default;
+  document.querySelectorAll<HTMLInputElement>(".series-colors input[type=color]").forEach((input, i) => {
+    input.value = swatchColour(i, palette);
+  });
   renderPreview();
 }
 /** Input types with no text of their own to undo — Ctrl+Z over them means the pane's undo. */
@@ -3562,7 +3755,7 @@ $("template-list").addEventListener("change", () => {
   const sep = value.indexOf(":");
   const [source, name] = [value.slice(0, sep), value.slice(sep + 1)];
   const cfg = source === "builtin" ? BUILTIN_TEMPLATES.find((t) => t.name === name)?.config : loadTemplates()[name];
-  if (cfg) applyConfig({ ...DEFAULT_SIZE, ...cfg }, null);
+  if (cfg) applyConfig({ ...DEFAULT_SIZE, ...cfg }, null, true);
 });
 $("template-delete").addEventListener("click", () => {
   const value = ($("template-list") as HTMLSelectElement).value;
@@ -3593,6 +3786,13 @@ $("style-import").addEventListener("click", () => {
   try {
     const parsed = JSON.parse(($("json-io") as HTMLTextAreaElement).value);
     if (parsed.kind) throw new Error("that is a chart config — use Import instead");
+    // Refused BEFORE it is kept or stored. `"palette": null` is what a serialiser
+    // writes for a palette it does not have, and it is not "no palette": it
+    // overwrites the default one in every config this style is merged into, and
+    // every chart then died on `null.length` — "Could not render" on every
+    // preview, written to storage and so still there after a reload, behind a
+    // green "Style imported". Leaving the key out is the way to say none.
+    if (parsed.palette === null) throw new Error('"palette" is null — list its colours, or leave "palette" out');
     styleFile = parsed;
     localStorage.setItem(STYLE_KEY, JSON.stringify(styleFile));
     // An import is an explicit act by the person at the pane, so it wins over
@@ -3799,6 +3999,7 @@ $("auto-update").addEventListener("change", () => {
 // insert hands PowerPoint, which is why this touches state and nothing else.
 $("render-image").addEventListener("change", () => {
   state.renderImage = ($("render-image") as HTMLInputElement).checked;
+  picturePref = state.renderImage;
   // REMEMBERED, so it is a preference rather than something to re-tick on every
   // chart. It seeds a NEW chart only — see `PICTURE_PREF_KEY`; a chart loaded
   // off a slide still shows its own `render`, because that is a fact about that
@@ -4597,7 +4798,7 @@ function revealTestingSection(): void {
 
 const requestedKind = deepLink.get("kind");
 if (requestedKind && CHART_KINDS.some((k) => k.kind === requestedKind)) {
-  applyConfig(sampleConfig(requestedKind as ChartKind), null);
+  applyConfig(sampleConfig(requestedKind as ChartKind), null, true);
 }
 // A shared chart link (#c=<base64 config>) reopens the exact chart. Applied
 // after ?kind so an explicit link wins; malformed links are ignored silently.

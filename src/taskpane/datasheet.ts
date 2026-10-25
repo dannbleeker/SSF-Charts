@@ -82,12 +82,22 @@ function numericValue(text: string): number {
 
 /** The number in text that carries nothing but digits and separators. */
 function plainNumber(text: string): number {
-  if (US_GROUPED.test(text)) return Number(text.replace(/,/g, ""));
+  if (US_GROUPED.test(text) || LAKH_GROUPED.test(text)) return Number(text.replace(/,/g, ""));
   return text.includes(",") ? NaN : Number(text);
 }
 
 /** "1,234" / "1,234.5" — the US thousands grouping Excel copies. */
 const US_GROUPED = /^[+-]?\d{1,3}(,\d{3})+(\.\d+)?$/;
+
+/**
+ * "12,34,567.89" / "1,00,000" — the Indian grouping en-IN and hi-IN print: ONE
+ * group of three at the end, then groups of two. The comma is still a thousands
+ * mark with a dot decimal, so it reads like `US_GROUPED` and is as unambiguous:
+ * no other convention puts a two-digit group before a three-digit one, which is
+ * also why a bare "12,34" (a decimal comma) never matches. It used to read as a
+ * gap, with nothing said, on a sheet that is otherwise a plain Excel paste.
+ */
+const LAKH_GROUPED = /^[+-]?\d{1,2}(,\d{2})+,\d{3}(\.\d+)?$/;
 
 /** "1.234" / "1.234.567,89" — dot groups, optionally with a comma decimal. */
 const EU_GROUPED = /^[+-]?\d{1,3}(\.\d{3})+(,\d+)?$/;
@@ -100,11 +110,26 @@ const EU_DECIMAL = /^[+-]?\d+,\d+$/;
  * Nordic "kr" / "kr." that Danish, Swedish and Norwegian Excel put on a currency
  * format. A three-letter ISO code ("USD 1,234") is deliberately not here — it
  * is a word, and a rule that reads "ABC 5" as 5 reads text as data.
+ *
+ * A SYMBOL MAY CARRY UP TO THREE LETTERS IN FRONT OF IT, which is how Excel
+ * prints every dollar that is not THE dollar: "R$ 1.234,50" (pt-BR), "US$ 5",
+ * "NZ$", "HK$", "C$". The sign is still one symbol and the letters only say whose;
+ * it is the bare code with no symbol ("USD") that stays a word. This was a bare
+ * `\p{Sc}`, so a pt-BR paste read its "R$" cells as gaps — and a gap casts no
+ * vote in `looksEuropean`, which is what let the dot-grouped integers beside them
+ * ("1.234") be read 1000x too small with no note, where "€ 1.234,50" beside the
+ * same integers converted the whole block.
  */
-const CURRENCY = String.raw`(?:\p{Sc}|kr\.?)`;
+const CURRENCY = String.raw`(?:[a-z]{0,3}\p{Sc}|kr\.?)`;
 const CURRENCY_ALL = new RegExp(CURRENCY, "giu");
-/** The space a thousands group may be separated by: plain, no-break, narrow no-break (fr-FR), thin. */
-const GROUP_GAP = String.raw`[ \u{a0}\u{202f}\u{2009}]`;
+/**
+ * What a thousands group may be separated by: a plain, no-break, narrow no-break
+ * (fr-FR) or thin space, or the APOSTROPHE de-CH, fr-CH and it-CH print
+ * ("1'234.50", and U+2019 in "1’234"). Nothing else uses an apostrophe between
+ * digits, so unlike a comma it names a thousands mark and nothing more; it read as
+ * a gap, silently.
+ */
+const GROUP_GAP = String.raw`[ \u{a0}\u{202f}\u{2009}'\u{2019}]`;
 const GROUP_GAP_ALL = new RegExp(GROUP_GAP, "gu");
 
 /**
@@ -128,6 +153,18 @@ const GROUP_GAP_ALL = new RegExp(GROUP_GAP, "gu");
  * AND a minus ("(-5)"), a percent AND a currency ("$5%"), or two currencies.
  * "Genuinely not a number" stays a gap, as before.
  *
+ * A MINUS AFTER THE DIGITS is a negative, and is the one sign allowed there:
+ * "45-", "1.234,50-". SAP and most ERP list exports write every negative that
+ * way, as text, and nothing else puts a lone hyphen straight after a number — a
+ * part number ("2024-05"), a range ("3-5") and a fraction ("1/2") all have more
+ * digits behind the separator, so none of them matches. It is the same decision as
+ * "(45)": unambiguous per cell, and it used to fall through to the DATE reader,
+ * which took "45-" for 1 January 2045 and charted it as 27,394 (`rawCellValue`).
+ * Only a minus ADJOINING the digits counts, so "45 -" stays a gap as before.
+ *
+ * ARABIC-INDIC DIGITS are read as the digits they are (`latinNumerals`): ar-EG and
+ * fa-IR Excel print "٢٥" and "٣٫٥", and every pattern here is anchored on ASCII.
+ *
  * `pre` and `post` are handed back VERBATIM so `fromEuropeanNumber` can rewrite
  * the digits inside them and put the cell's own dressing back — a share table
  * must still read as a share in the grid, and `(1.234,50)` must still be a
@@ -141,7 +178,7 @@ const GROUP_GAP_ALL = new RegExp(GROUP_GAP, "gu");
 const DRESSED_NUMBER = new RegExp(
   String.raw`^([\s(+\u{2212}-]*(?:${CURRENCY}[\s(+\u{2212}-]*)?)` +
     String.raw`(\d{1,3}(?:${GROUP_GAP}\d{3})+(?:[.,]\d+)?|\d[\d.,]*|\.\d+)` +
-    String.raw`([\s)%]*(?:${CURRENCY}[\s)%]*)?)$`,
+    String.raw`([\u{2212}-]?[\s)%]*(?:${CURRENCY}[\s)%]*)?)$`,
   "iu",
 );
 
@@ -155,18 +192,40 @@ interface ReadNumber {
   post: string;
 }
 
+/**
+ * Text with Arabic-Indic digits and separators spelled the way every pattern in
+ * this file expects: "٢٥" -> "25", "٣٫٥" -> "3.5", "١٬٢٣٤" -> "1,234", "٢٥٪" -> "25%".
+ *
+ * ar-EG prints U+0660-0669, fa-IR the extended U+06F0-06F9; both blocks start on a
+ * multiple of 16, so the digit is the code point modulo 16. The decimal (U+066B)
+ * and thousands (U+066C) marks and the percent sign (U+066A) are the same kind of
+ * thing — a number in those digits with an ASCII "." would not be one — and each
+ * names exactly one separator, so mapping them is not a guess. The invisible
+ * direction marks (ALM, LRM, RLM) that RTL locales put round a number are dropped:
+ * `trim` does not remove them, and they stood between the cell and every pattern.
+ */
+function latinNumerals(text: string): string {
+  return text
+    .replace(/[\u{61c}\u{200e}\u{200f}]/gu, "")
+    .replace(/[\u{660}-\u{669}\u{6f0}-\u{6f9}]/gu, (d) => String((d.codePointAt(0) as number) % 16))
+    .replace(/\u{66b}/gu, ".")
+    .replace(/\u{66c}/gu, ",")
+    .replace(/\u{66a}/gu, "%");
+}
+
 function readNumberText(text: string): ReadNumber | null {
-  const m = DRESSED_NUMBER.exec(String(text ?? "").trim());
+  const m = DRESSED_NUMBER.exec(latinNumerals(String(text ?? "")).trim());
   if (!m) return null;
   const [, pre, spaced, post] = m;
   const count = (s: string, re: RegExp) => (s.match(re) ?? []).length;
-  const signs = count(pre, /[-+\u{2212}]/gu);
+  const trailing = count(post, /[-\u{2212}]/gu);
+  const signs = count(pre, /[-+\u{2212}]/gu) + trailing;
   const open = count(pre, /\(/g);
   const percents = count(post, /%/g);
   const currencies = count(pre + post, CURRENCY_ALL);
   if (signs > 1 || open > 1 || open !== count(post, /\)/g) || (open && signs)) return null;
   if (currencies > 1 || percents > 1 || (percents && currencies)) return null;
-  const negative = open > 0 || count(pre, /[-\u{2212}]/gu) > 0;
+  const negative = open > 0 || count(pre, /[-\u{2212}]/gu) + trailing > 0;
   return { sign: negative ? -1 : 1, core: spaced.replace(GROUP_GAP_ALL, ""), pre, post };
 }
 
@@ -175,6 +234,94 @@ const bareNumber = (cell: unknown): string => {
   const t = String(cell ?? "").trim();
   return readNumberText(t)?.core ?? t;
 };
+
+/** The decimal mark a locale writes: "," for da-DK, de-DE and fr-FR, "." otherwise (and for a locale the runtime does not know). */
+export function decimalMark(locale: string): "." | "," {
+  try {
+    return new Intl.NumberFormat(locale).format(1.5).includes(",") ? "," : ".";
+  } catch {
+    // `RangeError` for a tag the runtime cannot parse: a config's locale is user JSON.
+    return ".";
+  }
+}
+
+/**
+ * A NUMBER TYPED INTO ONE OF THE PANE'S OWN BOXES — Axis scale, Axis break, a
+ * Value line — read in the convention of the chart's locale.
+ *
+ * Those boxes read `Number(text)`, which is the machine spelling and nothing
+ * else: "0,5" is NaN and the setting vanished with no word said, and "3.000" is 3
+ * to a Dane who meant three thousand. The datasheet has a whole European-number
+ * path for what is PASTED; a box has no block of cells to take evidence from, so
+ * the evidence is the locale the chart is labelled in.
+ *
+ * Only the ONE shape that is ambiguous is left to the locale: a single mark
+ * followed by exactly three digits, "1,500" / "3.000". Where the locale writes
+ * that mark as its decimal it is a decimal (1.5, 3), and where it is the group
+ * mark it is a group (1500, 3000). Every other spelling has one reading and gets
+ * it in any locale — "0,5" and "1.25" are decimals, "1.234.567" and "1,234,567"
+ * are groups, "1.234,5" and "1,234.5" put the decimal where the LAST mark is —
+ * because nothing else can be meant by them. A leading zero ("0.500") cannot open
+ * a thousands group, so it is always a decimal. Anything that is none of these is
+ * NaN, the same refusal `numericValue` gives a comma it cannot place.
+ */
+export function typedNumber(text: string, locale = "en-US"): number {
+  const m = /^([+-]?)([\d.,' \u{a0}\u{202f}\u{2009}\u{2019}]+)(e[+-]?\d+)?$/iu.exec(
+    latinNumerals(String(text ?? ""))
+      .trim()
+      .replace(/\u{2212}/gu, "-"),
+  );
+  if (!m || !/\d/.test(m[2])) return NaN;
+  const [, sign, spaced, exponent = ""] = m;
+  let body = spaced;
+  // A space or apostrophe is a group mark and nothing else — but only between
+  // digits in threes, or it is not a number.
+  if (new RegExp(GROUP_GAP, "u").test(body)) {
+    if (!new RegExp(String.raw`^\d{1,3}(?:${GROUP_GAP}\d{3})+(?:[.,]\d+)?$`, "u").test(body)) return NaN;
+    body = body.replace(GROUP_GAP_ALL, "");
+  }
+  const dots = body.split(".").length - 1;
+  const commas = body.split(",").length - 1;
+  let n: number;
+  if (dots && commas) {
+    const mark = body.lastIndexOf(".") > body.lastIndexOf(",") ? "." : ",";
+    const group = mark === "." ? "," : ".";
+    if (!new RegExp(`^\\d{1,3}(?:\\${group}\\d{3})+\\${mark}\\d+$`).test(body)) return NaN;
+    n = Number(body.split(group).join("").replace(mark, "."));
+  } else if (!dots && !commas) {
+    n = Number(body);
+  } else {
+    const mark = dots ? "." : ",";
+    const parts = body.split(mark);
+    const grouped =
+      parts.length > 2 || (parts[1].length === 3 && /^[1-9]\d{0,2}$/.test(parts[0]) && mark !== decimalMark(locale));
+    if (grouped) {
+      if (!/^\d{1,3}$/.test(parts[0]) || parts.slice(1).some((p) => !/^\d{3}$/.test(p))) return NaN;
+      n = Number(parts.join(""));
+    } else {
+      // One mark, read as the decimal point. "5," / "5." is a number still being typed.
+      if (!/^\d*$/.test(parts[0]) || !/^\d*$/.test(parts[1]) || (!parts[0] && !parts[1])) return NaN;
+      n = Number(`${parts[0] || "0"}.${parts[1] || "0"}`);
+    }
+  }
+  const value = exponent ? Number(`${n}${exponent}`) : n;
+  return sign === "-" ? -value : value;
+}
+
+/** A number as a box in `locale` shows it, so `typedNumber` reads back what was written: 1.5 -> "1,5" in da-DK. */
+export function spellNumber(n: number, locale = "en-US"): string {
+  return decimalMark(locale) === "," ? String(n).replace(".", ",") : String(n);
+}
+
+/**
+ * The entries of a "Value line" box. A semicolon always separates; a comma does
+ * too, except where the locale writes its decimal with one — there "1,5" is ONE
+ * value, and a comma only separates when it is followed by a space ("50, 100").
+ */
+export function splitValueList(text: string, locale = "en-US"): string[] {
+  if (text.includes(";")) return text.split(";");
+  return decimalMark(locale) === "," ? text.split(/,\s+/) : text.split(",");
+}
 
 /**
  * A CLIPBOARD BLOCK READ AS QUOTED TSV, which is what Excel actually writes.
@@ -305,10 +452,11 @@ export function looksEuropean(cells: string[][]): boolean {
       if (!t) continue;
       if (EU_GROUPED.test(t) && t.includes(",")) european = true;
       else if (EU_DECIMAL.test(t) && !US_GROUPED.test(t)) european = true;
-      // A US grouping, or a dot decimal that CANNOT be a group because it does
-      // not carry exactly three digits ("987.5", "1.2"). A bare "1.234" is not
-      // evidence either way and is deliberately not counted.
-      if (US_GROUPED.test(t)) american = true;
+      // A US grouping (or its Indian cousin, "12,34,567.89" — a comma that is a
+      // thousands mark all the same), or a dot decimal that CANNOT be a group
+      // because it does not carry exactly three digits ("987.5", "1.2"). A bare
+      // "1.234" is not evidence either way and is deliberately not counted.
+      if (US_GROUPED.test(t) || LAKH_GROUPED.test(t)) american = true;
       else if (/^[+-]?\d+\.\d+$/.test(t) && !/^[+-]?\d{1,3}(\.\d{3})+$/.test(t)) american = true;
     }
   }
@@ -352,18 +500,72 @@ export function fromEuropeanNumber(text: string): string {
  * chart) and only parseRow read a date, so "35%" was 35 to the chart and an
  * error to `=SUM` over it, and a Gantt duration `=B3-B2` over two ISO dates came
  * back blank.
+ *
+ * THE DATE READER IS ASKED ONLY ABOUT TEXT THAT CAN BE A DATE. It used to be the
+ * catch-all for whatever the number reader refused, and `Date.parse` accepts
+ * nearly anything made of digits and punctuation: "45-" came back as 1 January
+ * 2045 and charted as 27,394 (a waterfall total off by 27,439), "1/2" as 2
+ * January 2001, "1:100" as the year 100, "5 12" as 12 May — each one flipping the
+ * whole ChartData into date mode. "Genuinely not a number stays a gap" held for
+ * `numericValue` and stopped one layer up. Two doors are closed here:
+ *
+ *  - a cell the number reader recognised WITH its dressing ("1,5-", "(1,5)") is a
+ *    number whose separator could not be placed, and is refused as one. A bare
+ *    "15.01.2026" also matches the number pattern and is no such thing, so only
+ *    DRESSED text is shut out; the undressed shapes are `mayBeDate`'s to judge.
+ *  - digits-only text must be spelled like a date (`NUMERIC_DATE`).
  */
 function rawCellValue(raw: string): { n: number; date: boolean } {
   const num = numericValue(raw);
   if (Number.isFinite(num)) return { n: num, date: false };
-  const day = parseDateToken(raw);
+  const dressed = readNumberText(raw);
+  if (dressed && (dressed.pre.trim() || dressed.post.trim())) return { n: NaN, date: false };
+  const day = mayBeDate(raw) ? parseDateToken(raw) : null;
   return day != null ? { n: day, date: true } : { n: NaN, date: false };
 }
 
-/** Shared state for one formula evaluation pass: cycle guard + value cache. */
+/**
+ * A date spelled in digits alone, with the separators `parseDateToken` reads: a
+ * year in full first ("2026-01-15", "2026/01", "2026.01.15"), or three numbers
+ * ("15.01.2026", "01/15/26", "1/1/2026"), or a month and a year in full
+ * ("01/2026"), and optionally a time of day and a UTC offset after it. Anything
+ * else made of digits and separators is a fraction, a ratio, a pair or a stray
+ * sign — "1/2", "1:100", "5 12", "45-" — and is not a date however leniently
+ * `Date.parse` reads it.
+ */
+const NUMERIC_DATE =
+  /^(?:\d{4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}|\d{1,2}[-/.]\d{4})(?: \d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(?:[+-]\d{2}:?\d{2})?)?$/;
+
+/** Text with a letter in it names a month, a weekday or a zone and is judged by `parseDateToken`'s own word list. */
+function mayBeDate(raw: string): boolean {
+  const t = raw.trim();
+  return /[a-z]/i.test(t) || NUMERIC_DATE.test(t);
+}
+
+/**
+ * How many levels deep one evaluation may go: parentheses, unary minus, function
+ * calls and the hop from a formula to the cell it names, all counted together.
+ *
+ * Excel itself stops a formula at 64 nested levels; this is eight times that,
+ * because a chain of cells each naming the one before ("=B2+C2", a running total
+ * across a year of daily categories) costs a level per cell and is ordinary. What
+ * it is NOT is unbounded. The parser is recursive descent and every level is a
+ * handful of stack frames, so 3,000 "(" — a string nobody types, and one a paste
+ * can carry — threw "Maximum call stack size exceeded" out of `sheetToData`, and
+ * from there out of `currentConfig`, `renderPreview` and every action that builds
+ * the config: one cell took the pane's preview and Insert down until it was cleared.
+ */
+const MAX_NESTING = 500;
+
+/** Thrown from deep inside the parser to unwind it, and caught at `evaluateFormula`'s door. */
+class FormulaTooDeep extends Error {}
+
+/** Shared state for one formula evaluation pass: cycle guard, value cache, nesting budget. */
 interface EvalContext {
   visiting: Set<string>;
   memo: Map<string, number>;
+  /** Levels in use right now — see `MAX_NESTING`. */
+  depth: number;
 }
 
 /** Numeric value of a cell, following "=" formulas with cycle protection. */
@@ -372,9 +574,21 @@ function cellNumeric(cells: string[][], row: number, col: number, ctx: EvalConte
   // Memoised: the cycle guard is added before a descent and removed after, so a
   // formula naming the same cell twice re-walked its whole subtree twice, and a
   // chain of such cells cost 2^depth evaluations — a ~25-row sheet froze the
-  // pane for minutes, on the UI thread, on every debounced keystroke. Only
-  // FINITE results are cached: a NaN can come from a cycle, and a cycle's answer
-  // depends on the path that reached it.
+  // pane for minutes, on the UI thread, on every debounced keystroke.
+  //
+  // EVERY ANSWER IS CACHED, A NaN INCLUDED. This used to cache finite values
+  // alone, "because a NaN can come from a cycle, and a cycle's answer depends on
+  // the path that reached it". Which cell REPORTS the cycle does depend on the
+  // path; the value does not. A cell that reaches a cell still waiting above it
+  // sits on a cycle with it, and NaN runs through every operator and function
+  // here (`minOf` and `maxOf` carry it, SUM and AVG add it, `*` and `/` keep it),
+  // so that cell is NaN however it is entered. What the finite-only rule threw
+  // away was every NaN that is NOT a cycle's: a text cell ("TBD", "n/a") or an
+  // error token ("#DIV/0!") is NaN on every path. A chain where each cell names
+  // the one before TWICE ("=B2+B2*0.05") with such a cell at its root was
+  // re-walked 2^depth times again — 7 seconds at 20 columns and doubling, on the
+  // UI thread, on every keystroke, including the ones that typed the text into
+  // the first cell — and so was a chain that ends in a cycle.
   const hit = ctx.memo.get(key);
   if (hit !== undefined) return hit;
   if (ctx.visiting.has(key)) return NaN; // circular reference
@@ -384,7 +598,7 @@ function cellNumeric(cells: string[][], row: number, col: number, ctx: EvalConte
     v = 0;
   } else if (raw.startsWith("=")) {
     ctx.visiting.add(key);
-    v = evaluateFormula(cells, raw.slice(1), ctx.visiting, ctx.memo) ?? NaN;
+    v = evaluateWith(cells, raw.slice(1), ctx) ?? NaN;
     ctx.visiting.delete(key);
   } else {
     // A non-numeric NON-blank cell (text, an error token) is not a value — NaN
@@ -394,14 +608,15 @@ function cellNumeric(cells: string[][], row: number, col: number, ctx: EvalConte
     // "n/a" in a referenced cell vanished into a computed total.
     v = rawCellValue(raw).n;
   }
-  if (Number.isFinite(v)) ctx.memo.set(key, v);
+  ctx.memo.set(key, v);
   return v;
 }
 
 /**
  * Evaluate a spreadsheet formula against the datasheet: A1-style refs
  * (row 1 = the category header row), + - * / ( ), and SUM/AVG/MIN/MAX
- * over ranges like B2:E2. Returns null on parse errors or cycles.
+ * over ranges like B2:E2. Returns null on parse errors, cycles, or a formula
+ * nested deeper than `MAX_NESTING` — never throws on the shape of the text.
  */
 export function evaluateFormula(
   cells: string[][],
@@ -409,7 +624,21 @@ export function evaluateFormula(
   visiting: Set<string> = new Set(),
   memo: Map<string, number> = new Map(),
 ): number | null {
-  const ctx: EvalContext = { visiting, memo };
+  const ctx: EvalContext = { visiting, memo, depth: 0 };
+  try {
+    return evaluateWith(cells, expr, ctx);
+  } catch (err) {
+    // The whole evaluation is refused, not just the level that ran out: a cell
+    // reached through a chain that is too deep would answer differently from a
+    // shorter one, and unwinding at once also stops the re-walk that a partial
+    // answer would invite. What it returns is what any formula it cannot read does.
+    if (err instanceof FormulaTooDeep) return null;
+    throw err;
+  }
+}
+
+/** `evaluateFormula` on a context that a cell's own formula continues, so the nesting budget is shared. */
+function evaluateWith(cells: string[][], expr: string, ctx: EvalContext): number | null {
   const s = expr.replace(/\s+/g, "");
   let i = 0;
 
@@ -467,7 +696,18 @@ export function evaluateFormula(
     }
     return v;
   }
+  // Every recursion in this parser — unary minus, a parenthesis, a function's
+  // argument, the hop into another cell's formula — passes through `factor`, so
+  // that is the one place the levels are counted.
   function factor(): number {
+    if (++ctx.depth > MAX_NESTING) throw new FormulaTooDeep();
+    try {
+      return factorAt();
+    } finally {
+      ctx.depth--;
+    }
+  }
+  function factorAt(): number {
     if (s[i] === "-") {
       i++;
       return -factor();
