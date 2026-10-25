@@ -3519,7 +3519,19 @@ minutes earlier, and the 4:3 leg passed it too. One pass and one fail on
 identical bytes is this archive's own definition of a flaky scenario, so 487
 adds a data point, not a diagnosis.
 
-**ALL SIXTEEN CARRY ZERO FRICTION.** Not one has an error, an id refusal, a
+**SEVENTEEN — 500 on `e8ac708`, 2026-10-25, and the same sentence a third time:**
+`4 slides inserted, 4 kept, 4 of 2 still re-editable; 0 queued as duplicates`,
+matching 297 and 487 word for word. It was treated as OURS until shown otherwise,
+because that build carried a reconcile change (`cccd997`, `pickKeeper` now ranks
+twins by re-editability) and the round before had touched the same pass. What
+separates the readings: the SAME BUILD passed in round 501 minutes later, and the
+build one step earlier (`4dd825e`, which already carried `cccd997`) passed it in
+498 and 499, so neither the reconcile change nor the commits after it moved the
+rate. 17 failures in 475 rounds is 3.6%, against 3.4% before. Zero friction again
+(no error, no refusal, no short read). Still not diagnosed; this is one more data
+point on the open question, and the instruction below stands.
+
+**ALL SIXTEEN CARRY ZERO FRICTION** (and the seventeenth does). Not one has an error, an id refusal, a
 GeneralException, a short read or an empty re-read. That is the opposite of
 round 467's empty re-read, which wore the host's signature plainly — and by
 `scenarioBlame`'s own rule, which lands anything unproven on US rather than the
