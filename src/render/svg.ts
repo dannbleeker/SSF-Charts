@@ -1,6 +1,6 @@
 import { polar, symbolPoints, dashKind } from "../core/geometry";
 import { isNamedColor } from "../core/color";
-import type { Scene, SceneNode } from "../core/scene";
+import { LINE_PITCH, labelLines, type Scene, type SceneNode } from "../core/scene";
 
 /**
  * Characters XML 1.0 forbids OUTRIGHT — they cannot be escaped, only removed.
@@ -37,29 +37,17 @@ export const xmlText = (s: string) => String(s ?? "").replace(XML_ILLEGAL, "");
 const esc = (s: string) =>
   xmlText(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/**
- * A label's LINES: its text split at every spelling of a line break. The twin of
- * `labelLines` in `skill/scripts/pptx-paint.mjs`, whose note has the whole story:
- * a pasted header can carry a line break, the live renderer and the deck both
- * draw it as two lines, and this preview emitted it raw inside one `<text>`,
- * where SVG collapses it to a space — a chart that showed one line while the
- * slide it was inserted as shows two. And VT/FF, which `xmlText` deletes, glued
- * `Q1<VT>Report` into `Q1Report` here and in the deck.
+/*
+ * A label's LINES (`labelLines`) and the pitch between them (`LINE_PITCH`) come
+ * from `src/core/scene.ts`, where the LAYOUT sizes a label's box from the same
+ * two — they were local to this file, and the layout read a two-line label as one
+ * wide line and boxed it one line tall while this drew the second line below the
+ * box. The twin of `labelLines` in `skill/scripts/pptx-paint.mjs`, whose note has
+ * the whole story: a pasted header can carry a line break, the live renderer and
+ * the deck both draw it as two lines, and this preview emitted it raw inside one
+ * `<text>`, where SVG collapses it to a space. And VT/FF, which `xmlText`
+ * deletes, glued `Q1<VT>Report` into `Q1Report` here and in the deck.
  */
-const LINE_BREAK = /\r\n|[\n\r\v\f\u0085\p{Zl}\p{Zp}]/u;
-const labelLines = (s: unknown): string[] => {
-  const lines = String(s ?? "").split(LINE_BREAK);
-  while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
-  return lines;
-};
-
-/**
- * One line's pitch as a multiple of the font size. An approximation, like the
- * baseline offsets the single-line case uses (0.36 and 0.25 of the size): the
- * SVG cannot ask the host's font for its metrics, and Segoe UI and Arial, the
- * two faces in play, run from about 1.15 to 1.33.
- */
-const LINE_PITCH = 1.2;
 
 /**
  * Colours reach the scene graph verbatim from ChartConfig (series color, custom

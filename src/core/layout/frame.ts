@@ -1,5 +1,5 @@
 import type { ChartConfig, ChartStyle, Decorations, NumberFormat } from "../types";
-import { textWidth, type SceneNode } from "../scene";
+import { LINE_PITCH, extraLinesHeight, lineCount, maxLineCount, textWidth, type SceneNode } from "../scene";
 import { clipToWidth } from "../elements";
 import { niceTicks, axisTickLabel, segmentLabel } from "../format";
 
@@ -518,9 +518,54 @@ export function totalsBandHeight(decor: Decorations, style: ChartStyle): number 
     : style.fontSize * 0.8;
 }
 
-/** Height of the category-name strip below the plot, or the gap that replaces it. */
-export function categoryAxisHeight(decor: Decorations, style: ChartStyle): number {
-  return decor.categoryAxis ? style.fontSize * 1.5 + 3 : 4;
+/**
+ * Height of the category-name strip below the plot, or the gap that replaces it.
+ *
+ * `lines` is how many lines the TALLEST name draws on (`categoryLines`): the strip
+ * is one band for the whole axis and each name hangs from its top, so a name with
+ * a line break (Alt+Enter in a datasheet cell) needs the pitch of every line past
+ * the first on top of the one-line band. It was always one line, and the second
+ * line of such a name was drawn below the plot's band — off the foot of the chart
+ * in the preview, over whatever sits under the chart on a slide. Priced at the
+ * chart font, not the size the names end up drawn at: the shrink that picks that
+ * size runs later, in `chromeNodes`, and can only make a name smaller than this.
+ */
+export function categoryAxisHeight(decor: Decorations, style: ChartStyle, lines = 1): number {
+  return decor.categoryAxis ? style.fontSize * 1.5 + 3 + extraLinesHeight(lines, style.fontSize) : 4;
+}
+
+/**
+ * The most lines any category name draws on (1 when none holds a line break).
+ *
+ * ONE question asked by the reservation (`computeFrame`, `varianceBandHeight`) and
+ * by the draw (`chromeNodes`), the way `horizontalLegendFits` is, so the strip
+ * that is reserved and the names that are drawn cannot disagree about how tall
+ * the tallest is.
+ */
+export function categoryLines(cfg: ChartConfig): number {
+  return maxLineCount(cfg.data.categories ?? []);
+}
+
+/** `categoryAxisHeight` for THIS chart's names — the number a frame reserves. */
+function categoryStripHeight(cfg: ChartConfig, decor: Decorations, style: ChartStyle): number {
+  return categoryAxisHeight(decor, style, decor.categoryAxis ? categoryLines(cfg) : 1);
+}
+
+/**
+ * Height of the value-axis strip under a SIDEWAYS plot, or the gap that replaces
+ * it. The reservation `computeFrameHorizontal` and `horizontalLegendFits` both
+ * make, so they cannot price it two ways.
+ *
+ * A tick label is a number and the number format's suffix, so a suffix with a line
+ * break (a free-text field) puts every label on more than one line, and the strip
+ * is the pitch of each line past the first taller. Priced at the largest size the
+ * ticks are ever drawn at (`fs * 0.9`) and from the format alone, because the
+ * frame is fixed before the scale and its ticks exist. `"0"` stands in for the
+ * number, as the one label every axis carries and never more than one line.
+ */
+export function horizontalValueAxisHeight(cfg: ChartConfig, style: ChartStyle, decor: Decorations): number {
+  const lines = lineCount(`0${cfg.numberFormat?.suffix ?? ""}`);
+  return decor.valueAxis ? style.fontSize * 1.6 + extraLinesHeight(lines, style.fontSize * 0.9) : 4;
 }
 
 /**
@@ -555,7 +600,7 @@ export function varianceBandHeight(cfg: ChartConfig, decor: Decorations, style: 
     cfg.height -
     titleHeight(cfg, style) -
     totalsBandHeight(decor, style) -
-    categoryAxisHeight(decor, style) -
+    categoryStripHeight(cfg, decor, style) -
     footnoteH(cfg, style, decor);
   return room - want >= MIN_PLOT_SIDE ? want : 0;
 }
@@ -770,10 +815,34 @@ export function footnoteH(cfg: ChartConfig, style: ChartStyle, decor: Decoration
   return cfg.footnote || note || cfg.scatter?.spread ? style.fontSize * 1.3 : 0;
 }
 
-/** One legend entry's placement: its top-left x and 0-based wrap row. */
+/**
+ * One legend entry's placement: its top-left x, and the row it starts on.
+ *
+ * `row` is a distance DOWN the legend in row pitches (`fs * 1.6`, which every
+ * drawer and every reservation multiplies it by), 0 for the first. For a legend
+ * of names with no line break that is the 0-based wrap row it always was; a name
+ * that holds a break is taller than one pitch, so the rows under it start `units`
+ * pitches lower rather than one.
+ */
 export interface LegendSlot {
   x: number;
   row: number;
+  /** Pitches this entry's own label occupies: 1 for a one-line name. */
+  units: number;
+}
+
+/** A legend row's pitch as a multiple of the font size — what the drawers price a row at. */
+const LEGEND_ROW_PITCH = 1.6;
+
+/**
+ * The whole row pitches a legend label of this text occupies. A name with a
+ * line break draws `1.4 * fs` for its first line and `LINE_PITCH * fs` for each
+ * further one, which the row units round UP to — never down, so a reservation
+ * can only be larger than the ink, and 1 for a name with no break.
+ */
+function legendUnits(label: string): number {
+  const lines = lineCount(label);
+  return lines > 1 ? 1 + Math.ceil(((lines - 1) * LINE_PITCH) / LEGEND_ROW_PITCH) : 1;
 }
 
 /**
@@ -788,22 +857,31 @@ export function legendWrapWalk(labels: string[], fs: number, x0: number, maxX: n
   const slots: LegendSlot[] = [];
   let x = x0;
   let row = 0;
+  /** Pitches the current wrap row takes: its tallest label's. */
+  let tall = 1;
   for (const label of labels) {
     const wLabel = textWidth(label, fs);
     if (x > x0 && x + chip + 3 + wLabel > maxX) {
       x = x0;
-      row++;
+      row += tall;
+      tall = 1;
     }
-    slots.push({ x, row });
+    const units = legendUnits(label);
+    tall = Math.max(tall, units);
+    slots.push({ x, row, units });
     x += chip + 3 + wLabel + 12;
   }
   return slots;
 }
 
-/** Number of rows the wrapping legend occupies (0 when there are no labels). */
+/**
+ * Row pitches the wrapping legend occupies (0 when there are no labels): the
+ * number of wrap rows when no name holds a line break, which is every legend
+ * that has ever been drawn here, and the height of the rows in pitches when one
+ * does — every drawer and reservation multiplies this by `fs * 1.6`.
+ */
 export function legendRowCount(labels: string[], fs: number, x0: number, maxX: number): number {
-  const slots = legendWrapWalk(labels, fs, x0, maxX);
-  return slots.length ? slots[slots.length - 1].row + 1 : 0;
+  return legendWrapWalk(labels, fs, x0, maxX).reduce((end, s) => Math.max(end, s.row + s.units), 0);
 }
 
 /**
@@ -852,7 +930,7 @@ export function computeFrame(
   const fs = style.fontSize;
   const titleH = titleHeight(cfg, style);
   const totalsH = totalsBandHeight(decor, style);
-  const categoryAxisH = categoryAxisHeight(decor, style);
+  const categoryAxisH = categoryStripHeight(cfg, decor, style);
   const valueAxisW = decor.valueAxis ? 34 : 2;
   const seriesLabelsW = decor.seriesLabels
     ? Math.min(cfg.width * 0.3, Math.max(0, ...seriesNames.map((s) => textWidth(s, fs))) + 14)
@@ -899,7 +977,11 @@ export function horizontalLegendFits(cfg: ChartConfig, style: ChartStyle, decor:
   const rows = legendRowCount(labels, fs, catW, cfg.width - 4);
   const legendH = rows > 0 ? rows * (fs * 1.6) + 4 : fs * 0.6;
   const left =
-    cfg.height - titleHeight(cfg, style) - legendH - (decor.valueAxis ? fs * 1.6 : 4) - footnoteH(cfg, style, decor);
+    cfg.height -
+    titleHeight(cfg, style) -
+    legendH -
+    horizontalValueAxisHeight(cfg, style, decor) -
+    footnoteH(cfg, style, decor);
   // A plot thinner than a couple of rows of text is not a chart, and a legend
   // that has eaten it is naming bars nobody can see. Same judgement the scatter
   // legend and the cascade's group headers make.
@@ -921,7 +1003,7 @@ export function computeFrameHorizontal(cfg: ChartConfig, style: ChartStyle, deco
   const legendLabels = decor.seriesLabels && horizontalLegendFits(cfg, style, decor) ? legendLabelsFor(cfg, decor) : [];
   const legendRows = legendLabels.length ? legendRowCount(legendLabels, fs, catW, cfg.width - 4) : 0;
   const legendH = legendRows > 0 ? legendRows * (fs * 1.6) + 4 : fs * 0.6;
-  const valueAxisH = decor.valueAxis ? fs * 1.6 : 4;
+  const valueAxisH = horizontalValueAxisHeight(cfg, style, decor);
   const totalsW = decor.totals ? fs * 4 : fs * 0.8;
   return fitPlot(cfg, {
     x: catW,
@@ -996,9 +1078,18 @@ export function chromeNodes(
       ticks.length > 1
         ? Math.min(...ticks.slice(1).map((t, i) => Math.abs(scale.toY(t) - scale.toY(ticks[i]))))
         : frame.h;
-    const tickScale = Math.min(1, tickGap / (fs * 1.4));
+    /**
+     * A tick label can hold a line break — only through the number format's
+     * prefix or suffix, but those are free text — and then it is as many pitches
+     * tall as it has lines. The room it wants between ticks grows with the most
+     * of them, so the whole axis shrinks together exactly as it does for a gap
+     * that is too tight for one line; a label with no break wants `fs * 1.4`,
+     * unchanged.
+     */
+    const tickTexts = ticks.map((t) => axisLabel(t));
+    const tickScale = Math.min(1, tickGap / (fs * 1.4 + extraLinesHeight(maxLineCount(tickTexts), fs * 0.9)));
     const tickLegible = fs * 0.9 * tickScale >= MIN_LABEL_FS;
-    for (const t of ticks) {
+    for (const [ti, t] of ticks.entries()) {
       const y = scale.toY(t);
       if (marks) {
         nodes.push({
@@ -1016,14 +1107,17 @@ export function chromeNodes(
       // Per TICK, not per axis: a squeezed plot puts its topmost ticks in the
       // title's band while the ones below it are still perfectly placed, and
       // each tick is a number in its own right.
-      if (printsOnTitle(cfg, style, y - fs * 0.7 * tickScale)) continue;
+      // This tick's own extra lines: the box grows by them and stays centred on
+      // the tick, so the label still reads against the mark it names.
+      const grow = extraLinesHeight(lineCount(tickTexts[ti]), fs * 0.9 * tickScale);
+      if (printsOnTitle(cfg, style, y - fs * 0.7 * tickScale - grow / 2)) continue;
       nodes.push({
         kind: "text",
         x: 0,
-        y: y - fs * 0.7 * tickScale,
+        y: y - fs * 0.7 * tickScale - grow / 2,
         w: marks ? frame.x - 6 : frame.x - 4,
-        h: fs * 1.4 * tickScale,
-        text: axisLabel(t),
+        h: fs * 1.4 * tickScale + grow,
+        text: tickTexts[ti],
         fontSize: fs * 0.9 * tickScale,
         color: style.mutedText,
         align: "right",
@@ -1129,24 +1223,40 @@ export function chromeNodes(
      * them and would still catch a rule that reached further.
      */
     const bandTop = Math.max(0, frame.y - fs * 1.5);
+    /**
+     * A unit with a LINE BREAK rises. The box is anchored at its bottom, so the
+     * last line stays exactly where a one-line unit sits and each earlier line
+     * stacks above it, and the box grows upward by the pitch of the lines past
+     * the first. Zero for a unit with no break, so that unit's box is untouched.
+     */
+    const unitRise = extraLinesHeight(lineCount(cfg.valueAxisTitle), unitFs);
     // The ink of the box as it will ACTUALLY be drawn — the clamped `y`, not the
     // raw one. Deciding on the unclamped position drops the unit from short
     // charts that have no title to collide with, which is a worse bug than the
     // one this fixes and is what the first version of this did.
-    const unitInkTop = bandTop + fs * 1.4 - unitFs * 1.05;
+    const unitInkTop = bandTop + fs * 1.4 - unitFs * 1.05 - unitRise;
     const titleInkBottom = titleFontSize(cfg, style) * 1.21;
     /** Only ever against a title that is drawn: nothing else is up there. */
     const yieldsToTitle = !!cfg.title && unitInkTop < titleInkBottom;
-    const unitText = yieldsToTitle ? "" : clipToWidth(cfg.valueAxisTitle, unitFs, room);
+    /**
+     * And a unit whose raised lines would leave the canvas yields the same way,
+     * for the same reason it yields to the title: a line printed above the chart
+     * is on the slide, not on the chart, and a clamp back inside would only move
+     * it onto the top tick (see above — "a clamp moves a label whether or not the
+     * destination is free"). It cannot happen to a one-line unit, whose ink top
+     * is `bandTop + 0.4 * fs` at the least, so only a unit with a break asks.
+     */
+    const offCanvas = unitRise > 0 && unitInkTop < 0;
+    const unitText = yieldsToTitle || offCanvas ? "" : clipToWidth(cfg.valueAxisTitle, unitFs, room);
     // Nothing legible fits — drop rather than push an empty box into the scene,
     // which the de-collision pass and every readback would then have to carry.
     if (unitText)
       nodes.push({
         kind: "text",
         x: 0,
-        y: bandTop,
+        y: bandTop - unitRise,
         w: Math.min(Math.max(frame.x - 4, textWidth(unitText, fs)), room),
-        h: fs * 1.4,
+        h: fs * 1.4 + unitRise,
         text: unitText,
         fontSize: unitFs,
         color: style.mutedText,
@@ -1167,7 +1277,10 @@ export function chromeNodes(
   // them asks for panels 7.6 points tall, whose category names were drawn 21.6
   // points below the chart. A name printed under the chart is on the slide, not
   // on the chart, which is the same reason it may not be printed on the title.
-  const catInk = catY + fs * 1.21;
+  // The ink of the LAST line of the tallest name: a name with a line break hangs
+  // its further lines below the first, `categoryAxisHeight` has priced them into
+  // the strip, and the names are all drawn or none for the reason above.
+  const catInk = catY + fs * 1.21 + extraLinesHeight(categoryLines(cfg), fs);
   if (decor.categoryAxis && !printsOnTitle(cfg, style, catY) && catInk <= cfg.height) {
     // Each name's own slot — the same width for all of them unless the centres
     // are uneven (a date-spaced line); see `categoryRooms`.
@@ -1207,7 +1320,10 @@ export function chromeNodes(
         x: centers[i] - slots[i] / 2,
         y: catY,
         w: slots[i],
-        h: catFs * 1.4,
+        // Top-anchored, so a name with a line break grows DOWN by the pitch of
+        // its further lines; a name with none keeps the box it always had, even
+        // beside one that has.
+        h: catFs * 1.4 + extraLinesHeight(lineCount(name), catFs),
         text: clipToWidth(name, catFs, rooms[i]),
         fontSize: catFs,
         color: style.text,

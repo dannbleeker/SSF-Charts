@@ -1,5 +1,13 @@
 import type { ChartConfig, ChartStyle, Decorations, LayoutAnchors, NumberFormat, Series } from "../types";
-import { contrastInk, textWidth, type SceneNode, type TextNode } from "../scene";
+import {
+  contrastInk,
+  extraLinesHeight,
+  lineCount,
+  maxLineCount,
+  textWidth,
+  type SceneNode,
+  type TextNode,
+} from "../scene";
 import { clipToWidth } from "../elements";
 import {
   authoredDecimals,
@@ -2069,7 +2077,9 @@ export function horizontalChrome(
         x: x - 24,
         y: frame.y + frame.h + 2,
         w: 48,
-        h: fs * 1.4,
+        // Top-anchored in the strip `horizontalValueAxisHeight` reserved, so a
+        // label with a line break grows DOWN by the pitch of its further lines.
+        h: fs * 1.4 + extraLinesHeight(lineCount(axisLabel(t)), tickFs),
         text: clipToWidth(axisLabel(t), tickFs, room),
         fontSize: tickFs,
         color: style.mutedText,
@@ -2100,7 +2110,13 @@ export function horizontalChrome(
     // Each row's own height, not the first gap's: the rows are unequal on a
     // date-spaced line, and a first gap of one day or of one year was taken for
     // all of them — see `categoryRooms`.
-    const rowFs = categoryRooms(centers, frame.h, frame.y, frame.y + frame.h).map((h) => bandFontSize(fs, h, 1.5));
+    // A name with a line break needs a row `LINE_PITCH` taller per further line, so
+    // its row's ratio of box to font grows by that and a row too tight for it
+    // gives the axis a smaller size, or drops it, the way any tight row does.
+    // 1.5 for a name with none, exactly as before.
+    const rowFs = categoryRooms(centers, frame.h, frame.y, frame.y + frame.h).map((h, i) =>
+      bandFontSize(fs, h, 1.5 + extraLinesHeight(lineCount(cfg.data.categories[i]), 1)),
+    );
     const gutter = Math.max(1, frame.x - 4);
     const catFs = (() => {
       // The largest size every row that can carry a name can carry. A row too
@@ -2116,12 +2132,15 @@ export function horizontalChrome(
     if (catFs > 0)
       cfg.data.categories.forEach((cat, i) => {
         if (!(rowFs[i] > 0)) return;
+        // Centred on its row, so a name with a line break grows both ways by
+        // half of the pitch of its further lines.
+        const grow = extraLinesHeight(lineCount(cat), catFs);
         nodes.push({
           kind: "text",
           x: 0,
-          y: centers[i] - catFs * 0.75,
+          y: centers[i] - catFs * 0.75 - grow / 2,
           w: gutter,
-          h: catFs * 1.5,
+          h: catFs * 1.5 + grow,
           text: clipToWidth(String(cat ?? ""), catFs, gutter),
           fontSize: catFs,
           color: style.text,
@@ -2240,11 +2259,16 @@ export function legendRow(
     const wLabel = textWidth(e.label, fs);
     const { x, row } = slots[si];
     const ry = y + row * rowH;
+    // A name with a line break is as many pitches tall as it has lines: the walk
+    // (frame.ts) has already put the rows under it that far down, so the box
+    // grows to hold its lines, and the chip rides the middle of the block it
+    // names, which for a one-line name is the `fs * 0.35` it always was.
+    const grow = extraLinesHeight(lineCount(e.label), fs);
     nodes.push(
       {
         kind: "rect",
         x,
-        y: ry + fs * 0.35,
+        y: ry + fs * 0.35 + grow / 2,
         w: chip,
         h: chip,
         fill: e.color,
@@ -2258,7 +2282,7 @@ export function legendRow(
         x: x + chip + 3,
         y: ry,
         w: wLabel + 6,
-        h: fs * 1.4,
+        h: fs * 1.4 + grow,
         text: e.label,
         fontSize: fs,
         color: style.text,
@@ -2677,15 +2701,31 @@ export function seriesLabelNodes(
   const entries = [...own, ...extra]
     .filter((e): e is GutterName & { y: number } => e.y != null)
     .sort((a, b) => a.y - b.y);
+  /**
+   * How tall each name's block is, and so how far apart two neighbours' centres
+   * must be: `lineH` for a one-line name, with the pitch of every further line on
+   * top for a name that holds a line break (Alt+Enter in a series-name cell). It
+   * was `lineH` for all of them, so two broken names were pitched 13.5pt apart
+   * and drew 24pt of ink each — the second line of one across the first of the
+   * next. Priced at `fs`, not at the size the names end up drawn at: the shrink
+   * below can only make a name smaller than this. For names with no break the
+   * two are `lineH` and `lineH`, whose mean is `lineH` exactly.
+   */
+  const boxH = (e: GutterName) => lineH + extraLinesHeight(lineCount(e.name), fs);
+  const gapBetween = (a: GutterName, b: GutterName) => (boxH(a) + boxH(b)) / 2;
   // Push overlapping labels apart, then clamp back into the frame.
   for (let i = 1; i < entries.length; i++) {
-    if (entries[i].y - entries[i - 1].y < lineH) entries[i].y = entries[i - 1].y + lineH;
+    const need = gapBetween(entries[i - 1], entries[i]);
+    if (entries[i].y - entries[i - 1].y < need) entries[i].y = entries[i - 1].y + need;
   }
-  const overflow = entries.length ? entries[entries.length - 1].y + lineH / 2 - (frame.y + frame.h) : 0;
+  const overflow = entries.length
+    ? entries[entries.length - 1].y + boxH(entries[entries.length - 1]) / 2 - (frame.y + frame.h)
+    : 0;
   if (overflow > 0) {
     for (const e of entries) e.y -= overflow;
     for (let i = entries.length - 2; i >= 0; i--) {
-      if (entries[i + 1].y - entries[i].y < lineH) entries[i].y = entries[i + 1].y - lineH;
+      const need = gapBetween(entries[i], entries[i + 1]);
+      if (entries[i + 1].y - entries[i].y < need) entries[i].y = entries[i + 1].y - need;
     }
     // Only the BOTTOM was clamped, so the upward propagation walked straight
     // past the canvas top: twelve series on a 240×160 chart put two labels at
@@ -2704,10 +2744,13 @@ export function seriesLabelNodes(
     // the same "cannot honour the gap" case the canvas-top branch already
     // handles, so it takes the same answer: spread over the band that IS
     // available, and shrink to it.
-    const bottom = Math.max(lineH / 2, Math.min(frame.y + frame.h, cfg.height - lineH / 2));
+    // Each end holds half ITS OWN block, so a name with a line break at either
+    // end of the gutter keeps its first and last line on the canvas.
+    const lastH = boxH(entries[entries.length - 1]) / 2;
+    const bottom = Math.max(lastH, Math.min(frame.y + frame.h, cfg.height - lastH));
     // Clamped at `bottom` so the band can never invert. With no title this is
     // `lineH / 2` and both the test and the spread are exactly as before.
-    const top = Math.min(titleHeight(cfg, style) + lineH / 2, bottom);
+    const top = Math.min(titleHeight(cfg, style) + boxH(entries[0]) / 2, bottom);
     if (entries[0].y < top) {
       const step = entries.length > 1 ? (bottom - top) / (entries.length - 1) : 0;
       // The shrink below is floored at MIN_LABEL_FS, so a band too short to give
@@ -2728,7 +2771,11 @@ export function seriesLabelNodes(
       // and a chart visibly missing its series names is honest where a stack of
       // hidden ones is not. Only for two or more — a single label overlaps
       // nothing, so the pitch says nothing about it.
-      if (entries.length > 1 && step < MIN_LABEL_FS * 1.25) return [];
+      // A name's block, per point of font: the 1.25 this has always allowed a
+      // one-line name, and a pitch for every further line of the tallest. The
+      // spread is even, so the tallest name is the one the step must hold.
+      const block = 1.25 + extraLinesHeight(maxLineCount(entries.map((e) => e.name)), 1);
+      if (entries.length > 1 && step < MIN_LABEL_FS * block) return [];
       entries.forEach((e, i) => (e.y = top + i * step));
       // Spread AND shrunk, because a spread alone trades one defect for a worse
       // one. The step here is by definition below the gap the labels wanted, so
@@ -2739,7 +2786,7 @@ export function seriesLabelNodes(
       // small label is a bad chart; a legible label naming someone else's line
       // is a wrong one. Shrink to the step so nothing overlaps and the
       // de-collision pass has nothing to do.
-      labelFs = Math.max(MIN_LABEL_FS, Math.min(fs, step / 1.25));
+      labelFs = Math.max(MIN_LABEL_FS, Math.min(fs, step / block));
     }
   }
   const x = frame.x + frame.w + 4;
@@ -2757,18 +2804,22 @@ export function seriesLabelNodes(
   const room = Math.max(1, cfg.width - x);
   let nameFs = labelFs;
   while (nameFs > 5 && entries.some((e) => textWidth(e.name, nameFs) > room)) nameFs -= 0.5;
-  return entries.map((e) => ({
-    kind: "text" as const,
-    x,
-    y: e.y - lineH / 2,
-    w: room,
-    h: lineH,
-    text: clipToWidth(e.name, nameFs, room),
-    fontSize: nameFs,
-    color: style.text,
-    align: "left" as const,
-    valign: "middle" as const,
-    // Assigned above, before the sort, so an extra cannot renumber a column.
-    name: e.nodeName ?? "series-label",
-  }));
+  return entries.map((e) => {
+    // Centred on the mark it names, so a name with a line break grows both ways.
+    const h = lineH + extraLinesHeight(lineCount(e.name), nameFs);
+    return {
+      kind: "text" as const,
+      x,
+      y: e.y - h / 2,
+      w: room,
+      h,
+      text: clipToWidth(e.name, nameFs, room),
+      fontSize: nameFs,
+      color: style.text,
+      align: "left" as const,
+      valign: "middle" as const,
+      // Assigned above, before the sort, so an extra cannot renumber a column.
+      name: e.nodeName ?? "series-label",
+    };
+  });
 }

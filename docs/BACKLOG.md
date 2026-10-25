@@ -3173,10 +3173,27 @@ none is a task yet: each is an owner call or a measurement.
    into the parts tag at draw time, or a geometric check of parts against the
    stored scene.
 4. **Label line breaks (r1-22).** The preview now draws two lines where
-   PowerPoint does, but the layout still sizes every label box as one line, so a
-   two-line label overflows its box in the deck and the add-in, and the preview
-   clips a top-anchored second line. The fix belongs in `src/core` (grow the box by
-   line count). The live path's handling of CR, NEL and U+2028 was not verified.
+   PowerPoint does, but the layout sized every label box as one line, so a
+   two-line label overflowed its box in the deck and the add-in, and the preview
+   clipped a top-anchored second line. **Mostly fixed 2026-10-25
+   (`x3-label-line-breaks`).** `textWidth` reads a label's widest line,
+   `ellipsize` cuts each line, and one splitter and pitch (`labelLines`,
+   `LINE_PITCH`, `extraLinesHeight` in `src/core/scene.ts`, shared with `svg.ts`)
+   size the box on the upright category axis (the strip is reserved in
+   `computeFrame`), the upright and sideways value axes' tick labels, the upright
+   unit, the series legend (`legendWrapWalk` prices a tall name in whole row
+   pitches), the right-hand series names (`seriesLabelNodes`, which pitches
+   neighbours by their own height) and the sideways category names. **Still
+   boxed as one line** (each now measures the widest line, so a label once cut or
+   dropped for width is drawn whole, its second line outside a one-line box): the
+   category or task names of butterfly, funnel, gantt (two sites), mekko (two) and
+   radar (two), the slope chart's period headers in `line.ts`, the glyph legend in
+   `tilemap.ts` (its rows are reserved), the scatter and bubble axes, the heatmap
+   and tilemap colour-scale ends, the combo secondary ticks (`tickGapScale`
+   callers), and every data, segment and pie label that carries a category or
+   series name, plus the title and footnote. A unit with a break that would rise
+   off the canvas is dropped, as one that would print on the title already is.
+   The live path's handling of CR, NEL and U+2028 was not verified.
 5. **Sub-1 data still clamped in three places (r1-9).** `butterfly`, `radar` and
    `cascade` no longer floor their range at 1. The combo sites in `column.ts`
    (`Math.max(stackMax, lineMax, 1)` and the waterfall-overflow branches), the

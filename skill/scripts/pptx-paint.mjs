@@ -289,12 +289,14 @@ export const xmlText = (s) => String(s ?? "").replace(XML_ILLEGAL, "");
  * Trailing empty lines go. pptxgenjs does not split a text that ENDS in a newline
  * at all, so the break would arrive as a raw CRLF inside one run.
  *
- * NOT folded onto one line, though that would fit the box: the layout sizes a
- * label as a single line (`textWidth` reads the string as one run), so a
- * two-line label overflows its box in the deck and the live add-in alike. That is
- * the layout's to fix, and folding it here would only make the deck disagree with
- * the live add-in, which draws both lines. Mirrors `src/render/svg.ts` —
- * duplicated because this module ships standalone inside the skill zip.
+ * NOT folded onto one line, though that would fit a one-line box: folding it here
+ * would only make the deck disagree with the live add-in, which draws both lines.
+ * The layout sizes the label by its lines instead — `textWidth` reads the widest
+ * line and the category axis, the value axes, the unit, the series names and the
+ * legend grow their boxes by `labelLines`' count (`src/core/scene.ts`). The
+ * other labels a layout boxes as one line are listed in docs/BACKLOG.md. Mirrors
+ * `labelLines` there — duplicated because this module ships standalone inside
+ * the skill zip.
  */
 const LINE_BREAK = /\r\n|[\n\r\v\f\u0085\p{Zl}\p{Zp}]/u;
 const labelLines = (s) => {

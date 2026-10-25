@@ -573,6 +573,86 @@ function charWidth(cp: number, fontSize: number, bold: boolean): number {
 }
 
 /**
+ * One UTF-16 unit that ends a line: LF, VT, FF, CR, NEL, U+2028 and U+2029. The
+ * unit form of `LABEL_BREAK`, for the loops that already walk code units and
+ * must not pay a regex per character.
+ */
+function isBreakUnit(c: number): boolean {
+  return (c >= 10 && c <= 13) || c === 0x85 || c === 0x2028 || c === 0x2029;
+}
+
+/**
+ * Every spelling of a line break a label can carry — CRLF as ONE break, then
+ * LF, CR, VT, FF, NEL and the two Unicode separators.
+ *
+ * A datasheet cell takes Alt+Enter (CHAR(10)), Word and Outlook paste VT, an old
+ * Mac export has a bare CR, and PowerPoint, the live add-in and the generated
+ * deck all draw each of them as a line break. `0e9500f` made the SVG preview and
+ * the headless deck draw those lines; it left the LAYOUT reading the string as
+ * one run, so a two-line label was measured as one wide line and boxed as one
+ * line tall. This is that splitter, moved out of `svg.ts` so the thing that draws
+ * the lines and the thing that sizes them cannot disagree about where a line ends
+ * (`skill/scripts/pptx-paint.mjs` carries the one other copy, because it ships
+ * standalone in the skill zip).
+ */
+const LABEL_BREAK = /\r\n|[\n\r\v\f\u0085\p{Zl}\p{Zp}]/u;
+/** The same break without the CRLF pairing: does the text hold ANY line break? */
+const HAS_BREAK = /[\n\r\v\f\u0085\p{Zl}\p{Zp}]/u;
+/** `LABEL_BREAK` as a capture group, so a split keeps each break as it was spelled. */
+const LABEL_BREAK_KEPT = new RegExp(`(${LABEL_BREAK.source})`, "u");
+
+/**
+ * One line's pitch as a multiple of the font size — what the preview draws two
+ * lines of a label apart, and so what a layout must reserve per extra line.
+ *
+ * An approximation, like the baseline offsets the single-line case uses (0.36
+ * and 0.25 of the size): neither the SVG nor the layout can ask the host's font
+ * for its metrics, and Segoe UI and Arial, the two faces in play, run from about
+ * 1.15 to 1.33. It is exported so the box a layout reserves and the lines the
+ * preview draws are one number.
+ */
+export const LINE_PITCH = 1.2;
+
+/**
+ * A label's LINES: its text split at every spelling of a line break.
+ *
+ * Trailing empty lines go — a text that ENDS in a break has no ink on its last
+ * line, the preview and the deck drop it (pptxgenjs does not even split such a
+ * text), and the box is not grown for it — and an empty line in the MIDDLE
+ * stays, because it is a blank line the author typed and every sink draws the
+ * gap. Always at least one entry, so `labelLines(x).length` is a line count that
+ * is never zero.
+ */
+export function labelLines(text: unknown): string[] {
+  const lines = String(text ?? "").split(LABEL_BREAK);
+  while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  return lines;
+}
+
+/** How many lines a label draws on: 1 for any text with no break in it. */
+export function lineCount(text: unknown): number {
+  const s = typeof text === "string" ? text : String(text ?? "");
+  return HAS_BREAK.test(s) ? labelLines(s).length : 1;
+}
+
+/** The most lines any of `texts` draws on — 1 for none at all. */
+export function maxLineCount(texts: readonly unknown[]): number {
+  let most = 1;
+  for (const t of texts) most = Math.max(most, lineCount(t));
+  return most;
+}
+
+/**
+ * The height a label of `lines` lines needs BEYOND the one-line box its layout
+ * already sizes, at `fontSize`: `(lines - 1)` more pitches. Exactly 0 for one
+ * line, and the value is never computed from the font for it, so a label with no
+ * break keeps every number it had to the last bit.
+ */
+export function extraLinesHeight(lines: number, fontSize: number): number {
+  return lines > 1 ? (lines - 1) * fontSize * LINE_PITCH : 0;
+}
+
+/**
  * `text` cut to fit `maxW`, with an ellipsis — the ONE implementation.
  *
  * There were two, identical and thirty lines apart: `clipToWidth` in elements.ts
@@ -592,6 +672,11 @@ export function ellipsize(text: string, fontSize: number, bold: boolean, maxW: n
   const s = String(text ?? "");
   let w = textWidth(s, fontSize, bold);
   if (w <= maxW) return s;
+  // Each LINE is cut to the room, not the text as a whole: the lines are drawn
+  // one under another, so what has to fit is the widest of them, and cutting from
+  // the END of the whole text would take the last line's characters off while the
+  // line that is actually too wide stayed exactly as wide.
+  if (HAS_BREAK.test(s)) return ellipsizeLines(s, fontSize, bold, maxW);
   const ell = textWidth("…", fontSize, bold);
   let end = s.length;
   while (end > 0 && w + ell > maxW) {
@@ -604,6 +689,25 @@ export function ellipsize(text: string, fontSize: number, bold: boolean, maxW: n
     end -= pair ? 2 : 1;
   }
   return end > 0 ? `${s.slice(0, end)}…` : "";
+}
+
+/**
+ * `ellipsize` for text that holds a line break: every line is cut on its own,
+ * and the breaks stay exactly as the author spelled them (the sinks split every
+ * spelling, so there is no reason to normalise one). Empty only when no line has
+ * anything left, which is the single-line answer for "nothing fits".
+ */
+function ellipsizeLines(s: string, fontSize: number, bold: boolean, maxW: number): string {
+  let kept = false;
+  // The capture group keeps the separators, so even indices are lines and odd
+  // ones are the breaks between them.
+  const parts = s.split(LABEL_BREAK_KEPT).map((part, i) => {
+    if (i % 2) return part;
+    const cut = ellipsize(part, fontSize, bold, maxW);
+    if (cut) kept = true;
+    return cut;
+  });
+  return kept ? parts.join("") : "";
 }
 
 export function textWidth(text: string, fontSize: number, bold = false): number {
@@ -641,11 +745,27 @@ export function textWidth(text: string, fontSize: number, bold = false): number 
    * point's width no longer depends on its neighbours. Latin is still
    * bit-identical (no surrogate pairs, so the unit count IS `s.length`), pure
    * CJK is unchanged, and a lone 📊 is still one em.
+   *
+   * THE ONE THING IT IS NOT ADDITIVE ACROSS IS A LINE BREAK. A label that holds
+   * one is drawn as lines one under another, so the width it takes is its WIDEST
+   * LINE, not the sum — and a break was charged as a narrow character, so
+   * `Q1\nReport` measured as the one 9-character run `Q1 Report` and every fit
+   * downstream (the category-axis shrink, the clip, the gutter reservation)
+   * judged it twice as wide as it is drawn. Text with no break takes the loop's
+   * original sum untouched.
    */
   let wide = 0;
   let narrowUnits = 0;
+  /** The widest line already closed by a break; nothing until one is met. */
+  let widest = -Infinity;
   for (let i = 0; i < s.length; i++) {
     const c = s.charCodeAt(i);
+    if (isBreakUnit(c)) {
+      widest = Math.max(widest, (wide + narrowUnits * narrow) * fontSize);
+      wide = 0;
+      narrowUnits = 0;
+      continue;
+    }
     const next = i + 1 < s.length ? s.charCodeAt(i + 1) : 0;
     // A HIGH surrogate is only half a pair if a LOW one follows it. Without the
     // second half of this test a lone high surrogate swallowed the character
@@ -658,7 +778,8 @@ export function textWidth(text: string, fontSize: number, bold = false): number 
     if (fullWidth(cp)) wide++;
     else narrowUnits += pair ? 2 : 1;
   }
-  return (wide + narrowUnits * narrow) * fontSize;
+  const last = (wide + narrowUnits * narrow) * fontSize;
+  return widest === -Infinity ? last : Math.max(widest, last);
 }
 
 /**
