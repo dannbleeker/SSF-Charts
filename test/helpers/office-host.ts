@@ -651,6 +651,21 @@ export const faults = {
    */
   stallDrawAfterSelect: false,
   /**
+   * The next sync that carries queued SHAPES stalls, once: it settles late, as a
+   * `stallSyncOn` sync does, so a short `_setBatchTimeoutForTest` gives up on it
+   * and the abandoned call is then heard to come back.
+   *
+   * `stallSyncOn` names a sync by its number, which is the wrong handle for a
+   * stall in a draw's FIRST batch: how many syncs a scenario or an update spends
+   * before it draws is a property of the code under test, so a test that counts
+   * them is rewritten by every change to that code. What the real host stalls on
+   * (rounds 502, 504 and 505, three of four runs of `an edit after the person
+   * resizes a chart`) is the batch that adds the shapes, and this names that. A
+   * test arms it at the moment it wants the NEXT draw to stall — from a trace
+   * watcher, say, on the line a path writes just before it redraws.
+   */
+  stallNextDrawBatch: false,
+  /**
    * Tag loads the host takes and never answers — the next N `load()`s on a tag
    * proxy leave it unreadable after their sync.
    *
@@ -3323,7 +3338,12 @@ export function installHost(
         });
       }
       if (faults.wedgeAfterSyncs !== null && trips.syncs > faults.wedgeAfterSyncs) await new Promise(() => {});
-      if (stallSyncOn.has(trips.syncs)) {
+      // See `faults.stallNextDrawBatch`. Decided HERE and not at the top of the
+      // sync, because what makes a sync a draw batch is that shapes are queued on
+      // it, and by this line nothing above has taken them.
+      const stallDraw = faults.stallNextDrawBatch && slides.some((s) => s.pending.length > 0);
+      if (stallDraw) faults.stallNextDrawBatch = false;
+      if (stallSyncOn.has(trips.syncs) || stallDraw) {
         // Sleep past withTimeout's deadline, then settle successfully. The
         // queued shapes commit at settle time — same as real Office.js where
         // a slow sync eventually reports success and the shapes are on the
@@ -3404,6 +3424,7 @@ export function installHost(
   faults.slideIdUnreadableBeforeFirstSync = false;
   faults.slideIdNeverReadable = false;
   faults.stallDrawAfterSelect = false;
+  faults.stallNextDrawBatch = false;
   selectionStanding = false;
   pictureLanded = false;
   faults.selectedSlideIdAs = null;

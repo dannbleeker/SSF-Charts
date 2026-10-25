@@ -103,7 +103,7 @@ import {
   shapesDrawnOn,
   type ChartReading,
 } from "../render/powerpoint";
-import { trace, traceAbout, traceElapsed } from "../core/trace";
+import { trace, traceAbout, traceElapsed, traceLog, traceMark, type TraceEntry } from "../core/trace";
 
 /**
  * How long to sit still between the deck scan and the first chart of a run.
@@ -1506,6 +1506,49 @@ const dragThenUpdate: Scenario = async (prefix) => {
 const RESIZE_FACTOR = 2;
 
 /**
+ * The chart `resizeThenEdit` draws: four bars, their value labels and the
+ * baseline. NINE shapes, which is ONE draw batch (`SHAPES_PER_SYNC` is 10).
+ *
+ * It was the battery's sample chart, 24 shapes in three batches, and the batches
+ * are what the scenario died of. Rounds 502, 504 and 505 each stalled a first
+ * batch for the full 45s (503 passed, in 164s): two in the scenario's own setup
+ * draw, one in the product's redraw after the resize had been detected. Every
+ * batch of those rounds took 14-28s against that 45s (`prevBatchMs` 28188, 26214,
+ * 27823, 25229), onto a slide this run had already drawn 48-59 shapes on, so
+ * the first overrun was a matter of when. The product's logic worked every time
+ * it got as far as being asked: 503 and 505 trace `redrawing at the size the user
+ * gave the chart` with `kept [600,360]`, `scale {x:2,y:2}` and `via members`. The
+ * scenario had become a poor instrument, a big chart on a crowded slide late in a
+ * worn round, and nine shapes draw in a third of the batches, which gives the
+ * same question a third of the chances to stall.
+ *
+ * WHAT THE QUESTION NEEDS, and nothing it does not. `judgeResizeKept` compares
+ * rects the host answered for at both moments and wants `MIN_COMPARED_RECTS` (3)
+ * of them at least 8pt on a side; `liveScaleOfScene` wants two. Four bars is one
+ * spare over the judge's three, so a host that leaves one bar unanswered is still
+ * judged and not skipped. The title and the category labels carry nothing either
+ * reads, so the config has neither. It is still one clustered chart that groups,
+ * reads sizes back and redraws at the kept size: the same path as the 24-shape
+ * one, in `liveScaleOfScene` and `keepResizedSize` alike.
+ *
+ * NO TITLE, AND THAT IS DOING WORK. `probeCharts` offers a later scenario only a
+ * chart whose title starts with the run's prefix, so an untitled chart is never
+ * taken for a probe chart. It matters now that this scenario runs in the middle
+ * of the battery: the sweep that takes the chart away is refused for a shape
+ * drawn seconds earlier (369 of 419 in the archive), and a 600x360 leftover with
+ * a prefixed title would be one more chart for `explodePicture` and the
+ * selection scenarios to pick from. The series name is the one free field the
+ * layout does not draw, and it marks the chart for whoever has to find it.
+ */
+export const RESIZE_SPECIMEN: ChartConfig = {
+  kind: "clustered",
+  width: 300,
+  height: 180,
+  data: { categories: ["Q1", "Q2", "Q3", "Q4"], series: [{ name: "resize", values: [42, 48, 45, 61] }] },
+  decorations: { categoryAxis: false, seriesLabels: false },
+};
+
+/**
  * A side worth comparing: under this a rounded host value is a large share of it,
  * and a bar at the 0.2pt floor is a floor and not a measurement.
  */
@@ -1687,6 +1730,111 @@ export function judgeResizeKept(o: {
 }
 
 /**
+ * What `resizeThenEdit` says when the host stopped answering on it: which half of
+ * its question the stall cost, and what had been observed before it.
+ *
+ * Pure and exported, for the reason `stallDetail` is: the wording is the verdict,
+ * and a verdict that cannot be tested is a label. `since` is the trace from the
+ * scenario's start, where the update writes the one fact worth keeping from a
+ * stalled redraw: that it had read a resize and meant to keep it.
+ *
+ * It ends with the host's own sentence (`errorText(err)`, "PowerPoint did not
+ * respond while ..."). That is not decoration: `isTimeout` reads the message, and
+ * the runner files this as the host stopping rather than as a throw only because
+ * it finds the sentence there.
+ *
+ * - **Drawing**: its own setup draw. The question was never asked, and the words
+ *   say so, because "nothing was checked" over a half-drawn chart reads as a pass
+ *   that found nothing wrong.
+ * - **Editing, and the update had decided to keep the person's size**: that
+ *   decision is an observation, `liveScaleOfScene` reading the resize off a live
+ *   host, and it is kept. What was not observed is the redraw.
+ * - **Editing, and it had not**: the stall came before the update reported
+ *   anything about the size, or the update did not mean to keep it. Neither is
+ *   known, so neither is claimed.
+ */
+export function stalledResize(doing: "drawing" | "editing", err: unknown, since: readonly TraceEntry[]): string {
+  const said = errorText(err);
+  if (doing === "drawing")
+    return (
+      "the host stopped answering while the scenario drew the chart it needs, so nothing was asked: the chart was " +
+      `never resized and no edit was made (${said})`
+    );
+  const kept = since.find((e) => e.message === "redrawing at the size the user gave the chart")?.data as
+    { kept?: [number, number]; scale?: { x: number; y: number }; via?: string } | undefined;
+  if (!kept?.kept || !kept.scale)
+    return (
+      "the host stopped answering during the edit, and the update had not reported keeping the person's size when it " +
+      `did, so what the edit does to a resized chart was not observed (${said})`
+    );
+  const times = (n: number) => `${Math.round(n * 100) / 100}x`;
+  const by =
+    kept.scale.x === kept.scale.y ? times(kept.scale.x) : `${times(kept.scale.x)} wide and ${times(kept.scale.y)} tall`;
+  return (
+    `the update had decided to keep ${kept.kept[0]}x${kept.kept[1]}pt (${by}, via ${kept.via ?? "members"}) and then ` +
+    `the host stopped answering during the redraw, so the redraw itself was not observed (${said})`
+  );
+}
+
+/**
+ * Take `resizeThenEdit`'s chart off its slide, and say what is left of it.
+ *
+ * By the ids the scenario's own inserts and update handed back — the group and its
+ * parts, before the edit and after — and, where the slide can be listed, by
+ * whatever it holds now that it did not hold before: a redraw whose new group the
+ * host would not name hands back no id to delete by. Nothing of the probe chart's
+ * is ever in either set, so it cannot be taken with them. Returns the note to put
+ * on the verdict, or an empty string when the slide holds what it held.
+ *
+ * BEST EFFORT, AND A LEFTOVER IS A NOTE ON THE VERDICT, NEVER THE VERDICT.
+ *
+ * This used to rewrite whatever the question answered (a pass, a skip) into a
+ * hard `ok: false` when the slide still held more than it had. That delete is
+ * the call this host refuses for a shape drawn seconds earlier — `kindCostSpread`
+ * has the count: 369 of 419 sweeps refused, and every archived round carries
+ * seven or eight `wreckage the host would not resolve` lines — so the first live
+ * round would most likely have reported a defect of OURS that is the known sweep
+ * refusal, with the answer to the resize question buried in its detail string.
+ * `ok: false` is for a failure of the QUESTION (a chimera, a lost resize where
+ * the host said enough to tell), and the sibling scenarios that draw beside a
+ * probe chart and take their chart away by the same call (`rotatedShapePlacement`,
+ * `kindCostSpread`) never turn a refused sweep into one.
+ *
+ * `ok`, `skipped` and `blind` are left exactly as the question set them, so
+ * `selfTestNeedsAttention`, `describeSelfTest` and `scenarioBlame` (which read
+ * those and not the words) cannot read the note as a failure. The words avoid
+ * "N of M", which `poolScenarioPopulations` reads as a population count.
+ *
+ * A STALLED SCENARIO SWEEPS BEFORE IT SAYS SO, and by the second route only: a
+ * draw the host gave up on was never grouped or tagged and handed back no id, so
+ * what it left is taken by what the slide gained, and a refused sweep is the same
+ * note in the same words.
+ */
+async function sweepResizeChart(
+  slideId: string,
+  heldBefore: { id: string }[] | null,
+  mine: ReadonlySet<string>,
+): Promise<string> {
+  const heldNow = await slideShapeList(slideId);
+  const had = new Set((heldBefore ?? []).map((s) => s.id));
+  const strays = heldBefore && heldNow ? heldNow.map((s) => s.id).filter((id) => id && !had.has(id)) : [];
+  const doomed = [...new Set([...mine, ...strays])];
+  if (doomed.length) await deleteShapesById(slideId, doomed);
+  const heldAfter = await slideShapeList(slideId);
+  if (!heldBefore || !heldAfter || heldAfter.length <= heldBefore.length) return "";
+  trace("selftest", "an edit after a resize left its chart on the slide", {
+    slideId,
+    before: heldBefore.length,
+    after: heldAfter.length,
+    asked: doomed.length,
+  });
+  return (
+    ` (note, not part of the verdict: the sweep did not take this scenario's chart off the slide — ` +
+    `${heldBefore.length} shapes before, ${heldAfter.length} after; this host refuses a by-id delete of a shape drawn seconds earlier in most sweeps)`
+  );
+}
+
+/**
  * An edit after the person RESIZES a chart — the half of `x4-keep-the-resize` no
  * round has been able to reach.
  *
@@ -1694,9 +1842,9 @@ export function judgeResizeKept(o: {
  * premise nobody has put to the live host, because nothing in 500 rounds resized
  * a chart: that resizing a group scales its members, and that they then SAY so.
  * The fake host's `userResizes` is written from the same premise and so cannot
- * test it. This does the one thing that can: draw a chart on a slide of its own,
- * set its group to twice its size through Office.js, edit a value through the
- * product's own update path, and read back what the host reports.
+ * test it. This does the one thing that can: draw a small chart on a slide the
+ * deck already had, set its group to twice its size through Office.js, edit a
+ * value through the product's own update path, and read back what the host reports.
  *
  * **WHAT IT RECORDS IS AS IMPORTANT AS WHAT IT DECIDES.** A task brief read
  * `checked {names: 0, sizes: 0}` on three retitles and a deck-built chart as a
@@ -1727,10 +1875,51 @@ export function judgeResizeKept(o: {
  * specimen: it asks to leave the slide holding what it held, and when the host
  * refuses that delete (it usually does for a shape drawn seconds earlier) the
  * verdict says so in a note and is otherwise what the question answered.
+ *
+ * WHICH PROBE SLIDE IS NOT FREE TO BE THE FIRST. This took `hosts[0]`, the chart
+ * the deck scan lists first, which is the one slide every scenario that takes
+ * `found[0]` piles onto: it drew on a slide the run had put 48-59 shapes on while
+ * four other probe slides had had 9, 16, 24 and 28 (rounds 502-505, from the
+ * traced batches before it began; each of those slides holds a 480x299 chart, the
+ * size the probe decks build, in the round's deck inventory). At the +0.44s per
+ * shape present that `leastLoadedChart` documents, the difference is 14 to 22
+ * seconds on every batch. So it takes the probe chart on the slide this run has
+ * drawn on least, as the scenarios around it do, by the run's own count
+ * (`shapesDrawnOn`) and not by a host read: a read is a sync asked of a host that
+ * may already be struggling, and the host's own count (`slideOccupancy`) takes a
+ * group for ONE shape, so it would call a slide of three grouped charts as quiet
+ * as one with three loose shapes. Ties keep the deck's order, which is what the
+ * old pick was. The honest limit is `shapesDrawnOn`'s own: it cannot see what the
+ * deck held before the run.
+ *
+ * A HOST THAT STOPS ANSWERING IS NOT A FAILED QUESTION. Three of four live runs
+ * ended `FAILED threw: PowerPoint did not respond while drawing shapes 1-10 of 24
+ * (45s)`: the stall was caught here, turned into `threw:`, and returned as a hard
+ * failure, which is how `describeSelfTest` came to count a host stall as a defect
+ * of ours. The runner already files a stalled scenario as the host in the way
+ * (`blind`, with whether the abandoned call came back and what the host last
+ * answered), so this lets it: it takes its chart away first and then says the
+ * stall again, naming the half of the question it cost. A stall in the scenario's
+ * own setup draw means nothing was asked. A stall in the product's redraw, after
+ * the update had decided to keep the person's size, still carries what was
+ * observed (the size it kept and the scale it read) and says the redraw itself was
+ * not. `ok: false` stays for a chimera and a lost resize, where the host said
+ * enough to tell.
+ *
+ * AND IT DOES NOT START ON A HOST THAT IS ALREADY STALLING. Round 504 reached it
+ * straight after a scenario that had just missed a deadline, and its first batch
+ * stalled too. Its entry in `SCENARIOS` is `declineWhenSick`: when the scenario
+ * before it told the runner the host was in trouble, the RUNNER reports it as not
+ * attempted before it reads or draws anything, so it neither spends 45s learning
+ * what the runner already knows nor leaves a half-drawn chart on a host that
+ * cannot be asked to sweep it up. The decision is the runner's because the count
+ * it is made from is the runner's, and because a decline has to leave that count
+ * where it found it, as the "not reached" verdicts do.
  */
 const resizeThenEdit: Scenario = async (prefix) => {
+  const mark = traceMark();
   const { found: hosts, blind, gap } = await probeCharts(prefix);
-  const [host] = hosts;
+  const host = leastLoadedChart(hosts, shapesDrawnOn);
   if (!host)
     return blind ? blindSkip(gap) : { ok: false, skipped: true, detail: "no probe chart's slide to draw a chart on" };
   const slideId = host.target.slideId;
@@ -1740,7 +1929,9 @@ const resizeThenEdit: Scenario = async (prefix) => {
   // its own shapes by id nothing.
   const corner = { left: 20, top: 20 };
   const heldBefore = await slideShapeList(slideId);
-  const c: ChartConfig = { ...cfg(`${prefix} resize`), width: 300, height: 180 };
+  const c: ChartConfig = RESIZE_SPECIMEN;
+  /** What it was doing when the host stopped answering, if it did: which half of the question the stall cost. */
+  let doing: "drawing" | "editing" = "drawing";
   /** Every id this scenario's chart ever had on the slide, so none is left behind. */
   const mine = new Set<string>();
   const own = (t: { shapeId?: string; partIds?: string[] } | null | undefined) => {
@@ -1759,7 +1950,7 @@ const resizeThenEdit: Scenario = async (prefix) => {
       },
     };
   const reading = (r: ChartReading): ResizeReading => ({ group: r.group, members: r.members });
-  let verdict: ReturnType<typeof judgeResizeKept>;
+  let verdict: ReturnType<typeof judgeResizeKept> & { stalled?: true };
   try {
     verdict = await (async () => {
       const target = await insertSceneIntoSlide(buildChart(c), { slideId, tagData: JSON.stringify(c), ...corner });
@@ -1810,6 +2001,7 @@ const resizeThenEdit: Scenario = async (prefix) => {
       const next: ChartConfig = JSON.parse(JSON.stringify(c)) as ChartConfig;
       const was = next.data.series[0].values[1];
       next.data.series[0].values[1] = was === 30 ? 31 : 30;
+      doing = "editing";
       const back = await updateChartInSlide(buildChart(next), target, { tagData: JSON.stringify(next) });
       own(back);
       if (!back) return { ok: false, detail: "the chart was gone from the slide after the update" };
@@ -1853,53 +2045,30 @@ const resizeThenEdit: Scenario = async (prefix) => {
       });
     })();
   } catch (err) {
-    verdict = { ok: false, detail: `threw: ${errorText(err)}` };
+    // A host that stopped answering is the one throw that is not ours to call a
+    // failure; anything else thrown still is. Said at the end, once the chart is
+    // off the slide: see `stalled` below.
+    verdict = isTimeout(err)
+      ? {
+          ok: false,
+          skipped: true,
+          blind: true,
+          stalled: true,
+          detail: stalledResize(doing, err, traceLog(mark).entries),
+        }
+      : { ok: false, detail: `threw: ${errorText(err)}` };
   }
   // CLEAN UP FIRST, REPORT SECOND: every scenario after this one reads the deck.
-  // By the ids this scenario's own inserts and update handed back — the group and
-  // its parts, before the edit and after — and, where the slide can be listed, by
-  // whatever it holds now that it did not hold before: a redraw whose new group
-  // the host would not name hands back no id to delete by. Nothing of the probe
-  // chart's is ever in either set, so it cannot be taken with them.
-  const heldNow = await slideShapeList(slideId);
-  const had = new Set((heldBefore ?? []).map((s) => s.id));
-  const strays = heldBefore && heldNow ? heldNow.map((s) => s.id).filter((id) => id && !had.has(id)) : [];
-  const doomed = [...new Set([...mine, ...strays])];
-  if (doomed.length) await deleteShapesById(slideId, doomed);
-  const heldAfter = await slideShapeList(slideId);
-  // BEST EFFORT, AND A LEFTOVER IS A NOTE ON THE VERDICT, NEVER THE VERDICT.
-  //
-  // This used to rewrite whatever the question answered (a pass, a skip) into a
-  // hard `ok: false` when the slide still held more than it had. That delete is
-  // the call this host refuses for a shape drawn seconds earlier — `kindCostSpread`
-  // has the count: 369 of 419 sweeps refused, and every archived round carries
-  // seven or eight `wreckage the host would not resolve` lines — so the first live
-  // round would most likely have reported a defect of OURS that is the known sweep
-  // refusal, with the answer to the resize question buried in its detail string.
-  // `ok: false` is for a failure of the QUESTION (a chimera, a lost resize where
-  // the host said enough to tell), and the sibling scenarios that draw beside a
-  // probe chart and take their chart away by the same call (`rotatedShapePlacement`,
-  // `kindCostSpread`) never turn a refused sweep into one.
-  //
-  // `ok`, `skipped` and `blind` are left exactly as the question set them, so
-  // `selfTestNeedsAttention`, `describeSelfTest` and `scenarioBlame` (which read
-  // those and not the words) cannot read the note as a failure. The words avoid
-  // "N of M", which `poolScenarioPopulations` reads as a population count.
-  if (heldBefore && heldAfter && heldAfter.length > heldBefore.length) {
-    trace("selftest", "an edit after a resize left its chart on the slide", {
-      slideId,
-      before: heldBefore.length,
-      after: heldAfter.length,
-      asked: doomed.length,
-    });
-    return {
-      ...verdict,
-      detail:
-        `${verdict.detail} (note, not part of the verdict: the sweep did not take this scenario's chart off the slide — ` +
-        `${heldBefore.length} shapes before, ${heldAfter.length} after; this host refuses a by-id delete of a shape drawn seconds earlier in most sweeps)`,
-    };
-  }
-  return verdict;
+  const note = await sweepResizeChart(slideId, heldBefore, mine);
+  // A STALL IS SAID AGAIN FOR THE RUNNER, NOT RETURNED AS A VERDICT HERE. The
+  // runner files a thrown timeout as the host in the way, and adds the two things
+  // a stalled scenario's reader wants and only it can measure: whether the call
+  // we gave up on came back, and what the host last answered before it. A skip
+  // returned from here would be the same skip with less in it. `stalledResize`
+  // keeps the host's own sentence ("did not respond while ..."), which is what
+  // `isTimeout` reads, so the runner cannot take this for a throw of ours.
+  if (verdict.stalled) throw new Error(`${verdict.detail}${note}`);
+  return note ? { ...verdict, detail: `${verdict.detail}${note}` } : verdict;
 };
 
 const explodePicture: Scenario = async (prefix) => {
@@ -4663,6 +4832,20 @@ const SCENARIOS: {
    * produces a WRONG answer, which is worse than no answer.
    */
   pickedOnly?: boolean;
+  /**
+   * Not started while the scenario before it told the runner the host was in
+   * trouble (`hostSeemsSick`), and reported as not attempted instead.
+   *
+   * For a scenario whose whole question sits behind a draw that has to complete,
+   * which a host that has just stopped answering stalls on for the full 45s and
+   * leaves a half-drawn chart behind it. The decline is the runner's, in the
+   * manner of "not reached — …": blind, `ms: 0`, and it leaves the count of
+   * sick scenarios exactly where it found it. A decline is not evidence about the
+   * host (the scenario before it already was), so counting it would walk the
+   * breaker one step closer to abandoning the rest of the run on nothing new, and
+   * a quiet skip that reset the count would hide a struggling host from it.
+   */
+  declineWhenSick?: boolean;
 }[] = [
   { name: "insert on top of an earlier run", run: insertTwice },
   { name: "two slides claiming one slot", run: duplicateSlot },
@@ -4675,6 +4858,29 @@ const SCENARIOS: {
   // AFTER the scenarios that insert, because it needs a chart to move, and
   // BEFORE the selection ladder, because it must not run against a wedged host.
   { name: "an update follows a moved chart", run: dragThenUpdate },
+  // Straight after the drag, which is its neighbour in what it asks: a person
+  // changed a chart, and then the product edited it. It works on a chart this
+  // battery drew, takes nothing selected, and draws NINE shapes in one batch
+  // (`RESIZE_SPECIMEN`), so it is as cheap as an update-path scenario gets.
+  //
+  // It was LAST, straight after `what a chart kind costs`, and that is why it
+  // failed three of its first four live runs (rounds 502, 504, 505; 503 passed):
+  // eight specimens' worth of drawing into a worn host, the scenario before it
+  // had just missed a deadline in 504, and its own 24-shape chart then stalled a
+  // 45s batch. The product's logic had worked every time it got as far as being
+  // asked. The host-wearing scenarios (`what a chart kind costs`, the rotated
+  // shapes, the sweeps) belong at the end of the list and `what a chart kind
+  // costs` stays last; this one is not among them any more. And it is the one
+  // entry that is `declineWhenSick`: a host that has just stopped answering is
+  // not asked to draw it.
+  //
+  // Moving it into the middle of the battery has a price, and the price is paid in
+  // `RESIZE_SPECIMEN` and not here: a refused sweep leaves its chart on a probe
+  // slide, where every later scenario that scans the deck would find it. It
+  // carries no title, and `probeCharts` offers only charts whose title starts with
+  // the run's prefix. The name is unchanged, so moving it disturbs no round of
+  // history — `scenarioRegressions` compares by name.
+  { name: "an edit after the person resizes a chart", run: resizeThenEdit, declineWhenSick: true },
   { name: "explode a degraded picture", run: explodePicture },
   // The ladder, and the position is the whole argument.
   //
@@ -4805,14 +5011,6 @@ const SCENARIOS: {
   // Newest, so last: it draws eight specimens and this list's rule is that an
   // unproven scenario's failure should cost the fewest verdicts behind it.
   { name: "what a chart kind costs", run: kindCostSpread },
-  // Newest, so last, and for a second reason: it draws a chart in the corner of
-  // the slide a probe chart already holds (not on a slide of its own: see
-  // `resizeThenEdit`), resizes and edits it and takes it away again, and the
-  // scenario ahead of it is the one with a recorded death rate. A death there
-  // costs this its turn, and nothing else its verdict. A NEW NAME, so it opens its
-  // own series and disturbs no round of history — `scenarioRegressions` compares
-  // by name.
-  { name: "an edit after the person resizes a chart", run: resizeThenEdit },
   // Picked only for the plainest reason there is: it blocks on a human.
   { name: "edit the chart YOU click", run: editViaRealClick, pickedOnly: true },
   { name: "what makes a long run slow down", run: degradesOverTime, pickedOnly: true },
@@ -4937,7 +5135,7 @@ export async function runSelfTest(
   let sick = 0;
   /** Set once the breaker has tripped, so the rest report why. */
   let abandoned: string | null = null;
-  for (const { name, run } of wanted) {
+  for (const { name, run, declineWhenSick } of wanted) {
     // Stop asking a host that has stopped answering.
     //
     // The battery had no rung for this, and every real-host artefact this
@@ -4973,6 +5171,35 @@ export async function runSelfTest(
     // stopped.
     if (isStopRequested()) {
       report({ name, ok: false, skipped: true, detail: "not reached — the run was stopped", ms: 0 }, out);
+      continue;
+    }
+    // A scenario that asked not to start on a host that has just been struggling.
+    //
+    // Below the breaker and above the scenario: the breaker waits for three in a
+    // row, and a scenario whose draw a struggling host stalls on for the full 45s
+    // (`an edit after the person resizes a chart` did, in round 504, straight
+    // after a scenario that had missed a deadline) can decline at one. BLIND, as
+    // the verdicts above are, because nothing was learned and the round must
+    // still be flagged; and it `continue`s before `sick` is touched, as they do.
+    // Counting a decline would add a strike for a host that has already given the
+    // one it is declining on, and a quiet skip that reset the count would hide it.
+    if (declineWhenSick && sick > 0) {
+      trace("selftest", "declining a scenario — the host was already in trouble", { name, sick });
+      report(
+        {
+          name,
+          ok: false,
+          skipped: true,
+          blind: true,
+          detail:
+            `not attempted — the ${sick === 1 ? "scenario" : `${sick} scenarios`} before this one told the battery ` +
+            "the host was in trouble (a missed deadline, a deck scan gone blind or a throw), and this one draws a " +
+            "chart and redraws it, which a host that has just stopped answering stalls on. Nothing was drawn and " +
+            "nothing was asked",
+          ms: 0,
+        },
+        out,
+      );
       continue;
     }
     // Announced BEFORE it runs, not only after it finishes.

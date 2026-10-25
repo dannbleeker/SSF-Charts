@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  RESIZE_SPECIMEN,
   describeSelfTest,
   judgeResizeKept,
   runSelfTest,
@@ -61,12 +62,25 @@ afterEach(() => {
 
 const NAME = "an edit after the person resizes a chart";
 
-/** The titles of every chart still tagged on the deck. */
-const chartTitles = (deck: FakeSlide[]): string[] =>
+/** The config of every chart still tagged on the deck. */
+const chartConfigs = (deck: FakeSlide[]): ChartConfig[] =>
   deck
     .flatMap((s) => s.created)
     .filter((s) => !s.deleted && s.tagStore.get("POWERCHART_CONFIG"))
-    .map((s) => String((JSON.parse(s.tagStore.get("POWERCHART_CONFIG")!) as { title?: string }).title));
+    .map((s) => JSON.parse(s.tagStore.get("POWERCHART_CONFIG")!) as ChartConfig);
+
+/** The titles of every chart still tagged on the deck. */
+const chartTitles = (deck: FakeSlide[]): string[] => chartConfigs(deck).map((c) => String(c.title));
+
+/**
+ * The scenario's own charts still on the deck. It draws one with NO TITLE (see
+ * `RESIZE_SPECIMEN`), so a filter on a title finds none whether or not it was taken
+ * away: it was how these assertions read before the chart lost its title, and
+ * `toEqual([])` over that filter is a pass that proves nothing. The series name is
+ * the mark the specimen carries.
+ */
+const resizeCharts = (deck: FakeSlide[]): ChartConfig[] =>
+  chartConfigs(deck).filter((c) => c.data.series[0]?.name === RESIZE_SPECIMEN.data.series[0].name);
 
 /** A deck for one run, so the test can read what is left on it. */
 const freshDeck = (): FakeSlide[] => {
@@ -92,15 +106,24 @@ describe("the scenario, driven against the fake host", () => {
     expect(result.detail, "a clean sweep needs no note").not.toMatch(/note, not part of the verdict/);
     // The slide holds what it held: the chart it drew went with it, and the probe
     // charts it drew beside were not taken with it.
-    const left = chartTitles(deck);
+    expect(resizeCharts(deck), "the scenario left its chart on the slide").toEqual([]);
     expect(
-      left.filter((t) => /resize/.test(t)),
-      "the scenario left its chart on the slide",
-    ).toEqual([]);
-    expect(
-      left.filter((t) => /twice/.test(t)),
+      chartTitles(deck).filter((t) => /twice/.test(t)),
       "it took the probe charts with its own",
     ).toHaveLength(4);
+  });
+
+  it("draws a chart that was really on the deck while it ran, so a clean sweep below is a sweep", async () => {
+    // The control for every `resizeCharts(deck)` that expects nothing: the chart is
+    // found by its series name, so that name has to be one the chart really carries
+    // while it is there. With the sweep refused it stays, and the mark must find it;
+    // an assertion that the chart is gone, over a mark the chart never had, passes
+    // on a scenario that leaves it behind.
+    const deck = freshDeck();
+    faults.groupResizeScalesMembers = true;
+    wrapped.refuseDelete = true;
+    await drive();
+    expect(resizeCharts(deck), "the mark finds nothing, so the sweep assertions here are vacuous").toHaveLength(1);
   });
 
   it("records what the host reported at all three moments, raw, in the trace", async () => {
@@ -116,7 +139,10 @@ describe("the scenario, driven against the fake host", () => {
       expect(data[moment].first, `${moment}: the first member's raw reading`).toMatchObject({
         name: expect.stringMatching(/^string:/),
       });
-      expect(data[moment].listed).toBeGreaterThan(10);
+      // Every member the chart has, which is the specimen's whole scene: this was
+      // "more than ten" when the scenario drew the 24-shape sample chart, and that
+      // is a number the fake would also have reported for a group it half-listed.
+      expect(data[moment].listed).toBe(buildChart(RESIZE_SPECIMEN).nodes.length);
     }
     // The group is twice what it was, as the host reported it.
     expect((data.resized.group.width as number) / (data.drawn.group.width as number)).toBeCloseTo(2, 1);
@@ -167,7 +193,7 @@ describe("the scenario, driven against the fake host", () => {
     expect(result.blind, "an unnamed redraw is the host in the way").toBe(true);
     expect(result.detail).toMatch(/would not name the new group \(lost: no-config\)/);
     // And it still took its chart off the slide, by what the slide held before.
-    expect(chartTitles(deck).filter((t) => /resize/.test(t))).toEqual([]);
+    expect(resizeCharts(deck)).toEqual([]);
   });
 
   it("takes its chart back on a skip and on a failure as well as on a pass", async () => {
@@ -176,7 +202,7 @@ describe("the scenario, driven against the fake host", () => {
     const deck = freshDeck();
     const { result } = await drive();
     expect(result.skipped, result.detail).toBe(true);
-    expect(chartTitles(deck).filter((t) => /resize/.test(t))).toEqual([]);
+    expect(resizeCharts(deck)).toEqual([]);
     expect(chartTitles(deck).filter((t) => /twice/.test(t))).toHaveLength(4);
   });
 });
@@ -188,7 +214,7 @@ describe("a host that refuses to take the scenario's chart away", () => {
    * and not a defect of ours. The cleanup is best effort: what the question
    * answered stays the verdict, and the leftover is a note on it.
    */
-  const leftOf = (deck: FakeSlide[]) => chartTitles(deck).filter((t) => /resize/.test(t));
+  const leftOf = (deck: FakeSlide[]) => resizeCharts(deck);
 
   it("keeps a PASS a pass, with the leftover in a note", async () => {
     const deck = freshDeck();

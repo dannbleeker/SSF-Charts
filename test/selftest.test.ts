@@ -169,6 +169,20 @@ describe("the host self-test battery", () => {
       // inserting scenarios because it needs a chart to move, and before the
       // ladder because it must not run against a wedged host.
       "an update follows a moved chart",
+      /**
+       * Straight after it. This resizes a chart's group and edits a value, and
+       * reads back what the host says at each of three moments: the one scenario
+       * that puts to the live host the premise `liveScaleOfScene`,
+       * `groupScaleOfScene` and `keepResizedSize` all rest on. Its verdicts are
+       * driven in `selftest-resize.test.ts` and `fix-m1-resize-scenario-robust.test.ts`.
+       *
+       * It was LAST, behind `what a chart kind costs`, and failed three of its first
+       * four live runs on a host stall that was nothing to do with the question
+       * (rounds 502, 504, 505). `what a chart kind costs` is the most host-wearing
+       * scenario here and stays last; this is an update-path scenario on a nine-shape
+       * chart, which is what this neighbourhood of the list is.
+       */
+      "an edit after the person resizes a chart",
       "explode a degraded picture",
       // The ladder ahead of everything that selects a shape. Being the FIRST
       // `setSelectedShapes` in the run is the property that lets it be routine
@@ -245,14 +259,6 @@ describe("the host self-test battery", () => {
        * `kindCostSpread`.
        */
       "what a chart kind costs",
-      /**
-       * The newest, so last. It resizes a chart's group and edits a value, and
-       * reads back what the host says at each of three moments: the one scenario
-       * that puts to the live host the premise `liveScaleOfScene`,
-       * `groupScaleOfScene` and `keepResizedSize` all rest on. Its verdicts are
-       * driven in `selftest-resize.test.ts`.
-       */
-      "an edit after the person resizes a chart",
     ]);
     for (const r of results) {
       expect(typeof r.ok).toBe("boolean");
