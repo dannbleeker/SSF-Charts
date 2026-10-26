@@ -1,6 +1,6 @@
 import type { ChartConfig, ChartStyle, Decorations } from "../types";
 import { type SceneNode } from "../scene";
-import { chromeNodes, computeFrame, valueScale } from "./frame";
+import { chromeNodes, computeFrame, valueScale, type Frame } from "./frame";
 import type { LayoutResult } from "./column";
 
 /**
@@ -21,16 +21,13 @@ export function layoutCandlestick(cfg: ChartConfig, style: ChartStyle, decor: De
   const close = find(/^close$/i);
 
   const all = [...open, ...high, ...low, ...close].filter((v): v is number => v != null);
-  const { frame } = computeFrame(cfg, style, { ...decor, seriesLabels: false }, []);
-  const scale = valueScale(
-    frame,
-    Math.min(...(all.length ? all : [0])),
-    Math.max(...(all.length ? all : [1])),
-    cfg.scale,
-    undefined,
-    undefined,
-    false, // no forced zero: OHLC prices rarely include 0
-  );
+  const dataMin = Math.min(...(all.length ? all : [0]));
+  const dataMax = Math.max(...(all.length ? all : [1]));
+  // A function of the frame, because the value-axis column is sized from the ticks
+  // it prints (see `computeFrame`). No forced zero: OHLC prices rarely include 0.
+  const scaleOf = (f: Frame) => valueScale(f, dataMin, dataMax, cfg.scale, undefined, undefined, false);
+  const { frame } = computeFrame(cfg, style, { ...decor, seriesLabels: false }, [], scaleOf);
+  const scale = scaleOf(frame);
   const slotLen = frame.w / Math.max(1, n);
   const colThick = Math.min(slotLen * 0.5, 24);
   const centers = data.categories.map((_, c) => frame.x + slotLen * (c + 0.5));

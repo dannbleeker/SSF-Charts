@@ -5,7 +5,7 @@ import { maxOf, minOf } from "../agg";
 import { seriesColor } from "../style";
 import { lerpColor } from "../color";
 import { thinOutline } from "../geometry";
-import { chromeNodes, computeFrame, valueScale } from "./frame";
+import { chromeNodes, computeFrame, valueScale, type Frame } from "./frame";
 import type { LayoutResult } from "./column";
 
 const quantile = (sorted: number[], p: number): number => {
@@ -43,16 +43,14 @@ export function layoutViolin(cfg: ChartConfig, style: ChartStyle, decor: Decorat
   const fmt = resolveFormat(allSamples, cfg.numberFormat);
   void fmt;
 
-  const { frame } = computeFrame(cfg, style, { ...decor, seriesLabels: false }, []);
-  const scale = valueScale(
-    frame,
-    minOf(allSamples.length ? allSamples : [0]),
-    maxOf(allSamples.length ? allSamples : [1]),
-    cfg.scale,
-    undefined,
-    undefined,
-    false, // no forced zero: a distribution's domain is its data range
-  );
+  const dataMin = minOf(allSamples.length ? allSamples : [0]);
+  const dataMax = maxOf(allSamples.length ? allSamples : [1]);
+  // A function of the frame, because the value-axis column is sized from the ticks
+  // it prints (see `computeFrame`). No forced zero: a distribution's domain is its
+  // data range.
+  const scaleOf = (f: Frame) => valueScale(f, dataMin, dataMax, cfg.scale, undefined, undefined, false);
+  const { frame } = computeFrame(cfg, style, { ...decor, seriesLabels: false }, [], scaleOf);
+  const scale = scaleOf(frame);
   const slotLen = frame.w / Math.max(1, n);
   const halfW = slotLen * 0.42;
   const centers = data.categories.map((_, c) => frame.x + slotLen * (c + 0.5));

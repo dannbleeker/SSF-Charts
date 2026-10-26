@@ -15,6 +15,8 @@ import {
   legendRowCount,
   titleHeight,
   valueScale,
+  type Frame,
+  type ValueScale,
 } from "./frame";
 import { horizontalChrome, legendRow, type LayoutResult } from "./column";
 
@@ -250,6 +252,29 @@ function boxplotBoxes(cfg: ChartConfig): {
   return { groupNames, grouped, all, drawn };
 }
 
+/**
+ * The one value scale every box is drawn against, as a function of the frame.
+ *
+ * A function of the frame because the frame needs it: `computeFrame` sizes the
+ * value-axis column from the ticks the scale prints (see the column chart's
+ * `scaleOf`). Data-driven domain (no forced zero): a boxplot of scores 40–95 must
+ * not be squashed against 0 — matches violin/candlestick. `cfg.scale` still
+ * overrides.
+ *
+ * `computeFrame` asks it of the frame BEFORE a grouped chart's legend takes its
+ * rows off the top, so it measures a plot as tall as the final one or taller. The
+ * ticks are the same on both (they follow the data and `cfg.scale`, not the
+ * frame), and the labels are drawn no larger on the shorter plot, since the
+ * spacing they are fitted to only shrinks. So the column errs WIDE: it may pay for
+ * a size that a crowded, banded plot then shrinks the axis away from, and never
+ * for less than the axis prints.
+ */
+function boxplotScaleOf(cfg: ChartConfig, drawn: readonly number[]): (frame: Frame) => ValueScale {
+  const lo = drawn.length ? minOf(drawn) : 0;
+  const hi = drawn.length ? maxOf(drawn) : 1;
+  return (f) => valueScale(f, lo, hi, cfg.scale, undefined, undefined, false);
+}
+
 export function layoutBoxplot(cfg: ChartConfig, style: ChartStyle, decor: Decorations): LayoutResult {
   const { data } = cfg;
   const n = data.categories.length;
@@ -260,9 +285,12 @@ export function layoutBoxplot(cfg: ChartConfig, style: ChartStyle, decor: Decora
   const boxes = grouped[0] ?? []; // group 0 keeps the single-group code path's shape
   const fmt = resolveFormat(all, cfg.numberFormat);
   const H = !!cfg.horizontal;
+  // One shared value scale across every box — that is the point of putting
+  // them in one chart.
+  const scaleOf = boxplotScaleOf(cfg, drawn);
   let frame = H
     ? computeFrameHorizontal(cfg, style, { ...decor, seriesLabels: false, totals: false })
-    : computeFrame(cfg, style, { ...decor, seriesLabels: false }, []).frame;
+    : computeFrame(cfg, style, { ...decor, seriesLabels: false }, [], scaleOf).frame;
   // Grouped boxplots draw a wrapping group legend at the top (below); the frame
   // above only budgets its usual single-row headroom, so reserve one extra row
   // per wrapped row and push the plot down. A one-row legend reserves nothing
@@ -274,13 +302,7 @@ export function layoutBoxplot(cfg: ChartConfig, style: ChartStyle, decor: Decora
       frame = { ...frame, y: frame.y + band, h: frame.h - band };
     }
   }
-  // One shared value scale across every box — that is the point of putting
-  // them in one chart.
-  // Data-driven domain (no forced zero): a boxplot of scores 40–95 must not be
-  // squashed against 0 — matches violin/candlestick. cfg.scale still overrides.
-  const lo = drawn.length ? minOf(drawn) : 0;
-  const hi = drawn.length ? maxOf(drawn) : 1;
-  const scale = valueScale(frame, lo, hi, cfg.scale, undefined, undefined, false); // no forced zero: data-driven domain
+  const scale = scaleOf(frame);
   // Value coordinate along the value axis (x when horizontal, y otherwise).
   // Clamped like `scale.toY` is — see the note on the same map in column.ts.
   const qOf = H

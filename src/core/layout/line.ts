@@ -21,6 +21,8 @@ import {
   titleHeight,
   titleNode,
   valueScale,
+  type Frame,
+  type ValueScale,
 } from "./frame";
 import { horizontalChrome, seriesLabelNodes, type LayoutResult } from "./column";
 import { columnHasData } from "./totals";
@@ -200,6 +202,31 @@ function dateSpacing(categories: string[]): number[] | null {
   return days.map((d) => ((d as number) - d0) / (d1 - d0));
 }
 
+/**
+ * The value scale of a line or area chart as a function of the frame it is drawn
+ * against.
+ *
+ * A function of the frame because the frame needs it: `computeFrame` sizes the
+ * value-axis column from the ticks the scale prints, and the scale maps onto the
+ * plot that column leaves (the column chart's `scaleOf`, the waterfall's). The
+ * arguments are the DRAWN scale's — the log floor and `logOn` above all, since data
+ * topping out at 2,000,000 ends a linear axis there and a log axis at the decade
+ * above, 10,000,000 — or the column is sized for an axis the chart does not have
+ * (`test/fix-v1-value-axis-gutters.test.ts`). The ticks follow the data and
+ * `cfg.scale`, not the frame, so the scale asked at the usual column width prints
+ * the ticks the one asked at the width it settles on does.
+ */
+function lineScaleOf(
+  cfg: ChartConfig,
+  all: readonly number[],
+  dataMin: number,
+  dataMax: number,
+  logOn: boolean,
+): (frame: Frame) => ValueScale {
+  const lo = logOn ? logFloor(all, dataMin) : dataMin;
+  return (f) => valueScale(f, lo, dataMax, cfg.scale, undefined, logOn);
+}
+
 /** Line and area charts over categories. Lines are 2pt with ≥3pt markers. */
 export function layoutLine(cfg: ChartConfig, style: ChartStyle, decor: Decorations): LayoutResult {
   if ((cfg.kind === "line" || cfg.kind === "area") && decor.sparkline) {
@@ -236,7 +263,9 @@ export function layoutLine(cfg: ChartConfig, style: ChartStyle, decor: Decoratio
   const dataMin = area ? minOf(stackedNeg, 0) : minOf(all, 0);
   const fmt = resolveFormat(all, cfg.numberFormat);
 
-  const { frame } = computeFrame(cfg, style, decor, decor.seriesLabels ? data.series.map((s) => s.name) : []);
+  const logOn = !area && !!cfg.logScale;
+  const scaleOf = lineScaleOf(cfg, all, dataMin, dataMax, logOn);
+  const { frame } = computeFrame(cfg, style, decor, decor.seriesLabels ? data.series.map((s) => s.name) : [], scaleOf);
   const slots = categorySlots(frame, n, 0);
   // Date categories ("2024-03", "Jan 2025", …) space x proportionally to time —
   // while they run forward; see `dateSpacing`.
@@ -245,8 +274,7 @@ export function layoutLine(cfg: ChartConfig, style: ChartStyle, decor: Decoratio
     const inset = slots.slotWidth / 2;
     for (let c = 0; c < n; c++) slots.centers[c] = frame.x + inset + dateAt[c] * (frame.w - inset * 2);
   }
-  const logOn = !area && !!cfg.logScale;
-  const scale = valueScale(frame, logOn ? logFloor(all, dataMin) : dataMin, dataMax, cfg.scale, undefined, logOn);
+  const scale = scaleOf(frame);
   const y0 = scale.toY(0);
   /**
    * A value a log axis has no place for, read as a gap.
