@@ -515,13 +515,9 @@ place. The grouping and the `POWERCHART_CONFIG` tag are injected into the OOXML
 after pptxgenjs is done — it can express neither — by the same code the add-in
 runs, so the two outputs cannot drift apart. Image-mode charts get the tag on
 the picture, so they are re-editable too. The tag part also records the chart's
-frame origin, so the first edit in the pane lands the chart where it stands. For
-a chart drawn as shapes it carries the scene fingerprint too (`POWERCHART_SCENE`,
-from the `sceneFingerprint` the library exports), which the pane checks before it
-patches only the shapes an edit changed, so that first edit can already be an
-in-place write rather than a redraw. An image-mode chart has none: its first
-edit is a full redraw, which is what stamps the fingerprint later edits patch
-against. An `"agenda"` slide is the exception: loose shapes, no
+frame origin, so the first edit in the pane redraws the chart where it stands
+(that first edit is a full redraw, which is what stamps the fingerprint later
+edits patch against). An `"agenda"` slide is the exception: loose shapes, no
 group and no tag, exactly as the pane's *Insert agenda slides* draws one — it is
 text, not a chart, and there is no data in it to edit. It is always drawn as
 native shapes, whatever `render` says.
