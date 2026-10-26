@@ -554,11 +554,16 @@ function nodeCorner(n: SceneNode): [number, number] | null {
  * frame origin the scene is drawn at: the first ink, `null` for a scene it draws
  * nothing for.
  *
- * THE INK OFFSET. A titled chart has none (the title sits at 0,0), an untitled
- * clustered chart starts 42pt down, a pie 112pt to the right, and a mekko starts
- * 2pt BEFORE the frame, so it can be negative. `POWERCHART_ORIGIN` records the
- * frame origin and the group's own corner; a reader that has only the first (the
- * tag the old deck generator wrote stored it twice) adds this to it for the second.
+ * THE INK OFFSET. A titled chart has none as a rule (the title sits at 0,0), not
+ * always: a titled mekko starts 2pt BEFORE the frame at every sample size, a titled
+ * combo 10.65pt before it at 200x150, and a titled horizontal stacked chart at
+ * 160x100 with its category axis off and a value axis on 22pt before it, where the
+ * first tick label overhangs. An untitled clustered chart starts 42pt down and a
+ * pie 112pt to the right, so it can be positive or negative on either axis.
+ * `POWERCHART_ORIGIN` records the frame origin and the group's own corner; a reader
+ * that has only the first (the tag the old deck generator wrote stored it twice)
+ * adds this to it for the second. That only holds for the engine that drew the
+ * group: see `withTrueAnchor`, which asks the scene's fingerprint first.
  *
  * AN ANSWER FOR EVERY KIND, where `sceneDrawnExtent` abstains on any scene with a
  * node the host turns. The two ask different questions. That one is the size of

@@ -3609,7 +3609,7 @@ export async function updateChartsInSlides(
         // THE ONE PLACE the stored anchor is believed or mended, so every reader of
         // `it.target.origin` below (the redraw's frame, the in-place corner check,
         // the target handed back) sees the same one. See `withTrueAnchor`.
-        return { ...e, it: withTrueAnchor(e.it, e.old, e.wasConfig), at: { left, top } };
+        return { ...e, it: withTrueAnchor(e.it, e.old, e.wasConfig, e.wasScene), at: { left, top } };
       });
     if (!alive.length) return [];
 
@@ -14138,12 +14138,48 @@ const ANCHOR_HAIR = 0.01;
  * that release wrote no origin at all and has nothing to mend.
  *
  * RECOGNISED BY ITS OWN SIGNATURE. A measured anchor is `origin + inkOffset`, so it
- * can equal the origin only when the ink offset is zero, which makes "anchor equals
- * origin while the scene's ink offset is not" a tag no current writer produces. The
- * anchor is then the origin plus that offset; every other tag is returned as it
- * came, the same object: a titled chart (offset zero), a chart drawn since the
- * writer measured its group, a two-number or missing origin (`originOf` already
- * refused it).
+ * equals the origin only when the group sat AT the frame origin, which makes
+ * "anchor equals origin while the scene's ink offset is not" a tag the engine that
+ * wrote it could not have produced. The anchor is then the origin plus that offset;
+ * every other tag is returned as it came, the same object: a chart whose offset is
+ * zero (a titled one as a rule, not always: a titled mekko starts 2pt before the
+ * frame at every sample size and a titled combo 10.65pt before it at 200x150), a
+ * chart drawn since the writer measured its group, a two-number or missing origin
+ * (`originOf` already refused it).
+ *
+ * THE SIGNATURE HOLDS ONLY WHILE THE ENGINE DRAWS THE CHART AS IT DID, and the
+ * stored scene fingerprint is what says so. The offset comes from `buildChart` as
+ * it is TODAY, so a layout change since the deck was written makes it a number the
+ * group on the slide never had. An independent review of 41b6752 measured how
+ * often: 2.1% of a 10,000-config fuzz (median 4.5pt, p90 22.6pt, at most 97pt),
+ * among them every untitled pie and doughnut with `numberFormat.decimals` of 1 or
+ * more (v0.6.1 printed "29%", today "29.4%", so the leftmost label moved 10.8pt,
+ * 16.2pt at two decimals), an untitled waterfall at 160x100 with values of 1e7 or
+ * more (7.25pt) and the value-axis gutter of 106d4e1 (up to 2.5pt, much more at
+ * 120pt wide). The 25 sample configs 41b6752 was measured on show none of that
+ * drift (their offsets are identical). Mended on such a chart, the first edit
+ * frames the redraw at origin + (old offset - new offset), and the other way round
+ * a CORRECT tag (anchor equal to origin because the group was drawn at the origin)
+ * is mended into a corner the chart never had once the engine lays it out with ink
+ * before the frame: a titled horizontal stacked chart at 160x100 with a value axis
+ * in a number format that widens its first tick moved 12.5pt. The tag cannot tell
+ * those two apart (anchor equals origin in both), and a drag hides the old offset
+ * on the live shape, so the old offset cannot be had from the slide either.
+ *
+ * SO A TAG IS MENDED ONLY WHEN THE SCENE ON THE SLIDE IS THE ONE TODAY'S ENGINE
+ * DRAWS. `POWERCHART_SCENE` is the fingerprint of the scene the writer drew (v0.6.1
+ * stamps it on every shapes chart, in the tag part beside the config and the
+ * origin, since 516894e: 150 of 150 sample decks), and it is the same formula as
+ * today's `sceneFingerprint`. Equal to the fingerprint of the scene built from the
+ * stored config, today's ink offset is the old one. Not equal, missing or unread:
+ * the tag comes back untouched, which is what the update did before the mend and so
+ * never worse than not mending. The price is a chart whose scene changed in
+ * something other than its corner: 8 of those 150 (six doughnuts, two waffles) no
+ * longer fingerprint alike and keep the displacement they always had, and a deck
+ * from v0.3.0 to v0.3.2, which wrote this origin before there was a fingerprint, is
+ * not mended at all. Declining is the safe direction: a legacy chart that moves by
+ * its old ink offset on its first edit does what it always did, and the redraw then
+ * measures a true tag.
  *
  * THE OFFSET IS THAT OF THE CONFIG STORED ON THE SHAPE, not of the one being
  * drawn. The group on the slide is what the stored config drew, and the edit in
@@ -14156,18 +14192,48 @@ const ANCHOR_HAIR = 0.01;
  * A GROUP ONLY. A picture's corner IS the frame origin by construction, so a
  * picture of an untitled chart (the degraded insert, the recovery of a failed
  * redraw) carries anchor equal to origin and a nonzero offset and is right: mending
- * it would walk the chart by the offset on its first edit. The old builder grouped
- * every chart it tagged except a slide with one shape (an empty chart's
- * placeholder, tagged on that shape and left as it was), and an ungrouped chart's
- * anchor was measured off its own first shape when it was drawn, so neither
- * needs this.
+ * it would walk the chart by the offset on its first edit. A picture carries the
+ * same stamped fingerprint as a chart drawn in shapes, so the fingerprint cannot
+ * tell the two apart, and the shape's type is all that does.
+ *
+ * THE ONE-SHAPE DECK CHART IS LEFT UNMENDED FOR THE SAME REASON, and it is a
+ * residual, not a chart that needs nothing. The old builder grouped every chart it
+ * tagged except a slide with one shape and tagged that shape itself. That slide is
+ * not only an empty chart's placeholder: an empty untitled clustered, stacked,
+ * waterfall, mekko or combo chart is one baseline line at an offset of (2, 282), an
+ * empty doughnut or cascade one shape too, and the anchor on such a shape is the
+ * frame origin while the shape sits at origin + offset. Its first edit still moves
+ * it by the offset. It is not mended because the only thing that separates it from
+ * a picture is the type the host reports for a single line, wedge or rect, and
+ * nothing in this file reads one (it asks only whether a shape is a group), so a
+ * rule written on it would be a guess about the host, and a wrong guess walks a
+ * picture that is right today. Reachable only through the deck path (the own-slide
+ * offer, the stalled-update slide swap) on a chart that collapsed to one shape. An
+ * UNGROUPED chart the add-in drew itself needs nothing: its anchor was measured off
+ * its own first shape when it was drawn.
  *
  * THE OFFSET IS THE DECK BUILDER'S, for every kind. `sceneInkOffset` answers for a
  * pie, a stacked chart and a line chart as it does for a clustered one, because
  * the group a legacy tag was written against is the one the deck builder framed,
  * and it frames a wedge, an arrowhead and a diagonal line unturned. A chart whose
- * config will not parse, whose scene draws nothing, or whose stored config the host
- * would not read keeps the tag it has, which is what it did before.
+ * config will not parse, whose scene draws nothing (a pie with no data), whose
+ * scene is no longer the one drawn, or whose stored config the host would not read
+ * keeps the tag it has, which is what it did before.
+ *
+ * NOT REACHED WHEN THE RESOLVE WAS REFUSED, and not fixed here on purpose. This is
+ * handed the config and scene tags and the shape that `updateChartsInSlides`
+ * queued in the sync that resolved the chart. When that sync is refused (a by-id
+ * lookup the host will not answer, or `.group` read off a shape that is not a
+ * group, which poisons the whole batch) the entry is re-acquired by
+ * `reReadRefusedShapes` with its ORIGINAL tag proxies, which the host never
+ * answered, and a recovered shape that loaded only `id,left,top`. There is no
+ * config to read and no type to test, so this returns the tag as it came and the
+ * chart moves by its ink offset on its first edit, exactly as before the mend. Not
+ * a regression. Changing what the recovery re-read loads is a change to the most
+ * sensitive path in this file, and a legacy deck's shapes are old ones, where the
+ * refusals this host shows are for shapes drawn seconds earlier, so the route is
+ * unlikely for them. `test/fix-v4-legacy-origin-anchor.test.ts` pins it, so a
+ * change in it fails a test rather than passing for a fix.
  *
  * NOT WRITTEN BACK. The tag on the slide stays as it was until an edit moves the
  * group's corner (`cornerAfterEdit` records the new one) or the chart is redrawn
@@ -14178,17 +14244,23 @@ function withTrueAnchor<I extends { target: EditTarget }>(
   it: I,
   old: PowerPoint.Shape,
   stored: PowerPoint.Tag | undefined,
+  storedScene: PowerPoint.Tag | undefined,
 ): I {
   const o = it.target.origin;
   const config = stored && tagValue(stored);
-  if (!o || !config || !isGroupShape(old)) return it;
+  const drawn = storedScene && tagValue(storedScene);
+  if (!o || !config || !drawn || !isGroupShape(old)) return it;
   if (Math.abs(o.anchorLeft - o.left) >= ANCHOR_HAIR || Math.abs(o.anchorTop - o.top) >= ANCHOR_HAIR) return it;
-  let ink: { x: number; y: number } | null;
+  let scene: Scene;
   try {
-    ink = sceneInkOffset(buildChart(JSON.parse(config) as ChartConfig));
+    scene = buildChart(JSON.parse(config) as ChartConfig);
   } catch {
     return it;
   }
+  // The scene on the slide against the scene today's engine draws for its config.
+  // Different, and today's ink offset may not be the one the group has: see above.
+  if (sceneFingerprint(scene) !== drawn) return it;
+  const ink = sceneInkOffset(scene);
   if (!ink || (Math.abs(ink.x) < ANCHOR_HAIR && Math.abs(ink.y) < ANCHOR_HAIR)) return it;
   trace("update", "a legacy origin anchor, read as the group's own corner", {
     origin: [o.left, o.top],

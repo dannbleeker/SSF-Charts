@@ -3293,20 +3293,63 @@ instrument problem the live rounds had shown:
   both kinds of deck. A deck the OLD `pptx-deck.ts` wrote (v0.6.1 and every build
   before `0e9500f`) carries a four-element origin anchor that is the frame origin
   twice, so its first edit moved the chart by its ink offset. Closed afterwards
-  (v4): the update reads such a tag as the group's own corner, `origin` plus the
-  scene's ink offset (`withTrueAnchor`, `sceneInkOffset`), when the anchor equals
-  the origin, the tagged shape is a group and the stored config has a nonzero
-  offset. The offset is the corner of the group the DECK BUILDER frames, for every
-  kind: a wedge on its circle's box, a polygon on its points, an arrowhead on
-  `arrowheadBox`, a diagonal line on its bounding box, which is why it answers for a
-  pie, a stacked chart and a line chart where `sceneDrawnExtent` (the live host's
-  box) does not. It was measured against the origin tag the deck builder writes now,
-  which records the group it really made, for all 25 sample kinds titled and not at
-  three sizes and every showcase chart. **Not proved against the live host:** a
-  v0.6.1 deck opened from disk has never been read there, and a picture or an
-  ungrouped chart is left alone on purpose (see `withTrueAnchor`). The headless
-  skill of that release wrote no origin at all, so a deck it made has no anchor to
-  mend: its first edit still frames the redraw on the group's own corner.
+  (v4, narrowed by v4b): the update reads such a tag as the group's own corner,
+  `origin` plus the scene's ink offset (`withTrueAnchor`, `sceneInkOffset`), when
+  the anchor equals the origin, the tagged shape is a group, the stored config has a
+  nonzero offset, AND the scene fingerprint stamped on the chart (`POWERCHART_SCENE`)
+  equals the one built today from the stored config. The offset is the corner of
+  the group the DECK BUILDER frames, for every kind: a wedge on its circle's box, a
+  polygon on its points, an arrowhead on `arrowheadBox`, a diagonal line on its
+  bounding box, which is why it answers for a pie, a stacked chart and a line chart
+  where `sceneDrawnExtent` (the live host's box) does not. It was measured against
+  the origin tag the deck builder writes now, which records the group it really
+  made, for all 25 sample kinds titled and not at three sizes and every showcase
+  chart (272 of 272). **What that measurement did not cover, and the review of
+  `41b6752` then found:** the offset is today's engine's, which is the one that drew
+  the group only while the layout has not moved: the sample configs differ from
+  v0.6.1 in 0 of 5400 offsets, where a 10,000-config fuzz differs in 2.1% (median
+  4.5pt, p90 22.6pt, up to 97pt; every untitled pie and doughnut with `numberFormat.decimals`
+  of 1 or more, an untitled 160x100 waterfall of 1e7 and up, the value-axis gutter
+  of `106d4e1`). Mended from a drifted layout the first redraw lands at origin +
+  (old offset - new offset), and a CORRECT tag (anchor equal to origin because the
+  group was drawn at the origin: a titled horizontal stacked chart at 160x100 with
+  a value axis in a wide number format) is mended into a corner it never had, which
+  moved it 12.5pt. The tag cannot tell those two apart, so the mend is held to the
+  fingerprint: v0.6.1 stamps it on every shapes chart (150 of 150 sample decks, in
+  the tag part beside the origin, the same formula as today's), and where it differs
+  from today's, is missing or unreadable the tag is read as it always was. That is
+  never worse than not mending, and it costs the charts whose scene changed in
+  something other than its corner: 8 of those 150 (six doughnuts, two waffles at
+  200x150) no longer match and keep their displacement, and a deck from v0.3.0 to
+  v0.3.2, which wrote this origin before `516894e` stamped a fingerprint, is not
+  mended at all. A declined chart moves by its full old ink offset on its first edit
+  (the review's doughnut: 63.6pt right) where the unguarded mend left it only the
+  drift (10.8pt), and the redraw then writes a true tag.
+  **What stays open (the first two are pinned by tests, so a change in them fails):**
+  (1) a chart whose by-id resolve was refused or went unanswered is NOT mended.
+  The re-acquired entry keeps the tag proxies queued in the refused sync, which the
+  host never answered, and `reReadRefusedShapes` loads only `id,left,top`, so
+  `withTrueAnchor` has no config, no fingerprint and no type to read and the chart
+  moves by its ink offset as it did before the mend. Not changed on purpose: that
+  re-read is the most sensitive path in `powerpoint.ts`, a legacy deck's shapes are
+  old ones where the refusals this host shows are for shapes drawn seconds earlier,
+  and the identical behaviour predates the mend. A fix would load `type` and the two
+  tags in the re-read and swap them onto the entry, and must read the STORED config,
+  not the one being drawn. (2) A one-shape deck chart is not mended either: the old
+  builder tagged a slide with one shape on the shape itself, and that is an empty
+  untitled clustered, stacked, waterfall, mekko or combo chart (one baseline line
+  at (2, 282)), not only a placeholder. A picture carries the same fingerprint and
+  the same signature and is right, so only the type the host reports for a single
+  line, wedge or rect would tell them apart, and nothing reads one yet. (3) A
+  picture, and an ungrouped chart the add-in drew itself, are left alone on purpose.
+  **Not proved against the live host:** a v0.6.1 deck opened from disk has never
+  been read there, neither the group's left and top as the host reports them nor
+  the stamped fingerprint surviving the insert, which the guard now depends on. The
+  headless skill of that release wrote no origin at all, so a deck it made has no
+  anchor to mend: its first edit still frames the redraw on the group's own corner.
+  Two things the message of `41b6752` says are not right: it counts "80 of them"
+  among the scenes the live extent abstains on, and the measured figure is 96 of
+  272; and it says the engine has not drifted, on the 25 sample configs alone.
 - Explode's closing `applyConfig` replaces the pane with the chart it re-read, so an
   edit typed while Explode ran is discarded (true before; a fixed write-back had
   masked it). Finished afterwards (v2a): a pane that holds the exploded chart now

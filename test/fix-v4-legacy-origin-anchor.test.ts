@@ -4,6 +4,7 @@ import { readFileSync } from "fs";
 import JSZip from "jszip";
 import {
   CHART_ORIGIN_TAG,
+  CHART_SCENE_TAG,
   CHART_TAG,
   insertSceneIntoSlide,
   listChartsInDeck,
@@ -16,7 +17,7 @@ import { setTracing, traceLog } from "../src/core/trace";
 import { buildChart } from "../src/core/chart";
 import { CHART_KINDS, sampleConfig } from "../src/core/samples";
 import { arrowheadBox } from "../src/core/geometry";
-import { sceneDrawnExtent, sceneInkOffset } from "../src/core/scene-diff";
+import { sceneDrawnExtent, sceneFingerprint, sceneInkOffset } from "../src/core/scene-diff";
 import { buildDeckBase64 } from "../src/render/pptx-deck";
 import type { Scene } from "../src/core/scene";
 import type { ChartConfig, ChartKind } from "../src/core/types";
@@ -51,6 +52,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
   faults.refuseGroups = 0;
   faults.refuseShapeAdds = false;
+  faults.refuseShapeById = false;
+  faults.refuseGroupReadTimes = 0;
   setTracing(false);
 });
 
@@ -86,6 +89,45 @@ async function drawLegacy(cfg: ChartConfig, tag = legacyTag()) {
   const ink = { x: drawn.group.left - FRAME.left, y: drawn.group.top - FRAME.top };
   drawn.group.tagStore.set(CHART_ORIGIN_TAG, tag);
   return { ...drawn, ink };
+}
+
+/**
+ * The group a deck FILE holds for `cfg`, which is the deck builder's: the frame
+ * plus its ink offset. The fake host frames a node it turns (a wedge, a polygon, a
+ * diagonal line) differently from the deck builder, so the group is put where the
+ * deck builder put it, and the premise of the tests that use this is that it is.
+ */
+function asTheDeckFramedIt(group: FakeShape, cfg: ChartConfig): { x: number; y: number } {
+  const ink = sceneInkOffset(buildChart(cfg))!;
+  for (const [key, value] of [
+    ["left", FRAME.left + ink.x],
+    ["top", FRAME.top + ink.y],
+  ] as const)
+    Object.defineProperty(group, key, { get: () => value, set: () => {}, configurable: true });
+  return ink;
+}
+
+/**
+ * A chart the engine DREW as `drawn` whose stored config is `stored`: what a deck
+ * holds once the layout has changed since it was written. The shapes on the slide,
+ * and the fingerprint stamped beside them, are those of `drawn`; the config on the
+ * shape is one today's engine lays out as another scene, which is all the stored
+ * fingerprint is there to say. The tag is the one the old deck builder wrote.
+ */
+async function drawLegacyDrifted(drawn: ChartConfig, stored: ChartConfig, turned = false) {
+  const slide = makeSlide("s1");
+  installHost([slide], [], slide, () => true);
+  await insertSceneIntoSlide(buildChart(drawn), { tagData: JSON.stringify(stored), ...FRAME });
+  const group = slide.created.find((s) => s.type === "group" && !s.deleted)!;
+  expect(group, "the fixture did not group").toBeTruthy();
+  let ink: { x: number; y: number };
+  if (turned) ink = asTheDeckFramedIt(group, drawn);
+  else {
+    groupBoxFollowsMembers(group);
+    ink = { x: group.left - FRAME.left, y: group.top - FRAME.top };
+  }
+  group.tagStore.set(CHART_ORIGIN_TAG, legacyTag());
+  return { slide, group, ink };
 }
 
 /** The target a pane would hold: read back from the slide, as the deck scan does. */
@@ -462,17 +504,6 @@ describe("a legacy chart whose scene has a node the host turns", () => {
    */
   const TURNED: ChartKind[] = ["pie", "doughnut", "stacked", "line", "combo", "sunburst", "violin"];
 
-  /** The group a deck file holds for `cfg`: the frame plus the deck builder's ink offset. */
-  function asTheDeckFramedIt(group: FakeShape, cfg: ChartConfig): { x: number; y: number } {
-    const ink = sceneInkOffset(buildChart(cfg))!;
-    for (const [key, value] of [
-      ["left", FRAME.left + ink.x],
-      ["top", FRAME.top + ink.y],
-    ] as const)
-      Object.defineProperty(group, key, { get: () => value, set: () => {}, configurable: true });
-    return ink;
-  }
-
   it("is mended by the group the deck builder framed, so the first edit lands on the frame", async () => {
     let offset = 0;
     for (const kind of TURNED) {
@@ -656,4 +687,282 @@ describe("sceneInkOffset against the group the deck builder frames", () => {
     expect(measured, "almost nothing was measured").toBeGreaterThan(250);
     expect(turned, "no turned scene was measured, so the claim for them is untested").toBeGreaterThan(40);
   }, 120_000);
+});
+
+describe("a legacy chart the engine has laid out differently since the deck was written", () => {
+  /**
+   * `withTrueAnchor` takes the group's corner off today's engine, which is the one
+   * that drew the group only while the layout has not moved. The fingerprint
+   * stamped when the chart was drawn says whether it has (v0.6.1 stamps it on every
+   * shapes chart), and a tag is mended only when it matches today's scene for the
+   * stored config. Otherwise it is read as it always was, so a drifted chart gets
+   * what it got before the mend existed (a redraw framed on the group's own corner)
+   * and never a number only today's engine believes.
+   */
+  const pie = (decimals?: number): ChartConfig => ({
+    ...untitled("pie"),
+    width: 200,
+    height: 150,
+    numberFormat: decimals === undefined ? undefined : { decimals },
+  });
+
+  it("keeps the legacy frame for a pie whose labels have gained a decimal since", async () => {
+    // v0.6.1 printed "29%" where today prints "29.4%". Its scene for this pie at
+    // `decimals: 1` is today's scene for the same pie with no number format (the two
+    // fingerprints are equal, measured against `git archive v0.6.1`), and the
+    // leftmost label is 10.8pt further right in it, which is the drift.
+    const stored = pie(1);
+    const drawn = pie();
+    const was = sceneInkOffset(buildChart(drawn))!;
+    const now = sceneInkOffset(buildChart(stored))!;
+    expect(was.x - now.x, "the layout has not moved, so this chart has not drifted").toBeGreaterThan(5);
+    const { slide, group } = await drawLegacyDrifted(drawn, stored, true);
+    const corner = { left: group.left, top: group.top };
+    setTracing(true);
+    const next = aRowMore(stored);
+    await updateChartInSlide(buildChart(next), await targetOf(), { tagData: JSON.stringify(next) });
+    expect(mended(), "the tag was mended from an engine that no longer draws this chart").toHaveLength(0);
+    // Framed on the group's own corner, exactly where the redraw landed before the
+    // mend existed (38.9pt right of the frame). Mended from today's engine it lands
+    // 10.8pt right of it instead, a corner only today's engine believes in.
+    expect(wrongShapes(slide, buildChart(next), corner)).toEqual([]);
+  });
+
+  it("keeps the legacy frame for a clustered chart that today lays out with another offset", async () => {
+    // Stands in for the waterfall and the line charts of the review, whose value-axis
+    // gutter moved: the stored config is one today's engine lays out as another
+    // scene than the one on the slide.
+    const drawn = untitled();
+    const stored = edited(drawn, (c) => (c.decorations = { ...c.decorations, valueAxis: true }));
+    const was = sceneInkOffset(buildChart(drawn))!;
+    const now = sceneInkOffset(buildChart(stored))!;
+    expect(Math.abs(was.y - now.y), "the layout has not moved, so this chart has not drifted").toBeGreaterThan(10);
+    const { slide, group, ink } = await drawLegacyDrifted(drawn, stored);
+    expect(ink.y, "the fixture's group is at the frame, so it cannot show a displacement").toBeGreaterThan(10);
+    const corner = { left: group.left, top: group.top };
+    setTracing(true);
+    const next = aRowMore(stored);
+    await updateChartInSlide(buildChart(next), await targetOf(), { tagData: JSON.stringify(next) });
+    expect(routeTaken(), "a drifted chart is redrawn, not written in place").toBe("redraw");
+    expect(mended()).toHaveLength(0);
+    expect(wrongShapes(slide, buildChart(next), corner)).toEqual([]);
+  });
+
+  it("keeps a CORRECT tag whose chart the engine would now lay out with ink before the frame", async () => {
+    // A titled chart drawn at offset zero has anchor equal to origin, which is true.
+    // The signature alone cannot tell it from a legacy one, and an engine that now
+    // puts a label before the frame (the review's titled horizontal stacked chart
+    // with a value axis, 12.5pt) turned that right tag into a wrong corner and moved
+    // the chart. A horizontal clustered chart with a value axis stands in for it
+    // here: today it lays out with ink before its frame. The fingerprint is what
+    // refuses the mend: the scene on the slide is not the one the stored config
+    // draws now.
+    const drawn = clustered();
+    const stored = edited(drawn, (c) => {
+      c.horizontal = true;
+      c.decorations = { ...c.decorations, valueAxis: true };
+    });
+    expect(sceneInkOffset(buildChart(drawn)), "the drawn chart is not at offset zero").toEqual({ x: 0, y: 0 });
+    const now = sceneInkOffset(buildChart(stored))!;
+    expect(
+      Math.abs(now.x) + Math.abs(now.y),
+      "today's layout is at offset zero too, so it cannot tell",
+    ).toBeGreaterThan(1);
+    const { slide, group } = await drawLegacyDrifted(drawn, stored);
+    expect([group.left, group.top], "a titled chart's group is not at the frame origin").toEqual([
+      FRAME.left,
+      FRAME.top,
+    ]);
+    setTracing(true);
+    const next = aRowMore(stored);
+    await updateChartInSlide(buildChart(next), await targetOf(), { tagData: JSON.stringify(next) });
+    expect(mended(), "a tag that was right was changed").toHaveLength(0);
+    expect(wrongShapes(slide, buildChart(next))).toEqual([]);
+  });
+
+  it("mends the chart it has not drifted on, whose fingerprint is the one on the slide", async () => {
+    const cfg = untitled();
+    const { slide, group } = await drawLegacy(cfg);
+    // The premise of every mend above: the fixture carries a fingerprint, and it is
+    // today's for the stored config, so the guard has something to match.
+    expect(group.tagStore.get(CHART_SCENE_TAG)).toBe(sceneFingerprint(buildChart(cfg)));
+    setTracing(true);
+    const next = aRowMore(cfg);
+    await updateChartInSlide(buildChart(next), await targetOf(), { tagData: JSON.stringify(next) });
+    expect(mended()).toHaveLength(1);
+    expect(wrongShapes(slide, buildChart(next))).toEqual([]);
+  });
+
+  it("leaves a tag alone when the chart carries no fingerprint, or one that is not today's", async () => {
+    // No fingerprint is a deck written before 516894e (v0.3.0 to v0.3.2 carry this
+    // origin and no stamp): there is nothing to say the engine is the same, so the
+    // tag is read as it always was.
+    for (const stamp of [undefined, "not-a-fingerprint"]) {
+      const cfg = untitled();
+      const { slide, group, ink } = await drawLegacy(cfg);
+      if (stamp === undefined) group.tagStore.delete(CHART_SCENE_TAG);
+      else group.tagStore.set(CHART_SCENE_TAG, stamp);
+      setTracing(true);
+      const next = aRowMore(cfg);
+      await updateChartInSlide(buildChart(next), await targetOf(), { tagData: JSON.stringify(next) });
+      expect(mended(), `${stamp}: the tag was mended with nothing to say the engine is the same`).toHaveLength(0);
+      expect(wrongShapes(slide, buildChart(next), { left: FRAME.left + ink.x, top: FRAME.top + ink.y })).toEqual([]);
+      setTracing(false);
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("a legacy tag whose stored config cannot give a scene", () => {
+  it("keeps the tag, and the edit still lands, when the stored config will not parse or build", async () => {
+    // Present but unusable: not the missing tag the test above covers. The throw
+    // would leave `updateChartsInSlides` through its `.map` and fail the whole batch
+    // for one corrupt tag, where `tryInPlaceUpdate` degrades the same config to a
+    // redraw.
+    for (const config of ["{not json", '{"kind":"zzz"}', "null", "{}"]) {
+      const cfg = untitled();
+      const { slide, group, ink } = await drawLegacy(cfg);
+      group.tagStore.set(CHART_TAG, config);
+      setTracing(true);
+      const next = aRowMore(cfg);
+      await updateChartInSlide(buildChart(next), await targetOf(), { tagData: JSON.stringify(next) });
+      expect(mended(), `${config}: a tag was mended from a config that gives no scene`).toHaveLength(0);
+      expect(wrongShapes(slide, buildChart(next), { left: FRAME.left + ink.x, top: FRAME.top + ink.y })).toEqual([]);
+      setTracing(false);
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps the tag when the scene the stored config builds draws nothing", async () => {
+    // A pie with no data is no nodes at all, so there is no corner to read. The
+    // fingerprint is made to match, so that it is the empty scene (and not a
+    // mismatch) that stops this.
+    const nothing: ChartConfig = { ...untitled("pie"), data: { categories: [], series: [] } };
+    expect(sceneInkOffset(buildChart(nothing)), "the pie draws something, so it has an offset").toBeNull();
+    const cfg = untitled();
+    const { slide, group, ink } = await drawLegacy(cfg);
+    group.tagStore.set(CHART_TAG, JSON.stringify(nothing));
+    group.tagStore.set(CHART_SCENE_TAG, sceneFingerprint(buildChart(nothing)));
+    setTracing(true);
+    const next = aRowMore(cfg);
+    await updateChartInSlide(buildChart(next), await targetOf(), { tagData: JSON.stringify(next) });
+    expect(mended()).toHaveLength(0);
+    expect(wrongShapes(slide, buildChart(next), { left: FRAME.left + ink.x, top: FRAME.top + ink.y })).toEqual([]);
+  });
+});
+
+describe("a legacy chart whose by-id resolve is refused", () => {
+  /**
+   * A RECORDED RESIDUAL, NOT A FIX. A refused resolve re-acquires the chart's shape
+   * with `reReadRefusedShapes`, which loads only `id,left,top`, and keeps the tag
+   * proxies queued in the refused sync, which the host never answered. There is no
+   * config to read and no type to test, so `withTrueAnchor` has nothing to mend
+   * from and the chart moves by its ink offset on its first edit, as it did before
+   * the mend. Not changed, because the recovery re-read is the most sensitive path
+   * in `powerpoint.ts` and a legacy deck's shapes are old ones.
+   *
+   * This pins what the path does today, so that a change in it fails here and is
+   * written down in `withTrueAnchor` and the BACKLOG instead of passing for a fix.
+   */
+  const refusals: [string, () => void][] = [
+    ["a by-id lookup the host refuses", () => (faults.refuseShapeById = true)],
+    ["a group read the host refuses once", () => (faults.refuseGroupReadTimes = 1)],
+  ];
+
+  it.each(refusals)("is not mended under %s, and moves by its ink offset", async (_label, refuse) => {
+    const cfg = untitled();
+    const { slide, ink } = await drawLegacy(cfg);
+    const target = await targetOf();
+    setTracing(true);
+    refuse();
+    const next = aRowMore(cfg);
+    await updateChartInSlide(buildChart(next), target, { tagData: JSON.stringify(next) });
+    const said = traceLog().entries.map((e) => e.message);
+    expect(
+      said.some((m) => m.startsWith("a by-id lookup refused the whole resolve")),
+      "the resolve was not refused, so this is not the path it is about",
+    ).toBe(true);
+    expect(
+      said.some((m) => m.startsWith("re-read recovered shapes")),
+      "the shapes were not re-acquired",
+    ).toBe(true);
+    expect(routeTaken()).toBe("redraw");
+    expect(mended(), "the refused path is mended now: say so in withTrueAnchor and the BACKLOG").toHaveLength(0);
+    expect(
+      wrongShapes(slide, buildChart(next)),
+      "the chart landed on its frame, so the residual is closed: flip this test and the docs",
+    ).not.toEqual([]);
+    expect(wrongShapes(slide, buildChart(next), { left: FRAME.left + ink.x, top: FRAME.top + ink.y })).toEqual([]);
+  });
+});
+
+describe("a one-shape deck chart", () => {
+  it("is left with its legacy anchor, a recorded residual: an empty chart's line, filled in, moves by its offset", async () => {
+    // The old builder tagged a slide with one shape on the shape itself, and an empty
+    // untitled clustered chart is one baseline line at (2, 282). It is not a group,
+    // and a picture is not either, so it is not told apart from one (see
+    // `withTrueAnchor`). Pinned so that mending it is a decision, not a drift.
+    const empty = edited(untitled(), (c) => {
+      c.data.categories = [];
+      c.data.series = [];
+    });
+    const scene = buildChart(empty);
+    expect(scene.nodes, "the empty chart is more than one shape").toHaveLength(1);
+    const ink = sceneInkOffset(scene)!;
+    expect(ink.y, "the fixture has no ink offset, so it cannot show the walk").toBeGreaterThan(100);
+    const slide = makeSlide("s1");
+    installHost([slide], [], slide, () => true);
+    await insertSceneIntoSlide(scene, { tagData: JSON.stringify(empty), ...FRAME });
+    const shape = slide.created.find((s) => !s.deleted && s.tagStore.get(CHART_TAG))!;
+    expect(shape.type, "the fixture grouped one shape").not.toBe("group");
+    shape.tagStore.set(CHART_ORIGIN_TAG, legacyTag());
+    setTracing(true);
+    const next = untitled();
+    await updateChartInSlide(buildChart(next), await targetOf(), { tagData: JSON.stringify(next) });
+    expect(mended()).toHaveLength(0);
+    expect(wrongShapes(slide, buildChart(next)), "the one-shape chart landed on its frame: flip this").not.toEqual([]);
+    expect(wrongShapes(slide, buildChart(next), { left: FRAME.left + ink.x, top: FRAME.top + ink.y })).toEqual([]);
+  });
+});
+
+describe("a titled chart is not always at offset zero", () => {
+  it("has a nonzero ink offset for a titled mekko and a titled 200x150 combo", () => {
+    for (const [width, height] of [
+      [480, 300],
+      [200, 150],
+      [960, 540],
+    ] as const)
+      expect(
+        sceneInkOffset(buildChart({ ...sampleConfig("mekko"), width, height })),
+        `mekko ${width}x${height}`,
+      ).toEqual({
+        x: -2,
+        y: 0,
+      });
+    const combo = sceneInkOffset(buildChart({ ...sampleConfig("combo"), width: 200, height: 150 }))!;
+    expect(combo.x).toBeCloseTo(-10.65, 2);
+    expect(combo.y).toBe(0);
+  });
+
+  it("is mended for a titled mekko, whose legacy tag is wrong", async () => {
+    const cfg = sampleConfig("mekko");
+    const { slide, ink } = await drawLegacy(cfg);
+    expect(ink.x, "the titled mekko has no ink before the frame").toBeLessThan(-1);
+    setTracing(true);
+    const next = aRowMore(cfg);
+    await updateChartInSlide(buildChart(next), await targetOf(), { tagData: JSON.stringify(next) });
+    expect(mended()).toHaveLength(1);
+    expect(wrongShapes(slide, buildChart(next))).toEqual([]);
+  });
+
+  it("is mended for a titled 200x150 combo, whose legacy tag is wrong", async () => {
+    const cfg: ChartConfig = { ...sampleConfig("combo"), width: 200, height: 150 };
+    const { slide, ink } = await drawLegacyDrifted(cfg, cfg, true);
+    expect(ink.x, "the titled combo has no ink before the frame").toBeLessThan(-1);
+    setTracing(true);
+    const next = aRowMore(cfg);
+    await updateChartInSlide(buildChart(next), await targetOf(), { tagData: JSON.stringify(next) });
+    expect(mended()).toHaveLength(1);
+    expect(wrongShapes(slide, buildChart(next))).toEqual([]);
+  });
 });
