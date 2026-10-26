@@ -679,6 +679,26 @@ export const faults = {
    */
   unansweredTagLoads: 0,
   /**
+   * The first N slide-tag reads answer "no such tag", and later ones tell the truth.
+   *
+   * The host publishing a slide's tags LATE: the slides are there, the repair pass
+   * reads them, and every slot tag comes back null. Round 500 read four slides this
+   * way (`read 4, withSlotTag 0`), found no slot claims, queued no duplicates and
+   * kept all four where the neighbouring round, minutes later on the same build,
+   * read `withSlotTag 4` and deleted two. Per READ of a slide's tag, so `4` hides
+   * the first pass over four slides and shows the second.
+   */
+  slideTagReadsHidden: 0,
+  /**
+   * A deleted slide is still counted and listed for the next N count reads.
+   *
+   * The host answering the read straight after a delete before it has caught up.
+   * Ten of the fifteen archived failures of `two slides claiming one slot` are this:
+   * the repair deleted both duplicates and the closing count and listing, taken at
+   * once, still showed three or four slides (`3 kept, 3 of 2 still re-editable`).
+   */
+  deletedSlidesLinger: 0,
+  /**
    * `setSelectedShapes([])` does not clear the selection — PowerPoint on the
    * web, office-js#3083. Desktop clears it.
    *
@@ -1889,7 +1909,14 @@ export function makeSlide(id: string) {
     },
     tags: {
       add: (k: string, v: string) => void slideTagStore.set(k, v),
-      getItemOrNullObject: (k: string) => makeTagProxy(slideTagStore, k),
+      getItemOrNullObject: (k: string) => {
+        // See faults.slideTagReadsHidden.
+        if (faults.slideTagReadsHidden > 0) {
+          faults.slideTagReadsHidden--;
+          return makeTagProxy(new Map<string, string>(), k);
+        }
+        return makeTagProxy(slideTagStore, k);
+      },
     },
     tagStore: slideTagStore,
     shapes: {
@@ -2550,6 +2577,8 @@ export function installHost(
   // result resolves at the next sync to the count from before that sync's adds.
   let selectedSlide = selectedSlideArg;
   let committedCount = slides.length;
+  /** Slides deleted but still listed, and how many count reads each has left — see `faults.deletedSlidesLinger`. */
+  const lingering = new Map<string, number>();
   /**
    * Advance the committed count. One helper rather than three assignments so
    * the shortfall fault below has a single place to reason about.
@@ -2564,6 +2593,22 @@ export function installHost(
    * reason no host has ever produced.
    */
   const reportedCount = () => {
+    const out = reportedCountBeforeLinger();
+    // Each count read ages the slides the host has deleted and still lists; the one
+    // that spends the last read is gone for the next, which is how a delete shows
+    // up a moment late.
+    for (const [id, left] of lingering) {
+      if (left > 1) {
+        lingering.set(id, left - 1);
+        continue;
+      }
+      const at = slides.findIndex((x) => x.id === id);
+      if (at >= 0) slides.splice(at, 1);
+      lingering.delete(id);
+    }
+    return out;
+  };
+  const reportedCountBeforeLinger = () => {
     const cap = faults.slideCountCeiling;
     // Only a read the ceiling actually REDUCES spends an allowance.
     if (cap !== null && faults.slideCountCeilingBinds > 0 && committedCount > cap) {
@@ -2698,6 +2743,11 @@ export function installHost(
     return undefined;
   };
   deckRemove = (s) => {
+    // Deleted, and the host has not caught up: it stays in the deck for now.
+    if (faults.deletedSlidesLinger > 0) {
+      lingering.set(s.id, faults.deletedSlidesLinger);
+      return;
+    }
     const i = slides.findIndex((x) => x.id === s.id);
     if (i >= 0) slides.splice(i, 1);
   };
@@ -3446,6 +3496,8 @@ export function installHost(
   faults.emptySlideImage = false;
   faults.slideImageGate = null;
   faults.refuseSlideDelete = false;
+  faults.slideTagReadsHidden = 0;
+  faults.deletedSlidesLinger = 0;
   faults.slideVanishesInsteadOfDeleting = false;
   faults.twoMasterDeck = false;
   faults.deckInsertNeverAnswers = false;

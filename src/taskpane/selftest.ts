@@ -79,6 +79,7 @@ import {
   showSlide,
   slideCount,
   settledSlideCount,
+  settleCountReads,
   slideSize,
   slideShapeList,
   addSlideForChart,
@@ -553,7 +554,7 @@ const duplicateSlot: Scenario = async (prefix) => {
     () => undefined,
     { run },
   );
-  const settled = await slideCount();
+  let settled = await slideCount();
   // A blind READBACK is not a finding. Every scenario here guards its first
   // scan and then draws its loudest conclusion from a second one it never
   // checked — and on the web a short deck scan is routine, which is why
@@ -562,7 +563,32 @@ const duplicateSlot: Scenario = async (prefix) => {
   // one page short produced a hard FAILED verdict asserting data loss the
   // add-in did not cause. Those sentences are what send a maintainer after the
   // tag-write path; this repo has already spent rounds on that hunt.
-  const { found: kept, blind, gap } = await probeCharts(`${prefix} dup`);
+  let closing = await probeCharts(`${prefix} dup`);
+  /**
+   * THE CLOSING READ IS TAKEN STRAIGHT AFTER THE DELETES, AND THE HOST ANSWERS IT
+   * LATE. Ten of the fifteen archived failures of this scenario (rounds 60 to 475)
+   * had the read-back right, both duplicates deleted, and then a count of 3 or 4
+   * and a listing of as many: `3 kept, 3 of 2 still re-editable` is a deck that
+   * had already lost two slides and had not yet said so. Not one of 469 passes
+   * has a delete that did not happen, so when the repair says it deleted and the
+   * read still shows more slides than the run set out to keep, it takes the read
+   * again once after the settle the count reads use. A leftover that is REAL is
+   * still there on the second look and still fails.
+   */
+  const stillShowsMore = () =>
+    (deckGrowth(before, settled) ?? 0) > titles.length || closing.found.length > titles.length;
+  if (!closing.blind && outcome.applied.deleted > 0 && stillShowsMore()) {
+    trace("selftest", "the closing read still shows slides the repair deleted — re-reading after a settle", {
+      deleted: outcome.applied.deleted,
+      counted: deckGrowth(before, settled),
+      listed: closing.found.length,
+      wanted: titles.length,
+    });
+    await settleCountReads();
+    settled = await slideCount();
+    closing = await probeCharts(`${prefix} dup`);
+  }
+  const { found: kept, blind, gap } = closing;
   if (blind) return blindSkip(gap);
   // Four slides in, two out, and both survivors still charts. A pass that
   // deleted both copies of one item would leave two slides and read as

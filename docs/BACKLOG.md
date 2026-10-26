@@ -3753,6 +3753,38 @@ established is whether the fault is in the product's slot reconciliation or in
 the scenario's counting. The next person to meet it should start from the fact
 that `3 of 2 still re-editable` is MORE than expected, not fewer.
 
+**DIAGNOSED 2026-10-26: two mechanisms, both the host answering late, and neither
+touches a user.** From the archive alone: every archived round was tabulated for
+this scenario (487 rounds, 484 with a trace window, 469 passes, 15 failures), keyed
+on the repair pass's own read-back line.
+
+- **A. The slot tags were not published yet** (rounds 487 and 500, and the same
+  sentence in 297's family). The read-back reads `read 4, withSlotTag 0`: four slides
+  seen and none showing its slot tag, so the reconcile finds no claims, queues no
+  duplicates and keeps all four. The signature, `withSlotTag < read`, is in **0 of 469
+  passes and 2 of 15 failures**. `readAddedSlides` asked each slide for its tag once
+  and read a null as "unclaimed": the same word for a slide with no tag and a slide
+  whose tag the host had not yet published. `reconcileDeck` now takes the read again
+  once, after the settle the count reads use, when slides were read and none shows a
+  slot; the safe outcome is unchanged, because an unclaimed slide is never deleted.
+- **B. The scenario's own closing read** (ten failures, rounds 60 to 475, none since):
+  the read-back was right and both duplicates were deleted, and then the count and
+  the listing, taken at once, still showed three or four slides. Not one of the 469
+  passes lacks its two deletes. `duplicateSlot` now takes the closing read again once
+  after a settle when the repair says it deleted and the read still shows more than
+  the run set out to keep; a slide that is really still there is still there on the
+  second look and still fails.
+- The other three were already fixed: 297 (a count read late, `settledSlideCount`)
+  and 360 and 361 (`NaN kept`, `countlessSkip`). Two older failures that threw
+  (287, 446) were stale-build errors.
+
+**What is and is not shown.** Both fixes are proven red-without-fix on the fake, with
+two new faults (`slideTagReadsHidden`, `deletedSlidesLinger`) that model the two late
+answers. Neither can be shown on the live host: the scenario fails about 2.5% of runs,
+and a day of rounds is not enough to see a change in that rate. `reconcileDeck`,
+`planReconcile` and `insertDemoDeck` are the harness's demo path (behind `?harness=1`),
+so this was instrument quality and not a product defect.
+
 ### The batch limit counts SHAPES and the cost is STATEMENTS — 3.4x, 2026-09-18
 
 `SHAPES_PER_SYNC` is 10. Measured on a real host with

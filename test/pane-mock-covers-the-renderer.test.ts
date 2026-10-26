@@ -148,6 +148,9 @@ const TOLERATED_ABSENT: Record<string, string[]> = {
     "slideOccupancy",
     "showSlide",
     "settledSlideCount",
+    // The wait `two slides claiming one slot` takes before re-reading a count and a
+    // listing that were still showing slides the repair had deleted.
+    "settleCountReads",
     "slideShapeList",
     "shapeGeometryByName",
     "timeShapeRounds",

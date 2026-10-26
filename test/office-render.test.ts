@@ -4075,6 +4075,59 @@ describe("reading a demo deck back and repairing it", () => {
     expect(group?.tagStore.get(CHART_TAG)).toBe(`{"kind":"line"}`);
   });
 
+  describe("when the host has not published the slot tags yet", () => {
+    // Rounds 487 and 500: the repair pass read four slides and every slot tag came
+    // back null (`read 4, withSlotTag 0`), so it saw no claims, deleted nothing and
+    // reported four kept. The same build read all four minutes later and deleted two.
+    const twinDeck = () => [
+      demoSlide("line", { slot: { i: 1, title: "Line" }, shapes: 3, grouped: true, tagged: true }),
+      demoSlide("line-dup", { slot: { i: 1, title: "Line" }, shapes: 3, stamped: true }),
+    ];
+    const watch = () => {
+      const seen: { message: string; data?: Record<string, unknown> }[] = [];
+      setTracing(true);
+      onTrace((e) => seen.push(e));
+      return seen;
+    };
+    afterEach(() => {
+      onTrace(undefined);
+      setTracing(false);
+      faults.slideTagReadsHidden = 0;
+    });
+
+    it("asks again after a settle and then deletes the duplicate", async () => {
+      const deck = twinDeck();
+      installHost(deck);
+      faults.slideTagReadsHidden = 2; // the whole first pass over both slides
+      const seen = watch();
+      const outcome = await reconcileDeck([expect3(1, "Line")], { before: 0, after: 2 }, () => `{"kind":"line"}`, {});
+      expect(outcome.applied.deleted, "it believed the first, empty read and deleted nothing").toBe(1);
+      expect(deck.map((s) => s.id)).toEqual(["line"]);
+      expect(seen.some((e) => e.message === "no slide shows its slot tag yet — re-reading after a settle")).toBe(true);
+      expect(seen.find((e) => e.message === "the slot tags after a settle")?.data).toMatchObject({ withSlotTag: 2 });
+    });
+
+    it("does not wait when the first read already shows a claim", async () => {
+      const deck = twinDeck();
+      installHost(deck);
+      const seen = watch();
+      const outcome = await reconcileDeck([expect3(1, "Line")], { before: 0, after: 2 }, () => `{"kind":"line"}`, {});
+      expect(outcome.applied.deleted).toBe(1);
+      expect(seen.some((e) => e.message === "no slide shows its slot tag yet — re-reading after a settle")).toBe(false);
+    });
+
+    it("asks once and no more, and deletes nothing when the tags never appear", async () => {
+      const deck = twinDeck();
+      installHost(deck);
+      faults.slideTagReadsHidden = 99;
+      const seen = watch();
+      const outcome = await reconcileDeck([expect3(1, "Line")], { before: 0, after: 2 }, () => `{"kind":"line"}`, {});
+      expect(outcome.applied.deleted, "an unclaimed slide was deleted").toBe(0);
+      expect(deck.map((s) => s.id)).toEqual(["line", "line-dup"]);
+      expect(seen.filter((e) => e.message === "the slot tags after a settle")).toHaveLength(1);
+    });
+  });
+
   it("stops the readback when the user asks, and counts what it never looked at", async () => {
     // Stop used to reach exactly three places: a drawing batch boundary,
     // between demo items, and between charts in an update. The repair pass —

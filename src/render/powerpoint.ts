@@ -5456,6 +5456,14 @@ export async function slideCount(): Promise<number> {
  * persistent shortfall MEANS belongs to the caller, which knows what it asked
  * the host for.
  */
+/**
+ * Wait the settle the count reads use, for a caller whose answer has to be taken
+ * again afterwards (a scenario that read the deck straight after deleting from it).
+ */
+export async function settleCountReads(): Promise<void> {
+  await new Promise((r) => setTimeout(r, COUNT_SETTLE_MS));
+}
+
 export async function settledSlideCount(atLeast: number): Promise<number> {
   const first = await slideCount();
   if (first >= atLeast) return first;
@@ -8203,9 +8211,47 @@ export async function reconcileDeck(
   tagFor: (slot: number) => string | undefined,
   opts: ReconcileOptions = {},
 ): Promise<ReconcileOutcome> {
-  const { snapshots, unread } = await readAddedSlides(range.before, range.after);
-  const plan = planReconcile(snapshots, expected, opts);
-  return { ...(await applyReconcilePlan(plan, tagFor, { left: 60, top: 90 }, snapshots)), unread };
+  let read = await readAddedSlides(range.before, range.after);
+  /**
+   * NO SLIDE SHOWS ITS SLOT TAG IS NOT "NO SLIDE CLAIMS A SLOT".
+   *
+   * The readback asks each slide for its slot tag once, and a null answer reads as
+   * "unclaimed" — the same word for a slide that carries none and for one whose
+   * tag the host has not published yet. Rounds 487 and 500 read four slides this
+   * way (`read 4, withSlotTag 0`): no claims, so no duplicates, so nothing was
+   * deleted and the pass reported four slides kept where the same build, minutes
+   * later, read all four tags and deleted two. Across 469 passes the archive has
+   * not one read-back with slides and no slot tags, so when the run just inserted
+   * slides it expects to find claimed and sees none, it asks once more after the
+   * settle the count read already uses, and keeps the second answer only if it
+   * sees a claim. A slide that really carries no tag costs one wait, and the safe
+   * outcome stays the safe one: an unclaimed slide is never deleted.
+   */
+  if (slotTagsLookUnpublished(read.snapshots, expected)) {
+    trace("repair", "no slide shows its slot tag yet — re-reading after a settle", {
+      range: [range.before, range.after],
+      read: read.snapshots.length,
+      expected: expected.length,
+      settleMs: COUNT_SETTLE_MS,
+    });
+    await new Promise((r) => setTimeout(r, COUNT_SETTLE_MS));
+    const again = await readAddedSlides(range.before, range.after);
+    const claimed = again.snapshots.filter((s) => s.slot !== null).length;
+    trace("repair", "the slot tags after a settle", { read: again.snapshots.length, withSlotTag: claimed });
+    if (claimed > 0) read = again;
+  }
+  const plan = planReconcile(read.snapshots, expected, opts);
+  return { ...(await applyReconcilePlan(plan, tagFor, { left: 60, top: 90 }, read.snapshots)), unread: read.unread };
+}
+
+/**
+ * Whether a readback that found slides and none of their slot tags is more likely
+ * the host being late than the slides being untagged. See `reconcileDeck`.
+ * Slide tags are PowerPointApi 1.3; below that every slide reads unclaimed by
+ * design and there is nothing to wait for.
+ */
+function slotTagsLookUnpublished(snapshots: SlideSnapshot[], expected: ExpectedItem[]): boolean {
+  return supports("1.3") && expected.length > 0 && snapshots.length > 0 && snapshots.every((s) => s.slot === null);
 }
 
 /**
