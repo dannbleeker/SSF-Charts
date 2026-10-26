@@ -69,8 +69,8 @@ grow with every round, so they are anchored rather than left to rot:
     post-fix 16:9        76          55                97.2%
     post-fix 4:3         45          32                96.9%
 
-    crash records:  93 deaths on PRE-fix builds, 17 on post-fix, 110 total
-                    from 116 files — a FILE IS NOT A DEATH, see below
+    crash records:  93 deaths on PRE-fix builds, 18 on post-fix, 111 total
+                    from 117 files — a FILE IS NOT A DEATH, see below
 
 **REFRESHED 2026-10-02, FROM 413 TO 497.** The pre-fix rows are byte-for-byte
 what they were, which is the check that the refresh moved only data: that era is
@@ -3220,19 +3220,27 @@ instrument problem the live rounds had shown:
   own docstring already said to draw on a slide the deck had, and the brief that
   asked for the quietest slide did not weigh that. It draws on the first probe
   chart's slide again, and when the group still cannot be read it traces what the
-  host would answer (slide, list, group) beside the skip. **It also took the host
-  down once**: round 507's second attempt died inside this scenario at the sweep of
-  its chart on slide 258 (`crashes/2026-10-25T20-31-22-crashed-run.json`; the
-  driver recovered and the third attempt filed the round), so `rounds-gate.mjs`
-  exits 3 on it, "a scenario is KILLING THE HOST", and `cycle.mjs` stops the night
-  on that. A zero ceiling cannot go green by itself, and the receipt that clears
-  the exit is the owner's signature (`DEATHS_ACKNOWLEDGED`). The cause of the crash
-  itself is not established: the host died on a by-id sweep of a shape drawn seconds
-  earlier, which it refuses in most sweeps, on the slide the choice had moved to.
-  After the fix, rounds 508 and 509 (`1b57c86`): 20 of 20 both times, the scenario
-  passing on slide 257 with the members following a 2x resize and the redraw
-  keeping the person's size (294x129pt drawn, 588x257pt resized, 594x266pt after
-  the edit), each draw batch about 14.5s of the 45s limit. Two rounds, not a rate.
+  host would answer (slide, list, group) beside the skip. **It took the host
+  down twice, and the slide is not the explanation.** Round 507's second attempt
+  died at the sweep of its chart on slide 258; round 511's second attempt died at
+  the same step on slide 257, the deck's own: the chart drew, grouping failed
+  through both settle retries (the slide listing stayed at 3 of 12 shapes),
+  `Shape.group` threw, the scenario's diagnostic traced `slideReadable: true,
+  listed: 12, groupListed: true`, and the host went down two seconds later
+  (`crashes/2026-10-25T20-31-22-crashed-run.json`,
+  `crashes/2026-10-26T08-19-44-crashed-run.json`; the driver recovered each time).
+  Since the rebuild the scenario has had 8 attempts: 3 passes (508, 509, 511), 3
+  skips (506 and 507 on 258, 510 on 257 for a chart that never grouped, in a round
+  that overlapped a disk scan of mine) and 2 deaths. The sibling by-id sweeps die
+  at 3 to 7 per hundred runs, so 2 of 8 is unusual (about a one in ten chance at
+  that rate) and not proof. `rounds-gate.mjs` exits 3 on it, `cycle.mjs` stops the
+  night on that, and a SECOND death cannot be covered by a `DEATHS_ACKNOWLEDGED`
+  receipt: only a ceiling in `FATAL_SCENARIO_RATE` clears it, which is the owner's
+  decision. What the scenario does now: when its first read of the chart fails, or
+  the chart did not group, or the host would not name it, it makes no by-id delete
+  at all and says it left the chart on the slide. Every death was at that sweep
+  straight after such a read, and the sweeps after a read that worked (503, 508 to
+  511) have not failed. The next rounds count whether that holds.
 
 **What the fixes left undone, found while reading them:**
 
