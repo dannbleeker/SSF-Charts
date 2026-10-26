@@ -3259,11 +3259,15 @@ instrument problem the live rounds had shown:
   skip is 20 of 492 archived runs (4%, and 2 of 17 since round 498; 7 of 50 in the
   200s), so two in a few rounds is its ordinary rate. **Rounds 515 and 516 (`bbba4db`,
   the first on the bumped vite and vitest):** 19 of 20 both; 515 passed the resize
-  scenario, 516 skipped it (ungrouped, left, no death). On the no-sweep build that is
-  3 passes, 2 skips and no deaths in five runs; the gate reads 2 deaths in 17 runs
-  and exits 3, and the receipt cannot cover a second death. On 257 the chart ended
-  ungrouped, so the scenario could not ask its question, in 4 of the 10 runs there
-  (510, 511's second attempt, 512, 516). It is still in the routine battery;
+  scenario, 516 skipped it (ungrouped, left, no death). **Rounds 517 and 518
+  (`7969df3`, the combined block-2 build: vite 8.1.6, the stream D fixes, the new
+  value-axis layouts, the pane fixes):** 20 of 20 and 19 of 20 (518 skipped `a chart
+  of rotated shapes` on a 45s draw stall, a known intermittent one), the resize
+  scenario passing both. On the no-sweep build that is 5 passes, 2 skips and no deaths
+  in seven runs; the gate reads 2 deaths in 19 runs and exits 3, and the receipt
+  cannot cover a second death. On 257 the chart ended ungrouped, so the scenario
+  could not ask its question, in 4 of the 12 runs there (510, 511's second attempt,
+  512, 516). It is still in the routine battery;
   `pickedOnly` on its `SCENARIOS` entry would take it out, or a ceiling in
   `FATAL_SCENARIO_RATE` would let it stay: both are the owner's call.
 
