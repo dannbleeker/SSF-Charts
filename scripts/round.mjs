@@ -1479,6 +1479,24 @@ export async function ensureRibbonRoom(sh, sleep) {
   return after;
 }
 
+/**
+ * The line that names the deck's link on OneDrive's file list, in EITHER way the CLI
+ * prints a link.
+ *
+ * The same link comes out as `link "Presentation64" [ref=f13e222]` (name in quotes)
+ * in one state of the page and as `link [ref=f11e538]: Presentation64` (name after
+ * the colon, the text of a child) in another. The recovery only knew the first, so
+ * on a page rendering the second it reported "the file list shows no
+ * Presentation64 to open" on every one of seven attempts, with the link in front
+ * of it: twice on 2026-10-26, each time after a `--fresh` round had closed the
+ * browser, and each time 23 minutes and a round lost. A prefix match, as before, so
+ * `Presentation64.pptx` still names the deck.
+ */
+export function deckLinkPattern(deckName) {
+  const name = String(deckName).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`link (?:"${name}|\\[ref=[a-z0-9]+\\](?: \\[[^\\]]*\\])*: ${name})`);
+}
+
 export function refFor(sh, query, pattern) {
   // Through `findLines`, so the miss message can never be matched as a hit —
   // see the note there. `refFor` was safe only because a ref-bearing pattern
@@ -3604,7 +3622,7 @@ export async function recover(sh, sleep, profile = PROFILE_DIR) {
         sh("tab-new", DECK_HOME_URL);
         await sleep(8000);
       }
-      const deckPattern = new RegExp(`link "${deckName}`);
+      const deckPattern = deckLinkPattern(deckName);
       const deck = refFor(sh, deckName, deckPattern);
       if (deck) clickRef(sh, deck);
       // SAY WHICH WAY IT WENT. A ref that is simply absent looks exactly like a

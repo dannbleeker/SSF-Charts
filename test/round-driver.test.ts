@@ -1813,6 +1813,67 @@ describe("asking the host whether it is awake", () => {
     expect(flat, "opened a new tab when one was already on the file list").not.toContain(`tab-new ${DECK_HOME_URL}`);
   });
 
+  describe("finding the deck's link on the file list", () => {
+    // The same link, printed two ways by the CLI. The first is `find` output as the
+    // driver saw it for months; the second is `find` output captured on 2026-10-26,
+    // when `--fresh` had closed the browser, and seven attempts in a row reported
+    // "the file list shows no `Presentation64` to open" with the link in front of them.
+    const QUOTED = '                    - link "Presentation64" [ref=f13e222]:';
+    const AFTER_COLON = "                    - link [ref=f11e538]: Presentation64";
+
+    it("matches the name in quotes and the name after the colon, and returns the ref of the right line", () => {
+      const pattern = driver.deckLinkPattern("Presentation64");
+      expect(pattern.test(QUOTED)).toBe(true);
+      expect(pattern.test(AFTER_COLON)).toBe(true);
+      expect(pattern.test("                    - link [ref=f11e538] [cursor=pointer]: Presentation64")).toBe(true);
+      // a prefix still names the deck, as it always did
+      expect(pattern.test('- link "Presentation64.pptx" [ref=f1]:')).toBe(true);
+    });
+
+    it("does not take another deck, a row that is not a link, or a ref on a different line", () => {
+      const pattern = driver.deckLinkPattern("Presentation64");
+      expect(pattern.test('- link "Presentation6" [ref=f1]:')).toBe(false);
+      expect(pattern.test("- link [ref=f1]: Presentation63")).toBe(false);
+      expect(pattern.test("- generic [ref=f11e539]: Presentation64")).toBe(false);
+      expect(pattern.test("- gridcell [ref=f11e536]: My Files")).toBe(false);
+    });
+
+    it("refFor takes the ref off the matching line in both renderings", () => {
+      const pattern = driver.deckLinkPattern("Presentation64");
+      const found = (out: string) => (() => out) as unknown as Parameters<typeof driver.refFor>[0];
+      expect(driver.refFor(found(`Found 2 matches:\n- main [ref=f1]\n${QUOTED}`), "Presentation64", pattern)).toBe(
+        "f13e222",
+      );
+      expect(
+        driver.refFor(
+          found(`Found 3 matches:\n- main [ref=f11e151]\n${AFTER_COLON}\n- gridcell [ref=f11e540]: 41m ago`),
+          "Presentation64",
+          pattern,
+        ),
+      ).toBe("f11e538");
+    });
+
+    it("recovery clicks the deck when the CLI prints its link after the colon", async () => {
+      const calls: string[][] = [];
+      const sh = ((...args: string[]) => {
+        calls.push(args);
+        if (args[0] === "tab-list") return `- 0: (current) [Home - OneDrive](${DECK_HOME_URL})`;
+        if (args[0] === "find" && args[1] === "Sorry, we ran into a problem") return 'No matches found for "…".';
+        if (args[0] === "find") return `Found 1 matches for "${args[1]}":\n- link [ref=f11e538]: ${args[1]}`;
+        return "ok";
+      }) as unknown as Parameters<typeof recover>[0];
+      process.env.PW_DECK = "Presentation64";
+      try {
+        await recover(sh, async () => {});
+      } finally {
+        delete process.env.PW_DECK;
+      }
+      // `clickRef` fires the element's own handler through `eval`, with the ref last.
+      const clicked = calls.some((c) => c[0] === "eval" && c[c.length - 1] === "f11e538");
+      expect(clicked, "the link was in front of it and nothing was clicked").toBe(true);
+    });
+  });
+
   it("reloads when there is no dialog to clear", async () => {
     // The quiet form of the wedge — no modal, session severed by the network. A
     // recovery that only knew how to click Refresh would do nothing at all here.
