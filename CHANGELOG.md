@@ -187,6 +187,19 @@ were gaps in the earlier fixes; some were old.
 - **The live resize test is fairer.** It draws a small chart early in the round and
   reports a stalled host as a skip with the reason, not as a failure of the
   add-in.
+- **Big numbers on the value axis of line, area, box plot, candlestick and violin
+  charts are readable.** The axis column now widens to the numbers (up to 40% of the
+  chart), as it already did on column and waterfall charts, so a scale reaching
+  2,000,000 prints at the normal size and no longer shrinks to 6pt or loses labels.
+  A chart whose numbers already fit looks exactly as before.
+- **Explode keeps what you typed while it ran.** A title or any other change made
+  during the seconds Explode takes is no longer thrown away; the note says it has
+  not been applied yet (or that Auto-update is applying it).
+- **The label-locale box shows the locale a chart uses,** including `de_DE`, `en-GB`
+  and `sv-SE`, instead of going blank, and a loaded `de_DE` is still saved as
+  written.
+- **Typed numbers with a zero-led thousands group** (`0 500`, `0,12,345`,
+  `0.500.500`) are no longer read as large numbers.
 
 ## 0.6.1 — 2026-09-13
 

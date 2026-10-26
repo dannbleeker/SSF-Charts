@@ -3181,9 +3181,13 @@ instrument problem the live rounds had shown:
   Percent labels keep their separator on purpose. The default chart is byte-identical
   for the whole showcase, every sample and 2,550 kind x size x decoration variants.
 - **The pane reads `de_DE` typed numbers like `de-DE`:** `localeTag` is exported from
-  `format.ts` and `decimalMark` uses it. Seen and not changed: the pane's locale
-  `<select>` offers only en-US, de-DE, fr-FR and da-DK, so a loaded `de_DE` or
-  `en-GB` shows a blank select although the locale itself is kept.
+  `format.ts` and `decimalMark` uses it. Seen and left at the time (finished
+  afterwards, v2b): the pane's locale `<select>` offers only en-US, de-DE, fr-FR and
+  da-DK, so a loaded `de_DE` or `en-GB` showed a blank select although the locale
+  itself was kept. It now shows the locale in force: `de_DE` selects de-DE, a tag the
+  list does not carry gets an option of its own, and a tag Intl rejects shows en-US,
+  which is what the engine prints for it. The config is rewritten only if the person
+  changes the box, so a loaded `de_DE` still exports as `de_DE`.
 - **The finite-number guard now sees a MISSING coordinate:** `REQUIRED_NUMBERS` in
   `scene.ts` names the fields each node kind cannot be drawn without, typed so a new
   number on a node interface or a new kind is a compile error there. A node missing
@@ -3197,14 +3201,18 @@ instrument problem the live rounds had shown:
 - **`0.500` in a European block is the decimal 0.5.** A thousands group cannot start
   with 0; `1.500` is still 1500. `US_GROUPED` had the same head (`0,500` read as 500
   and voted American, which stopped a Danish block from converting at all). Siblings
-  with the same leading-zero head, left alone as unreachable: `LAKH_GROUPED`'s first
-  group, the space and apostrophe group in `DRESSED_NUMBER`, and `typedNumber`'s
-  multi-mark paths.
+  with the same leading-zero head were left alone at the time as unreachable, and
+  were reachable by any text a cell or a box can hold: `LAKH_GROUPED`'s first group,
+  the space and apostrophe group in `DRESSED_NUMBER`, `typedNumber`'s multi-mark
+  paths, and a fourth copy of the space group inside `typedNumber` itself (`0 500`
+  in an Axis scale box read as 500). Fixed afterwards (v3a, `774205f`): a thousands
+  group in any of them opens with 1 to 9.
 - **Same Scale on a slide with two or more asked charts** answers per chart:
   `updateChartsInSlides` returns the usual list plus a `perItem` answer in the order
   asked (the new target, or null when the call never touched it), so the pane adopts
   its own chart's new id or keeps its still-live one, and the "cannot tell" note had
-  no trigger left and was removed. The i18n string for it is now unused.
+  no trigger left and was removed. The i18n string for it was left unused, and has
+  since been removed (v2c; it was in the English table only, no other language ships).
 - **The live resize self-test was an unfair instrument** (see item 2 of the section
   below; it stalled in rounds 502, 504 and 505 on a 24-shape chart drawn late onto a
   crowded slide, while the product logic worked every time it was reached). It now
@@ -3262,16 +3270,40 @@ instrument problem the live rounds had shown:
 **What the fixes left undone, found while reading them:**
 
 - Skill-made charts carry no scene fingerprint (`sceneFingerprint` is not exported
-  from `src/index.ts`; a full redraw on the first edit stamps one, as documented),
-  and a deck the OLD `pptx-deck.ts` wrote still carries the old four-element origin
-  anchor, so its first edit moves the chart by its ink offset.
+  from `src/index.ts`; a full redraw on the first edit stamps one, as documented).
+  **Implemented in `774205f` (v3b) and HELD BACK from main:** `src/index.ts` exported
+  it and `skill/scripts/render-pptx.mjs` stamped `POWERCHART_SCENE` on every shapes
+  chart, so a skill-made chart's first edit in the add-in took the in-place route
+  instead of a full redraw. It is an optimisation, not a defect, and it was proved on
+  the fake host only, which has no `.pptx` reader (its fixture builds the group from
+  the file's XML). An independent review reproduced the residual: the in-place route
+  matches a group's members to the scene by POSITION, a skill file's members are named
+  `Text 0` and `Shape 5` (so the name guard has nothing to read), and after a hand
+  z-order change inside the group a retitle as the very first pane edit puts the text
+  on the wrong bar and renames it `title`. Rare, visible at once, undoable, and the
+  same trust the add-in's own deck-builder charts already have by design (`0557c3e`),
+  so the review did not call it a defect, but it has never been seen against a skill
+  file opened from disk on the live host. The commit after it holds the stamp back
+  (the reader changes stay); reverting that commit re-ships it. Closing the residual
+  properly is `pptx-paint.mjs` setting `objectName`, which arms the name guard for
+  both kinds of deck. A deck the OLD `pptx-deck.ts` wrote still carries the old
+  four-element origin anchor, so its first edit moves the chart by its ink offset.
 - Explode's closing `applyConfig` replaces the pane with the chart it re-read, so an
   edit typed while Explode ran is discarded (true before; a fixed write-back had
-  masked it).
+  masked it). Finished afterwards (v2a): a pane that holds the exploded chart now
+  keeps its own state and takes only the new target, as shapes, and the note says
+  the edit has not been applied yet; Auto-update, or the next Update, sends it. A
+  pane that held no chart or another one is still handed the exploded chart.
 - The other value-axis call sites (`line.ts`, `boxplot.ts`, `candlestick.ts`,
-  `violin.ts`) get the new shrink-then-drop fallback, so no number is cut, but do not
-  yet ask the layout for its tick width to widen the gutter as the column and
-  waterfall layouts do.
+  `violin.ts`) got the new shrink-then-drop fallback, so no number was cut, but did
+  not yet ask the layout for its tick width to widen the gutter as the column and
+  waterfall layouts do. Finished afterwards (v1): each now hands `computeFrame` its
+  scale builder, so a chart whose ticks read 2,000,000 widens its gutter and prints
+  every tick at the 9pt it was shrunk from (6.2pt before), and a gutter that hits its
+  40% cap still gets the shrink-then-drop fallback. A grouped boxplot asks for the
+  width of the frame before its legend rows come off the top, so its gutter errs wide
+  and never narrow; and because that legend starts at the plot's left edge, a wider
+  gutter leaves it less room to wrap in.
 
 ### The two bug hunts of 2026-10-19: 123 defects found and fixed, and what each fix left undone — 2026-10-25
 
