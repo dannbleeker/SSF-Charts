@@ -55,6 +55,10 @@ const {
   dashKind,
   sceneToSvg,
   injectGroupsAndTags,
+  // NOT in the list below, on purpose: it is a hint for the add-in and no drawing
+  // depends on it. A lib built before it was exported still writes the deck, with
+  // no fingerprint, as every deck this script wrote did before.
+  sceneFingerprint,
 } = engine;
 
 // A stale packaged lib (the skill ships no build step) can be missing an export,
@@ -269,7 +273,8 @@ for (let i = 0; i < configs.length; i++) {
     // Never an agenda: it is a handful of text boxes, nowhere near the dense-shape
     // wall, and a picture named "PowerChart" is what the repair paths take for a
     // chart whether or not it carries a tag.
-    if (cfg?.render === "image" && !agenda) {
+    const asPicture = cfg?.render === "image" && !agenda;
+    if (asPicture) {
       // Rasterise the whole scene into one picture object. Skips the per-node
       // shape flood — the escape hatch for dense charts (violin, area, sunburst)
       // whose native-shape counts trip the PowerPoint-web dense-shape wall.
@@ -327,11 +332,22 @@ for (let i = 0; i < configs.length; i++) {
         // the group's own corner — the frame origin PLUS the scene's ink offset
         // (an untitled clustered chart's first ink is 42pt below the frame, a pie
         // 112pt right of it) — and the redraw landed that far from where it was.
-        //
-        // NO `sceneTag`: the lib does not export `sceneFingerprint`, so the first
-        // edit of one of these is still a full redraw (stamping the fingerprint is
-        // what that redraw is for). It no longer moves the chart.
         origin: [dx / IN, dy / IN],
+        // THE FINGERPRINT OF THE SCENE JUST DRAWN. `tryInPlaceUpdate` refuses a chart
+        // without one ("the chart carries no scene fingerprint"), so the first edit
+        // of a chart made here was always a full redraw, which stamps one for the
+        // edits after it. It is `sceneFingerprint` of the very `scene` whose nodes
+        // were added above, as the add-in's own deck builder stamps it
+        // (`pptx-deck.ts`). The add-in rebuilds the old scene from the config tag
+        // alone, `buildChart(JSON.parse(tag))`, and takes the in-place route only
+        // when the two fingerprints agree: they do, because `buildChart` supplies the
+        // `DEFAULT_SIZE` that `sceneFor` spreads in. An engine that has since changed
+        // does not agree, and gets the redraw it always got.
+        //
+        // NOT A PICTURE'S. An image-mode chart is one picture the scene does not
+        // describe (`tryInPlaceUpdate` refuses an update that draws one), so a
+        // fingerprint on it would vouch for shapes that are not on the slide.
+        sceneTag: asPicture || typeof sceneFingerprint !== "function" ? undefined : sceneFingerprint(scene),
       });
     }
   } catch (err) {

@@ -26,5 +26,11 @@ export {
 // chart Claude generates opens in the pane exactly like one the pane drew.
 export { injectGroupsAndTags } from "./render/ooxml";
 export type { SlideDressing } from "./render/ooxml";
+// The fingerprint of a scene's nodes, which the add-in stamps on every chart it
+// draws (`POWERCHART_SCENE`) and checks before it patches one in place. The
+// headless renderer stamps the same value on the scene it draws, from this very
+// function, so a deck it writes is one whose first edit in the pane can already
+// be an in-place write rather than a full redraw.
+export { sceneFingerprint } from "./core/scene-diff";
 export type { ChartConfig, ChartData, ChartKind, Decorations, Series } from "./core/types";
 export type { Scene, SceneNode } from "./core/scene";

@@ -104,8 +104,14 @@ const US_GROUPED = /^[+-]?[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/;
  * no other convention puts a two-digit group before a three-digit one, which is
  * also why a bare "12,34" (a decimal comma) never matches. It used to read as a
  * gap, with nothing said, on a sheet that is otherwise a plain Excel paste.
+ *
+ * The first group opens with a NON-ZERO digit, as `US_GROUPED`'s does and for the
+ * same reason: en-IN never prints "0,12,345", so it is no number, and it matched
+ * here, read as 12345 and counted as AMERICAN evidence in `looksEuropean`. It was
+ * left alone when M2e fixed its two siblings, on the belief that no cell holds it;
+ * a cell holds any text, and a Danish block with one such cell lost its conversion.
  */
-const LAKH_GROUPED = /^[+-]?\d{1,2}(,\d{2})+,\d{3}(\.\d+)?$/;
+const LAKH_GROUPED = /^[+-]?[1-9]\d?(,\d{2})+,\d{3}(\.\d+)?$/;
 
 /**
  * "1.234" / "1.234.567,89" — dot groups, optionally with a comma decimal.
@@ -190,10 +196,17 @@ const GROUP_GAP_ALL = new RegExp(GROUP_GAP, "gu");
  * never converted). The same shape as the CHAR(11)/CHAR(10) lesson: a rule
  * written for one spelling of a cell silently skips the others — and so this is
  * the one place a cell's dressing is understood, for the reader AND the vote.
+ *
+ * THE SPACED GROUP OPENS WITH A NON-ZERO DIGIT, like `US_GROUPED`'s (M2e). Its
+ * head was `\d{1,3}`, so "0 500" read as the core "0500" and was charted as 500, and
+ * "0 500,5" voted European and was rewritten to 0500.5. Nothing prints a number that
+ * way — a group is never led by zero, and no reading makes "0 500" a decimal — so it
+ * matches nothing here and stays a gap, which `rawCellValue` then refuses as it does
+ * any other text. BACKLOG.md had called this sibling unreachable; a cell is free text.
  */
 const DRESSED_NUMBER = new RegExp(
   String.raw`^([\s(+\u{2212}-]*(?:${CURRENCY}[\s(+\u{2212}-]*)?)` +
-    String.raw`(\d{1,3}(?:${GROUP_GAP}\d{3})+(?:[.,]\d+)?|\d[\d.,]*|\.\d+)` +
+    String.raw`([1-9]\d{0,2}(?:${GROUP_GAP}\d{3})+(?:[.,]\d+)?|\d[\d.,]*|\.\d+)` +
     String.raw`([\u{2212}-]?[\s)%]*(?:${CURRENCY}[\s)%]*)?)$`,
   "iu",
 );
@@ -287,7 +300,11 @@ export function decimalMark(locale: string): "." | "," {
  * it in any locale — "0,5" and "1.25" are decimals, "1.234.567" and "1,234,567"
  * are groups, "1.234,5" and "1,234.5" put the decimal where the LAST mark is —
  * because nothing else can be meant by them. A leading zero ("0.500") cannot open
- * a thousands group, so it is always a decimal. Anything that is none of these is
+ * a thousands group, so it is a decimal where a decimal reading exists, and where
+ * none does ("0.500.500", "0.500,5", "0 500") it is NaN, never a group: every one of
+ * the group patterns below opens with a non-zero digit, as `US_GROUPED`'s does. Only
+ * the single-mark case had the guard, so "0.500.500" was read as 500500 and "0 500"
+ * as 500 in a box that told the person nothing. Anything that is none of these is
  * NaN, the same refusal `numericValue` gives a comma it cannot place.
  */
 export function typedNumber(text: string, locale = "en-US"): number {
@@ -302,7 +319,7 @@ export function typedNumber(text: string, locale = "en-US"): number {
   // A space or apostrophe is a group mark and nothing else — but only between
   // digits in threes, or it is not a number.
   if (new RegExp(GROUP_GAP, "u").test(body)) {
-    if (!new RegExp(String.raw`^\d{1,3}(?:${GROUP_GAP}\d{3})+(?:[.,]\d+)?$`, "u").test(body)) return NaN;
+    if (!new RegExp(String.raw`^[1-9]\d{0,2}(?:${GROUP_GAP}\d{3})+(?:[.,]\d+)?$`, "u").test(body)) return NaN;
     body = body.replace(GROUP_GAP_ALL, "");
   }
   const dots = body.split(".").length - 1;
@@ -311,7 +328,7 @@ export function typedNumber(text: string, locale = "en-US"): number {
   if (dots && commas) {
     const mark = body.lastIndexOf(".") > body.lastIndexOf(",") ? "." : ",";
     const group = mark === "." ? "," : ".";
-    if (!new RegExp(`^\\d{1,3}(?:\\${group}\\d{3})+\\${mark}\\d+$`).test(body)) return NaN;
+    if (!new RegExp(`^[1-9]\\d{0,2}(?:\\${group}\\d{3})+\\${mark}\\d+$`).test(body)) return NaN;
     n = Number(body.split(group).join("").replace(mark, "."));
   } else if (!dots && !commas) {
     n = Number(body);
@@ -321,7 +338,7 @@ export function typedNumber(text: string, locale = "en-US"): number {
     const grouped =
       parts.length > 2 || (parts[1].length === 3 && /^[1-9]\d{0,2}$/.test(parts[0]) && mark !== decimalMark(locale));
     if (grouped) {
-      if (!/^\d{1,3}$/.test(parts[0]) || parts.slice(1).some((p) => !/^\d{3}$/.test(p))) return NaN;
+      if (!/^[1-9]\d{0,2}$/.test(parts[0]) || parts.slice(1).some((p) => !/^\d{3}$/.test(p))) return NaN;
       n = Number(parts.join(""));
     } else {
       // One mark, read as the decimal point. "5," / "5." is a number still being typed.
