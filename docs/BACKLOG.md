@@ -3240,7 +3240,16 @@ instrument problem the live rounds had shown:
   the chart did not group, or the host would not name it, it makes no by-id delete
   at all and says it left the chart on the slide. Every death was at that sweep
   straight after such a read, and the sweeps after a read that worked (503, 508 to
-  511) have not failed. The next rounds count whether that holds.
+  511) have not failed. **Since that change (rounds 512 to 514, build `3f6f9e5`):**
+  512 skipped (the chart never grouped on 257 again, was left on the slide, and the
+  host did not die), 513 and 514 passed 20 of 20 with the scenario passing. Three
+  runs, no deaths. One cost showed: in 512 the next scenario to draw on slide 257
+  (`a selected shape survives an insert`) stalled its first 10-shape batch, and the
+  chart this scenario had left there is a plausible reason (one run, not shown). On
+  257 the chart ended ungrouped, so the scenario could not ask its question, in 3 of
+  the 8 runs there (510, 511's second attempt, 512). It is still in the routine
+  battery; `pickedOnly` on its `SCENARIOS` entry would take it out, which is the
+  owner's call.
 
 **What the fixes left undone, found while reading them:**
 
