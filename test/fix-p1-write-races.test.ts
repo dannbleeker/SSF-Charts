@@ -708,13 +708,15 @@ describe("r2-17 — never two writes to one chart at once", () => {
     hold.updateGate = null;
     slow.open();
     await idle("Explode to finish");
-    // What the pane holds now is the chart Explode re-read off the slide, which
-    // replaced the title typed meanwhile, so it has nothing of its own to push.
-    // This used to wait here for a second update and got one — carrying the
-    // re-read title "A", not "edited during Explode": the load's own render was
-    // arming it (r3-30), and the typed edit never reached the slide either way.
-    await sleep(1400);
-    expect(hold.updates, "a chart the pane had just re-read was written back").toHaveLength(1);
+    // The pane is still holding the chart it held, so what Explode hands back is
+    // only a new target: the title typed meanwhile is still the pane's, and the
+    // timer that edit armed (it waited out the write, above) pushes it once
+    // Explode is done. This used to find the pane replaced by the chart Explode
+    // re-read, title "A", and nothing to push — the typed edit never reached the
+    // slide (v2a, `fix-v2-pane-explode-locale.test.ts`).
+    await until("the edit typed during Explode to go out", () => hold.updates.length === 2, 4000);
+    expect(JSON.parse(hold.updates[1].tagData!).title).toBe("edited during Explode");
+    expect(hold.updates[1].target.shapeId, "the edit went to the picture's dead id").toBe("redrawn-1");
   });
 
   it("makes Same Scale wait for an auto-update's write to one of its charts", async () => {

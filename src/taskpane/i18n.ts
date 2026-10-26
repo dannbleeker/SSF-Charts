@@ -258,8 +258,6 @@ export const EN = {
     "{missed} more were never reached — the deck is not on one scale.",
   "Same scale reached {n} of {total} charts — PowerPoint would not answer for the other {missed}. The deck is not on one scale; try again.":
     "Same scale reached {n} of {total} charts — PowerPoint would not answer for the other {missed}. The deck is not on one scale; try again.",
-  "The chart open in this pane may have been redrawn — click it on the slide and press Edit it to carry on.":
-    "The chart open in this pane may have been redrawn — click it on the slide and press Edit it to carry on.",
   "Skipped {n} it could not read — {which}.": "Skipped {n} it could not read — {which}.",
   "an unreadable chart": "an unreadable chart",
   // Explode.
@@ -272,6 +270,8 @@ export const EN = {
     "Exploded to native shapes, but PowerPoint would not say where they landed, so the pane has lost track of them. Click the chart and press Edit it to carry on.",
   "Exploded to native shapes — edits now update them in place.":
     "Exploded to native shapes — edits now update them in place.",
+  "Exploded to native shapes — the edit you made while it ran has not been applied yet. Press Update chart to apply it.":
+    "Exploded to native shapes — the edit you made while it ran has not been applied yet. Press Update chart to apply it.",
   "This PowerPoint cannot draw {what} — that needs a newer Office (PowerPointApi 1.10) — so the chart stays a picture. Exploding it here would leave them out.":
     "This PowerPoint cannot draw {what} — that needs a newer Office (PowerPointApi 1.10) — so the chart stays a picture. Exploding it here would leave them out.",
   "That chart is {shapes} shapes — too many for PowerPoint on the web to draw, so it stays a picture. Open it on the desktop app to explode it, or make the chart simpler.":

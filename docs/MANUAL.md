@@ -142,7 +142,11 @@ picking a type auto-collapses the gallery to a compact "current type" summary.
    chart** click, **Same scale** and **Explode** never run on the same chart at
    once — the later one waits for the earlier to finish. A write always goes to
    the chart it started from, even if you open another chart in the pane while
-   it runs. An **Update chart** click that waited behind a push which lost the
+   it runs. **Explode** on the chart the pane is holding leaves the pane as it
+   is, so a change you type while it runs is still there afterwards; the slide
+   shows the chart as it was read, so the note says the change has not been
+   applied yet, and **Auto-update** or the next **Update chart** puts it on the
+   slide. An **Update chart** click that waited behind a push which lost the
    chart (the note says why) does nothing more: it never turns into an
    **Insert**, which would leave a second copy beside the first.
 7. Ctrl+Z / Ctrl+Y undo and redo datasheet edits, including the rows, columns
@@ -403,7 +407,10 @@ count of how many of its options are currently on.
   title or the footnote; this is a unit, not a subtitle. On a chart too short to
   hold both it yields to the title — see *Chrome yields to the title* below.
 - **Labels**: decimals / suffix ("€m") / locale (1.234,5 for de-DE — it sets how
-  the numbers are written; month names and words such as "Today" stay English),
+  the numbers are written; month names and words such as "Today" stay English;
+  a chart that carries another locale, `en-GB` or `de_DE` say, shows it in the
+  box — `de_DE` as de-DE, `en-GB` as an entry of its own — and keeps what it
+  says until you change the box),
   **Thousands separator** (`numberFormat.grouping`, ticked unless the chart says
   `false`: untick it for numbers that are not quantities, so a scatter whose X
   values are years reads 2015 … 2018 on its axis and beside its points, not

@@ -55,7 +55,7 @@ import { estimateOfficeShapes } from "../core/scene";
 import { setTracing, trace } from "../core/trace";
 import { buildDeckBase64 } from "../render/pptx-deck";
 import { buildTableScene } from "../core/elements";
-import { formatNumber } from "../core/format";
+import { formatNumber, localeTag } from "../core/format";
 import { isTotalToken, waterfallChain } from "../core/layout/waterfall";
 // The Testing panel is NOT imported here — it is loaded on demand, and that is
 // what keeps ~13,400 lines of harness out of every user's bundle. See the
@@ -1556,6 +1556,48 @@ function respellNumberBoxes(was: string): void {
   list.placeholder = valueListHint(state.locale);
 }
 
+/** The label locales the pane offers by name. */
+const LABEL_LOCALES = ["en-US", "de-DE", "fr-FR", "da-DK"];
+
+/**
+ * Fill the label-locale `<select>` so that it names the locale that is IN FORCE.
+ *
+ * It offered the four locales above and nothing else, so a chart that said any
+ * other left the select on no option at all: `de_DE` (the POSIX spelling `$LANG`,
+ * Java and Python write, which the engine reads as de-DE — `localeTag`), `en-GB`,
+ * `sv-SE`. `state.locale` kept the value and the chart printed in that locale, and
+ * the control said nothing about a setting that was in force. The m2 run met it
+ * and left it (docs/BACKLOG.md, "Closed afterwards").
+ *
+ * The match is on the engine's own reading: `localeTag`, then the canonical form
+ * Intl uses, which also settles case (`da-dk` is da-DK). A tag the list does not
+ * carry gets an option of its own, labelled with that tag and selected, for as
+ * long as this panel stands: `renderOptions` rebuilds it from `state.locale`, so
+ * it goes once the person picks another locale. A tag Intl rejects is not in
+ * force at all — the engine prints en-US for it (`numberFormatter`'s catch), and
+ * an empty one is such a tag — so the control says en-US, which is what the chart
+ * shows.
+ *
+ * Only the CONTROL is spelled this way. `state.locale` keeps what was loaded and
+ * `currentConfig` writes that, so a chart that said `de_DE` exports `de_DE` unless
+ * the person changes the control.
+ */
+function fillLocaleSelect(sel: HTMLSelectElement, locale: string): void {
+  let tag = "en-US";
+  try {
+    tag = Intl.getCanonicalLocales(localeTag(locale))[0] ?? tag;
+  } catch {
+    /* a tag Intl rejects is en-US to the engine too */
+  }
+  for (const v of LABEL_LOCALES.includes(tag) ? LABEL_LOCALES : [...LABEL_LOCALES, tag]) {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    sel.appendChild(opt);
+  }
+  sel.value = tag;
+}
+
 /**
  * Tick or untick "Datamark axis (ticks only)", which shares `valueAxis` with the
  * "Value axis" box: the field is false, true or "datamarks", and the datamark
@@ -1807,13 +1849,7 @@ function renderOptions() {
   nfDec.addEventListener("change", emitNf);
   nfSuffix.addEventListener("input", emitNf);
   const nfLoc = document.createElement("select");
-  for (const v of ["en-US", "de-DE", "fr-FR", "da-DK"]) {
-    const opt = document.createElement("option");
-    opt.value = v;
-    opt.textContent = v;
-    nfLoc.appendChild(opt);
-  }
-  nfLoc.value = state.locale;
+  fillLocaleSelect(nfLoc, state.locale);
   nfLoc.addEventListener("change", () => {
     const was = state.locale;
     state.locale = nfLoc.value;
@@ -3747,7 +3783,9 @@ async function doLoadSelection() {
  *
  * Works on a shapes-mode chart too, where it is an idempotent redraw rather than
  * a special case worth refusing. Acts on the SELECTION, which need not be the
- * chart the pane is currently editing.
+ * chart the pane is currently editing: when it is, the pane keeps what it holds
+ * (an edit typed while this ran included) and takes the new target; when it is
+ * not, the pane is handed the exploded chart. See `keepPaneThroughExplode`.
  *
  * It rewrites a chart, so it takes a turn like any other write — see
  * `inWriteTurn`.
@@ -3755,6 +3793,9 @@ async function doLoadSelection() {
 const doExplode = () => inWriteTurn(runExplode);
 
 async function runExplode() {
+  // The pane as it is NOW, before the first await: what the closing step compares
+  // against to tell an edit typed while this ran from a pane that simply stayed put.
+  const atStart = paneFingerprint();
   const found = await loadChartFromSelection();
   if (!found) {
     note("Select an inserted chart first — Explode re-draws it as native shapes.", "err");
@@ -3861,9 +3902,77 @@ async function runExplode() {
   // Adopt the returned target: every shape was replaced, so the old one is dead
   // (the trap doInsert documents — a stale target makes the NEXT update no-op).
   // At the size the chart was kept at, if the person had resized it.
-  applyConfig(next.size ? { ...cfg, ...next.size } : cfg, next);
+  //
+  // A pane that holds THIS chart keeps its own state and takes only the target —
+  // see `keepPaneThroughExplode`. A pane that held none, or another, is handed the
+  // chart Explode worked on, which is what Explode of the selection has always done.
+  let behind = false;
+  if (paneStillHolds(found.target)) behind = keepPaneThroughExplode(next, atStart);
+  else applyConfig(next.size ? { ...cfg, ...next.size } : cfg, next);
   $("selection-banner").style.display = "none";
-  note("Exploded to native shapes — edits now update them in place.", "ok");
+  note(
+    behind
+      ? "Exploded to native shapes — the edit you made while it ran has not been applied yet. Press Update chart to apply it."
+      : "Exploded to native shapes — edits now update them in place.",
+    "ok",
+  );
+}
+
+/**
+ * The pane's chart as text, to ask whether it changed while a write ran. `render`
+ * is left out: it is the one field Explode sets itself, so a pane that is
+ * otherwise as it was still compares equal once it goes from picture to shapes.
+ * A sheet `currentConfig` cannot read answers "" rather than throwing out of an
+ * action that only wanted the comparison.
+ */
+function paneFingerprint(): string {
+  try {
+    return JSON.stringify({ ...currentConfig(), render: undefined });
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The end of an Explode of the chart the pane is holding: take the new target and
+ * leave the pane's own state exactly as it is.
+ *
+ * `applyConfig` here replaced the whole pane with the config Explode had read off
+ * the slide when it began. Explode takes tens of seconds on the web and nothing
+ * locks the pane meanwhile, so a title, a datasheet cell or any other control
+ * changed in that time was discarded without a word — and the slide never had it
+ * either, because the write drew the pre-edit chart. (Older than the third hunt
+ * that found it: a fixed write-back had masked it, which is why it showed late —
+ * docs/BACKLOG.md, "What the fixes left undone".)
+ *
+ * What the pane keeps is the person's work; what it takes is what the slide now
+ * IS. The target, because every shape was replaced and the old id is dead (the
+ * trap `runInsert` documents: the next update would resolve nothing and no-op).
+ * The size the chart was kept at, as `runInsert` takes it. And `render`: the
+ * pane may still say "picture", and an edit that went back to the slide in that
+ * state would redraw the very picture Explode had just replaced.
+ *
+ * NOTHING IS PUSHED HERE, and that is the pane's ordinary way of being ahead of
+ * the slide. An edit typed meanwhile armed Auto-update when it was typed, and that
+ * timer waits out a write in flight (`maybeAutoUpdate`) instead of being cancelled
+ * by it, so with the box ticked the edit goes out the moment Explode is done, and
+ * otherwise it waits behind the Update button. `applyConfig` cancelled that timer
+ * as well ("nothing the pane had pending applies any more"), which is the half of
+ * the old behaviour that cannot be right when the pane is kept. Calling
+ * `renderPreview` to re-arm it would be the opposite mistake: it writes the pane's
+ * reconstruction of a chart over one nothing had edited (see `applyConfig`).
+ *
+ * Returns whether the pane differs from how it was when Explode began, so the note
+ * can say the slide is behind it instead of claiming the two agree.
+ */
+function keepPaneThroughExplode(next: EditTarget, atStart: string): boolean {
+  const behind = paneFingerprint() !== atStart;
+  state.editTarget = next;
+  state.renderImage = false;
+  const box = document.getElementById("render-image") as HTMLInputElement | null;
+  if (box) box.checked = false;
+  adoptKeptSize(next);
+  return behind;
 }
 
 // --- Elements (harvey balls, checkboxes, process flow, table) -----------------
