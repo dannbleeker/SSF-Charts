@@ -24,7 +24,7 @@
  */
 
 import type { Scene, SceneNode } from "./scene";
-import { dashKind } from "./geometry";
+import { arrowheadBox, dashKind } from "./geometry";
 
 /**
  * Node kinds whose every drawn property can be written back onto an existing
@@ -480,31 +480,109 @@ const MIN_LINE_SIDE = 0.5;
  * equal the box the group it builds reports.
  */
 function drawnFrame(n: SceneNode): [number, number, number, number] | null {
-  const box = (x: number, y: number, w: number, h: number, floor = MIN_RECT_SIDE): [number, number, number, number] => [
-    x,
-    y,
-    x + Math.max(floor, w),
-    y + Math.max(floor, h),
+  const at = nodeCorner(n);
+  if (!at) return null;
+  const box = (w: number, h: number, floor = MIN_RECT_SIDE): [number, number, number, number] => [
+    at[0],
+    at[1],
+    at[0] + Math.max(floor, w),
+    at[1] + Math.max(floor, h),
   ];
   switch (n.kind) {
     case "rect":
     case "chevron":
-      return box(n.x, n.y, n.w, n.h);
+      return box(n.w, n.h);
     case "ellipse":
-      return box(n.cx - n.rx, n.cy - n.ry, n.rx * 2, n.ry * 2);
+      return box(n.rx * 2, n.ry * 2);
     case "symbol":
-      return box(n.cx - n.size, n.cy - n.size, n.size * 2, n.size * 2);
+      return box(n.size * 2, n.size * 2);
     case "text":
-      return box(n.x, n.y, n.w, n.h, MIN_TEXT_SIDE);
+      return box(n.w, n.h, MIN_TEXT_SIDE);
     case "line": {
       const w = Math.abs(n.x2 - n.x1);
       const h = Math.abs(n.y2 - n.y1);
       if (w >= MIN_LINE_SIDE && h >= MIN_LINE_SIDE && dashKind(n.dash) === "none") return null;
-      return box(Math.min(n.x1, n.x2), Math.min(n.y1, n.y2), w, h, MIN_LINE_SIDE);
+      return box(w, h, MIN_LINE_SIDE);
     }
     default:
       return null;
   }
+}
+
+/**
+ * Where a node's frame starts, [left, top] in scene points, for EVERY kind the
+ * deck builder draws, or `null` for one it draws nothing for.
+ *
+ * The one place a node's corner is decided: `drawnFrame` takes the left and top of
+ * its box from here, and `sceneInkOffset` is the least of these over a scene. A
+ * node the host TURNS has a corner here although it has no frame in `drawnFrame`,
+ * because the deck builder frames it unturned and `boundsOf` in `ooxml.ts` reads
+ * only that frame: a wedge on its circle's box (a solid pie wedge, a ring and a
+ * full turn alike), a polygon on its points, an arrowhead on `arrowheadBox`, and a
+ * diagonal line on its bounding box. What the LIVE host frames a turned node on is
+ * the `rotation-keeps-the-unrotated-box` question, and nothing here answers it.
+ */
+function nodeCorner(n: SceneNode): [number, number] | null {
+  switch (n.kind) {
+    case "rect":
+    case "chevron":
+    case "text":
+      return [n.x, n.y];
+    case "ellipse":
+      return [n.cx - n.rx, n.cy - n.ry];
+    case "symbol":
+      return [n.cx - n.size, n.cy - n.size];
+    case "line":
+      return [Math.min(n.x1, n.x2), Math.min(n.y1, n.y2)];
+    case "polygon":
+      // Fewer than two points is a polygon the deck builder does not write.
+      if (!Array.isArray(n.points) || n.points.length < 2) return null;
+      return [Math.min(...n.points.map((p) => p.x)), Math.min(...n.points.map((p) => p.y))];
+    case "wedge":
+      return [n.cx - n.r, n.cy - n.r];
+    case "arrowhead": {
+      const box = arrowheadBox(n.x, n.y, n.size, n.angle);
+      return [box.left, box.top];
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * Where the group the DECK BUILDER frames on this scene begins, measured from the
+ * frame origin the scene is drawn at: the first ink, `null` for a scene it draws
+ * nothing for.
+ *
+ * THE INK OFFSET. A titled chart has none (the title sits at 0,0), an untitled
+ * clustered chart starts 42pt down, a pie 112pt to the right, and a mekko starts
+ * 2pt BEFORE the frame, so it can be negative. `POWERCHART_ORIGIN` records the
+ * frame origin and the group's own corner; a reader that has only the first (the
+ * tag the old deck generator wrote stored it twice) adds this to it for the second.
+ *
+ * AN ANSWER FOR EVERY KIND, where `sceneDrawnExtent` abstains on any scene with a
+ * node the host turns. The two ask different questions. That one is the size of
+ * the group the LIVE host makes, and for a turned node the host's frame is not the
+ * scene's to guess. This is the corner of the group a FILE holds, which is the
+ * deck builder's and nobody else's, and the deck builder frames every node
+ * unturned (see `nodeCorner`). Only a node's own corner reaches it, never a floor
+ * on its far side, so the floors that decide the extent of a hairline cannot move it.
+ *
+ * KEPT IN STEP BY A MEASUREMENT: `test/fix-v4-legacy-origin-anchor.test.ts` builds
+ * every sample kind, titled and not, and the showcase, through `buildDeckBase64`,
+ * whose tag records the corner of the group it really made, and requires the two
+ * to agree.
+ */
+export function sceneInkOffset(scene: Scene): { x: number; y: number } | null {
+  let x = Infinity;
+  let y = Infinity;
+  for (const node of scene.nodes) {
+    const at = nodeCorner(node);
+    if (!at) continue;
+    x = Math.min(x, at[0]);
+    y = Math.min(y, at[1]);
+  }
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
 }
 
 /**

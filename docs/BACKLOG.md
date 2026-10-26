@@ -3290,8 +3290,23 @@ instrument problem the live rounds had shown:
   file opened from disk on the live host. The commit after it holds the stamp back
   (the reader changes stay); reverting that commit re-ships it. Closing the residual
   properly is `pptx-paint.mjs` setting `objectName`, which arms the name guard for
-  both kinds of deck. A deck the OLD `pptx-deck.ts` wrote still carries the old
-  four-element origin anchor, so its first edit moves the chart by its ink offset.
+  both kinds of deck. A deck the OLD `pptx-deck.ts` wrote (v0.6.1 and every build
+  before `0e9500f`) carries a four-element origin anchor that is the frame origin
+  twice, so its first edit moved the chart by its ink offset. Closed afterwards
+  (v4): the update reads such a tag as the group's own corner, `origin` plus the
+  scene's ink offset (`withTrueAnchor`, `sceneInkOffset`), when the anchor equals
+  the origin, the tagged shape is a group and the stored config has a nonzero
+  offset. The offset is the corner of the group the DECK BUILDER frames, for every
+  kind: a wedge on its circle's box, a polygon on its points, an arrowhead on
+  `arrowheadBox`, a diagonal line on its bounding box, which is why it answers for a
+  pie, a stacked chart and a line chart where `sceneDrawnExtent` (the live host's
+  box) does not. It was measured against the origin tag the deck builder writes now,
+  which records the group it really made, for all 25 sample kinds titled and not at
+  three sizes and every showcase chart. **Not proved against the live host:** a
+  v0.6.1 deck opened from disk has never been read there, and a picture or an
+  ungrouped chart is left alone on purpose (see `withTrueAnchor`). The headless
+  skill of that release wrote no origin at all, so a deck it made has no anchor to
+  mend: its first edit still frames the redraw on the group's own corner.
 - Explode's closing `applyConfig` replaces the pane with the chart it re-read, so an
   edit typed while Explode ran is discarded (true before; a fixed write-back had
   masked it). Finished afterwards (v2a): a pane that holds the exploded chart now

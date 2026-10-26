@@ -50,6 +50,7 @@ import {
   memberSizesRead,
   planSceneUpdate,
   sceneFingerprint,
+  sceneInkOffset,
   worthUpdating,
   type LiveScale,
   type LiveShape,
@@ -3605,7 +3606,10 @@ export async function updateChartsInSlides(
         // worse trade.
         const left = loadedValue(() => e.old.left) ?? e.it.target.left;
         const top = loadedValue(() => e.old.top) ?? e.it.target.top;
-        return { ...e, at: { left, top } };
+        // THE ONE PLACE the stored anchor is believed or mended, so every reader of
+        // `it.target.origin` below (the redraw's frame, the in-place corner check,
+        // the target handed back) sees the same one. See `withTrueAnchor`.
+        return { ...e, it: withTrueAnchor(e.it, e.old, e.wasConfig), at: { left, top } };
       });
     if (!alive.length) return [];
 
@@ -14110,6 +14114,88 @@ function frameOriginAt(target: EditTarget, at: { left: number; top: number }): {
     left: o ? o.left + (at.left - o.anchorLeft) : at.left,
     top: o ? o.top + (at.top - o.anchorTop) : at.top,
   };
+}
+
+/**
+ * How near an origin tag's anchor must be to its frame origin to be the SAME
+ * number: a hair, and the one `cornerAfterEdit` already treats as no movement.
+ */
+const ANCHOR_HAIR = 0.01;
+
+/**
+ * THE ANCHOR OF A TAG THE OLD DECK BUILDER WROTE, read as the group's own corner.
+ *
+ * `frameOriginAt` turns the tag into a frame by `origin + (live - anchor)`, which
+ * only reads a drag if the anchor is where the GROUP's corner was when the tag was
+ * written: the frame origin plus the scene's ink offset, because a group is framed
+ * on its children's bounding box. Until 0e9500f (2026-10-24, in no tag) the
+ * generated deck stored the frame origin as the anchor too, `[dx, dy, dx, dy]`,
+ * which is right only for a chart whose ink starts at the frame origin. For any
+ * other (an untitled clustered chart starts 42pt in, a mekko 2pt before) the first
+ * edit read the ink offset as a drag and moved the chart by it. v0.6.1 carries that
+ * writer (`git show v0.6.1:src/render/pptx-deck.ts`), so every deck the published
+ * add-in generated before the fix still holds those tags; the headless skill of
+ * that release wrote no origin at all and has nothing to mend.
+ *
+ * RECOGNISED BY ITS OWN SIGNATURE. A measured anchor is `origin + inkOffset`, so it
+ * can equal the origin only when the ink offset is zero, which makes "anchor equals
+ * origin while the scene's ink offset is not" a tag no current writer produces. The
+ * anchor is then the origin plus that offset; every other tag is returned as it
+ * came, the same object: a titled chart (offset zero), a chart drawn since the
+ * writer measured its group, a two-number or missing origin (`originOf` already
+ * refused it).
+ *
+ * THE OFFSET IS THAT OF THE CONFIG STORED ON THE SHAPE, not of the one being
+ * drawn. The group on the slide is what the stored config drew, and the edit in
+ * hand may change it (adding a title makes it zero), so the new config's offset
+ * would mend the tag into a corner the chart never had. Both numbers of the
+ * comparison come out of one tag string, which the old builder wrote as the same
+ * expression twice, so no host reading enters the equality and rounding in what
+ * the host reports for a group cannot make a good tag look legacy.
+ *
+ * A GROUP ONLY. A picture's corner IS the frame origin by construction, so a
+ * picture of an untitled chart (the degraded insert, the recovery of a failed
+ * redraw) carries anchor equal to origin and a nonzero offset and is right: mending
+ * it would walk the chart by the offset on its first edit. The old builder grouped
+ * every chart it tagged except a slide with one shape (an empty chart's
+ * placeholder, tagged on that shape and left as it was), and an ungrouped chart's
+ * anchor was measured off its own first shape when it was drawn, so neither
+ * needs this.
+ *
+ * THE OFFSET IS THE DECK BUILDER'S, for every kind. `sceneInkOffset` answers for a
+ * pie, a stacked chart and a line chart as it does for a clustered one, because
+ * the group a legacy tag was written against is the one the deck builder framed,
+ * and it frames a wedge, an arrowhead and a diagonal line unturned. A chart whose
+ * config will not parse, whose scene draws nothing, or whose stored config the host
+ * would not read keeps the tag it has, which is what it did before.
+ *
+ * NOT WRITTEN BACK. The tag on the slide stays as it was until an edit moves the
+ * group's corner (`cornerAfterEdit` records the new one) or the chart is redrawn
+ * (`groupAndTagAll` measures the new group), and this answers the same on every
+ * read in the meantime.
+ */
+function withTrueAnchor<I extends { target: EditTarget }>(
+  it: I,
+  old: PowerPoint.Shape,
+  stored: PowerPoint.Tag | undefined,
+): I {
+  const o = it.target.origin;
+  const config = stored && tagValue(stored);
+  if (!o || !config || !isGroupShape(old)) return it;
+  if (Math.abs(o.anchorLeft - o.left) >= ANCHOR_HAIR || Math.abs(o.anchorTop - o.top) >= ANCHOR_HAIR) return it;
+  let ink: { x: number; y: number } | null;
+  try {
+    ink = sceneInkOffset(buildChart(JSON.parse(config) as ChartConfig));
+  } catch {
+    return it;
+  }
+  if (!ink || (Math.abs(ink.x) < ANCHOR_HAIR && Math.abs(ink.y) < ANCHOR_HAIR)) return it;
+  trace("update", "a legacy origin anchor, read as the group's own corner", {
+    origin: [o.left, o.top],
+    ink: [ink.x, ink.y],
+    slideId: it.target.slideId,
+  });
+  return { ...it, target: { ...it.target, origin: { ...o, anchorLeft: o.left + ink.x, anchorTop: o.top + ink.y } } };
 }
 
 /**
