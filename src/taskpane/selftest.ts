@@ -1777,6 +1777,27 @@ export function stalledResize(doing: "drawing" | "editing", err: unknown, since:
 }
 
 /**
+ * The note on a verdict whose chart was left on the slide on purpose.
+ *
+ * A BY-ID DELETE OF A CHART THE HOST WOULD NOT READ IS THE CALL THIS SCENARIO HAS
+ * DIED ON. PowerPoint went down at the sweep in round 507 (attempt 2, the group
+ * would not read) and again in round 511 (attempt 2, the chart had not grouped
+ * and `Shape.group` threw), both straight after the read that failed. Of the five
+ * runs that reached the sweep that way, two killed the host, two had the delete
+ * refused with the chart left on the slide and every later scenario passing, and
+ * one took it off. Leaving it costs what the refusals already cost; the sweep
+ * after a read that WORKED (503, 508, 509, 511) has not once failed, and is kept.
+ * Five runs and two deaths is unusual against the 3-7% the sibling sweeps die at,
+ * and short of proof: this is the conservative reading of it, and the next
+ * rounds count whether it holds. The next round's clean-up takes the chart.
+ *
+ * Words avoid "N of M", which `poolScenarioPopulations` reads as a population.
+ */
+const LEFT_ON_THE_SLIDE =
+  " (note, not part of the verdict: the chart this scenario drew was left on the slide, because the host would not " +
+  "read it and a by-id delete of an unread chart is where it has gone down; the next round's clean-up takes it)";
+
+/**
  * Take `resizeThenEdit`'s chart off its slide, and say what is left of it.
  *
  * By the ids the scenario's own inserts and update handed back — the group and its
@@ -1931,6 +1952,11 @@ const resizeThenEdit: Scenario = async (prefix) => {
   const c: ChartConfig = RESIZE_SPECIMEN;
   /** What it was doing when the host stopped answering, if it did: which half of the question the stall cost. */
   let doing: "drawing" | "editing" = "drawing";
+  /**
+   * Set when the chart this drew could not be read, was not a group, or was never
+   * named, so that the sweep is NOT taken. See `LEFT_ON_THE_SLIDE`.
+   */
+  let leaveIt = false;
   /** Every id this scenario's chart ever had on the slide, so none is left behind. */
   const mine = new Set<string>();
   const own = (t: { shapeId?: string; partIds?: string[] } | null | undefined) => {
@@ -1954,12 +1980,14 @@ const resizeThenEdit: Scenario = async (prefix) => {
     verdict = await (async () => {
       const target = await insertSceneIntoSlide(buildChart(c), { slideId, tagData: JSON.stringify(c), ...corner });
       own(target);
-      if (!target)
+      if (!target) {
+        leaveIt = true;
         return {
           ok: false,
           skipped: true,
           detail: "the chart drew and the host would not name it afterwards, so there is no group to resize",
         };
+      }
       const drawn = await readChartShapes(target.slideId, target.shapeId);
       if (!drawn) {
         // Say what the host WOULD answer, so the next skip of this kind names its
@@ -1973,6 +2001,7 @@ const resizeThenEdit: Scenario = async (prefix) => {
           listed: listed?.length ?? null,
           groupListed: listed ? listed.some((s) => s.id === target.shapeId) : null,
         });
+        leaveIt = true;
         return {
           ok: false,
           skipped: true,
@@ -1980,12 +2009,14 @@ const resizeThenEdit: Scenario = async (prefix) => {
           detail: "the host would not read the chart's group right after it was drawn",
         };
       }
-      if (drawn.isGroup === false)
+      if (drawn.isGroup === false) {
+        leaveIt = true;
         return {
           ok: false,
           skipped: true,
           detail: "the chart was not grouped on this host, so there is no group to resize and no member list to read",
         };
+      }
       // Before the write, not after it: `resizeShapeBy` reads the size it scales
       // and would report a group that does not say how big it is as a host that
       // "would not take a size write", which is a different fact.
@@ -2070,7 +2101,7 @@ const resizeThenEdit: Scenario = async (prefix) => {
       : { ok: false, detail: `threw: ${errorText(err)}` };
   }
   // CLEAN UP FIRST, REPORT SECOND: every scenario after this one reads the deck.
-  const note = await sweepResizeChart(slideId, heldBefore, mine);
+  const note = leaveIt ? LEFT_ON_THE_SLIDE : await sweepResizeChart(slideId, heldBefore, mine);
   // A STALL IS SAID AGAIN FOR THE RUNNER, NOT RETURNED AS A VERDICT HERE. The
   // runner files a thrown timeout as the host in the way, and adds the two things
   // a stalled scenario's reader wants and only it can measure: whether the call

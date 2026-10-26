@@ -47,6 +47,8 @@ const wrapped = vi.hoisted(() => ({
   updateThrows: null as Error | null,
   /** The host answering nothing when the group is read right after the draw. */
   groupUnreadable: false,
+  /** How many times the scenario asked for a by-id delete. */
+  deleteCalls: 0,
 }));
 vi.mock("../src/render/powerpoint", async (importOriginal) => {
   const real = await importOriginal<typeof import("../src/render/powerpoint")>();
@@ -72,8 +74,10 @@ vi.mock("../src/render/powerpoint", async (importOriginal) => {
   });
   Object.defineProperty(mocked, "deleteShapesById", {
     enumerable: true,
-    value: async (...args: Parameters<typeof real.deleteShapesById>) =>
-      wrapped.refuseDelete ? 0 : real.deleteShapesById(...args),
+    value: async (...args: Parameters<typeof real.deleteShapesById>) => {
+      wrapped.deleteCalls++;
+      return wrapped.refuseDelete ? 0 : real.deleteShapesById(...args);
+    },
   });
   return mocked as typeof real;
 });
@@ -113,6 +117,7 @@ afterEach(() => {
   wrapped.undoTheResize = false;
   wrapped.updateThrows = null;
   wrapped.groupUnreadable = false;
+  wrapped.deleteCalls = 0;
 });
 
 const freshDeck = (): FakeSlide[] => {
@@ -261,6 +266,46 @@ describe("where it draws", () => {
     expect(said, "a skip with nothing beside it to say why").toBeDefined();
     expect(said?.data).toMatchObject({ slideReadable: true, groupListed: true });
     expect(Number(said?.data?.listed)).toBeGreaterThan(0);
+  });
+});
+
+/** Charts on the deck that are the scenario's own specimen: tagged, and not a probe chart. */
+const specimens = (deck: FakeSlide[]): number =>
+  chartConfigs(deck).filter((c) => !String(c.title ?? "").startsWith("probe") && !/twice|dup/.test(String(c.title)))
+    .length;
+
+describe("the sweep after a read that failed", () => {
+  // The scenario has taken PowerPoint down twice, both times at the by-id sweep
+  // straight after the first read of its chart failed (rounds 507 and 511). These
+  // hold down what it does about that: it does not make the call.
+  it("does not delete anything by id when the host would not read the chart, and says it left it", async () => {
+    const deck = freshDeck();
+    wrapped.groupUnreadable = true;
+    const { result } = await drive();
+    expect(result.skipped, result.detail).toBe(true);
+    expect(result.blind).toBe(true);
+    expect(wrapped.deleteCalls, "it asked the host to delete by id a chart it could not read").toBe(0);
+    expect(result.detail).toMatch(/left on the slide/);
+    expect(specimens(deck), "the chart is not on the slide to be taken away by the next clean-up").toBe(1);
+  });
+
+  it("does not delete anything by id when the chart did not group", async () => {
+    freshDeck();
+    faults.refuseGroups = 99;
+    const { result } = await drive();
+    expect(result.skipped, result.detail).toBe(true);
+    expect(result.detail).toMatch(/not grouped|would not read/);
+    expect(wrapped.deleteCalls, "it asked the host to delete by id a chart that never grouped").toBe(0);
+    expect(result.detail).toMatch(/left on the slide/);
+  });
+
+  it("still takes its chart away after a read that worked (the control)", async () => {
+    const deck = freshDeck();
+    const { result } = await drive();
+    expect(result.ok, result.detail).toBe(true);
+    expect(result.detail).not.toMatch(/left on the slide/);
+    expect(wrapped.deleteCalls, "a healthy run no longer cleans up after itself").toBeGreaterThan(0);
+    expect(specimens(deck), "the chart it drew is still on the slide").toBe(0);
   });
 });
 
