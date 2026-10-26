@@ -3243,13 +3243,21 @@ instrument problem the live rounds had shown:
   511) have not failed. **Since that change (rounds 512 to 514, build `3f6f9e5`):**
   512 skipped (the chart never grouped on 257 again, was left on the slide, and the
   host did not die), 513 and 514 passed 20 of 20 with the scenario passing. Three
-  runs, no deaths. One cost showed: in 512 the next scenario to draw on slide 257
-  (`a selected shape survives an insert`) stalled its first 10-shape batch, and the
-  chart this scenario had left there is a plausible reason (one run, not shown). On
-  257 the chart ended ungrouped, so the scenario could not ask its question, in 3 of
-  the 8 runs there (510, 511's second attempt, 512). It is still in the routine
-  battery; `pickedOnly` on its `SCENARIOS` entry would take it out, which is the
-  owner's call.
+  runs, no deaths. A suspected cost did not hold up: in 512 the next scenario to draw
+  on slide 257 (`a selected shape survives an insert`) stalled its first 10-shape
+  batch with the chart this scenario had left there, and I first took the chart for
+  the reason. Round 515 stalled it with no chart left (the resize scenario passed and
+  swept), and 516 left a chart and the scenario passed. The scenario's draw-stall
+  skip is 20 of 492 archived runs (4%, and 2 of 17 since round 498; 7 of 50 in the
+  200s), so two in a few rounds is its ordinary rate. **Rounds 515 and 516 (`bbba4db`,
+  the first on the bumped vite and vitest):** 19 of 20 both; 515 passed the resize
+  scenario, 516 skipped it (ungrouped, left, no death). On the no-sweep build that is
+  3 passes, 2 skips and no deaths in five runs; the gate reads 2 deaths in 17 runs
+  and exits 3, and the receipt cannot cover a second death. On 257 the chart ended
+  ungrouped, so the scenario could not ask its question, in 4 of the 10 runs there
+  (510, 511's second attempt, 512, 516). It is still in the routine battery;
+  `pickedOnly` on its `SCENARIOS` entry would take it out, or a ceiling in
+  `FATAL_SCENARIO_RATE` would let it stay: both are the owner's call.
 
 **What the fixes left undone, found while reading them:**
 
