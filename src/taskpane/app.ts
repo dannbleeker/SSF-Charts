@@ -1571,12 +1571,18 @@ const LABEL_LOCALES = ["en-US", "de-DE", "fr-FR", "da-DK"];
  *
  * The match is on the engine's own reading: `localeTag`, then the canonical form
  * Intl uses, which also settles case (`da-dk` is da-DK). A tag the list does not
- * carry gets an option of its own, labelled with that tag and selected, for as
- * long as this panel stands: `renderOptions` rebuilds it from `state.locale`, so
- * it goes once the person picks another locale. A tag Intl rejects is not in
- * force at all — the engine prints en-US for it (`numberFormatter`'s catch), and
- * an empty one is such a tag — so the control says en-US, which is what the chart
- * shows.
+ * carry gets an option of its own, labelled with that tag and selected. The
+ * option list is rebuilt only when the options are (a chart loaded, a rescale), so
+ * picking another locale leaves the extra option listed and selectable until the
+ * next load drops it. A tag Intl rejects is not in force at all — the engine
+ * prints en-US for it (`numberFormatter`'s catch), and an empty one is such a tag —
+ * so the control says en-US, which is what the chart shows.
+ *
+ * NAMES THE TAG, NOT ALWAYS THE PRINTED LOCALE. Intl accepts a tag that is
+ * well-formed and has no data (`xx-YY`, a hand-typed `dk-DK`), and a locale that is
+ * not a string at all; the engine's `Intl.NumberFormat` then resolves the HOST's
+ * default locale, which this control cannot know. Rare, cosmetic, and nothing is
+ * lost: `state.locale` and the export are untouched.
  *
  * Only the CONTROL is spelled this way. `state.locale` keeps what was loaded and
  * `currentConfig` writes that, so a chart that said `de_DE` exports `de_DE` unless
@@ -3796,7 +3802,13 @@ async function runExplode() {
   // The pane as it is NOW, before the first await: what the closing step compares
   // against to tell an edit typed while this ran from a pane that simply stayed put.
   const atStart = paneFingerprint();
+  const sizeAtStart = { width: state.width, height: state.height };
   const found = await loadChartFromSelection();
+  // Whether the pane HELD this chart when Explode began, which is what makes "the
+  // pane differs from how it was" mean "an edit was typed": a pane that picked the
+  // chart up mid-run (Edit selected chart) differs from the chart it held before,
+  // and nothing was typed.
+  const heldAtStart = !!found && paneStillHolds(found.target);
   if (!found) {
     note("Select an inserted chart first — Explode re-draws it as native shapes.", "err");
     return;
@@ -3907,12 +3919,18 @@ async function runExplode() {
   // see `keepPaneThroughExplode`. A pane that held none, or another, is handed the
   // chart Explode worked on, which is what Explode of the selection has always done.
   let behind = false;
-  if (paneStillHolds(found.target)) behind = keepPaneThroughExplode(next, atStart);
+  if (paneStillHolds(found.target)) behind = keepPaneThroughExplode(next, atStart, sizeAtStart, heldAtStart);
   else applyConfig(next.size ? { ...cfg, ...next.size } : cfg, next);
   $("selection-banner").style.display = "none";
+  // With Auto-update ticked the edit's own timer pushes it the moment Explode is done
+  // (`maybeAutoUpdate` waits out a write), so "press Update chart" would send the
+  // person to redraw a chart that is already right.
+  const autoUpdating = !!($("auto-update") as HTMLInputElement | null)?.checked;
   note(
     behind
-      ? "Exploded to native shapes — the edit you made while it ran has not been applied yet. Press Update chart to apply it."
+      ? autoUpdating
+        ? "Exploded to native shapes — the edit you made while it ran is being applied by Auto-update."
+        : "Exploded to native shapes — the edit you made while it ran has not been applied yet. Press Update chart to apply it."
       : "Exploded to native shapes — edits now update them in place.",
     "ok",
   );
@@ -3962,16 +3980,25 @@ function paneFingerprint(): string {
  * `renderPreview` to re-arm it would be the opposite mistake: it writes the pane's
  * reconstruction of a chart over one nothing had edited (see `applyConfig`).
  *
- * Returns whether the pane differs from how it was when Explode began, so the note
- * can say the slide is behind it instead of claiming the two agree.
+ * Returns whether the person changed the pane while Explode ran, so the note can say
+ * the slide is behind it instead of claiming the two agree. A pane that did not hold
+ * the chart when Explode began (`heldAtStart`) cannot have been edited into
+ * differing, so it never claims an edit; and a size typed meanwhile is the person's
+ * pending edit like any other, so the kept size is taken only over a size they left
+ * alone.
  */
-function keepPaneThroughExplode(next: EditTarget, atStart: string): boolean {
-  const behind = paneFingerprint() !== atStart;
+function keepPaneThroughExplode(
+  next: EditTarget,
+  atStart: string,
+  sizeAtStart: { width: number; height: number },
+  heldAtStart: boolean,
+): boolean {
+  const behind = heldAtStart && paneFingerprint() !== atStart;
   state.editTarget = next;
   state.renderImage = false;
   const box = document.getElementById("render-image") as HTMLInputElement | null;
   if (box) box.checked = false;
-  adoptKeptSize(next);
+  if (state.width === sizeAtStart.width && state.height === sizeAtStart.height) adoptKeptSize(next);
   return behind;
 }
 

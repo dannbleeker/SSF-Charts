@@ -272,6 +272,8 @@ export const EN = {
     "Exploded to native shapes — edits now update them in place.",
   "Exploded to native shapes — the edit you made while it ran has not been applied yet. Press Update chart to apply it.":
     "Exploded to native shapes — the edit you made while it ran has not been applied yet. Press Update chart to apply it.",
+  "Exploded to native shapes — the edit you made while it ran is being applied by Auto-update.":
+    "Exploded to native shapes — the edit you made while it ran is being applied by Auto-update.",
   "This PowerPoint cannot draw {what} — that needs a newer Office (PowerPointApi 1.10) — so the chart stays a picture. Exploding it here would leave them out.":
     "This PowerPoint cannot draw {what} — that needs a newer Office (PowerPointApi 1.10) — so the chart stays a picture. Exploding it here would leave them out.",
   "That chart is {shapes} shapes — too many for PowerPoint on the web to draw, so it stays a picture. Open it on the desktop app to explode it, or make the chart simpler.":

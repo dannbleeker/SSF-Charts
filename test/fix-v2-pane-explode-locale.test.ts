@@ -349,6 +349,78 @@ describe("V2a: Explode keeps what was typed while it ran", () => {
     expect(noteText()).toBe("Exploded to native shapes — edits now update them in place.");
   });
 
+  it("does not tell the person to press Update when Auto-update is applying the edit itself", async () => {
+    // The note said "Press Update chart" and stayed on screen after the timer the
+    // typed edit armed had already pushed it; following it redrew a right chart.
+    const { deck, finish } = await explodeHeld();
+    await tickAutoUpdate();
+    typeTitle("typed during Explode");
+    await finish();
+    await until("the held edit to go out once Explode was done", () => hold.updates.length === 2, 4000);
+    await idle("the auto-update to finish");
+    expect(chartsOn(deck.slides[0])[0].cfg.title).toBe("typed during Explode");
+    expect(noteText()).toMatch(/being applied by Auto-update/);
+    expect(noteText(), "told the person to press Update for an edit Auto-update had sent").not.toMatch(
+      /Press Update chart/,
+    );
+  });
+
+  it("claims no edit when the pane only picked the exploded chart up while Explode ran", async () => {
+    // The pane held B when Explode of A began; the person pressed Edit selected chart on
+    // A mid-run. The pane then differs from how it STARTED (it held B), and nothing was
+    // typed: the note must not say an edit is waiting.
+    const deck = await deckWith(
+      [
+        { slide: "s1", cfg: cfgOf("A", [1, 2, 3]), picture: true },
+        { slide: "s2", cfg: cfgOf("B", [4, 5, 6]) },
+      ],
+      ["s1", "s2"],
+    );
+    await bootPane();
+    userSelects(deck, "s2", deck.ids[1]);
+    await loadSelected("B");
+    userSelects(deck, "s1", deck.ids[0]);
+    const slow = gate();
+    hold.updateGate = slow.wait;
+    $("explode").click();
+    await until("Explode's update to reach the renderer", () => hold.updates.length === 1);
+    await loadSelected("A");
+    hold.updateGate = null;
+    slow.open();
+    await idle("Explode to finish");
+    expect(titleBox()).toBe("A");
+    expect(noteText(), "claimed an edit nobody made").toBe(
+      "Exploded to native shapes — edits now update them in place.",
+    );
+  });
+
+  it("keeps a size typed while Explode ran, instead of the size the slide was kept at", async () => {
+    const deck = await deckWith([{ slide: "s1", cfg: cfgOf("A", [1, 2, 3]), picture: true }], ["s1"]);
+    await bootPane();
+    userSelects(deck, "s1", deck.ids[0]);
+    await loadSelected("A");
+    hold.updateAnswer = () => ({
+      slideId: "s1",
+      shapeId: "kept-1",
+      left: 10,
+      top: 20,
+      size: { width: 520, height: 300 },
+    });
+    const slow = gate();
+    hold.updateGate = slow.wait;
+    $("explode").click();
+    await until("Explode's update to reach the renderer", () => hold.updates.length === 1);
+    const width = $("chart-w") as HTMLInputElement;
+    width.value = "700";
+    width.dispatchEvent(new Event("input", { bubbles: true }));
+    hold.updateGate = null;
+    slow.open();
+    await idle("Explode to finish");
+    expect(width.value, "the typed size was replaced by the kept size").toBe("700");
+    expect(exportConfig().width).toBe(700);
+    expect(noteText()).toMatch(/has not been applied yet/);
+  });
+
   it("still loads the exploded chart into a pane that held a different one", async () => {
     const deck = await deckWith(
       [
@@ -482,7 +554,9 @@ describe("V2b: the locale control shows the locale in force", () => {
       expect(shown(localeSelect())).toBe("en-US");
       expect(localeSelect().options).toHaveLength(4);
       // Untouched, the control rewrites nothing: a hand-written value is the person's.
-      expect(exportConfig().numberFormat?.locale ?? "").toBe(bad === "" ? "" : bad);
+      // Exactly what was written, '' included: `?? ""` here made the row pass for a
+      // control that wrote en-US back into state too (an export of undefined).
+      expect(exportConfig().numberFormat?.locale).toBe(bad);
     },
   );
 
@@ -493,7 +567,7 @@ describe("V2b: the locale control shows the locale in force", () => {
     sel.value = "da-DK";
     sel.dispatchEvent(new Event("change", { bubbles: true }));
     expect(exportConfig().numberFormat?.locale).toBe("da-DK");
-    // The options are rebuilt from what the pane holds now: the temporary one is gone.
+    // Loading another chart rebuilds the options from what the pane holds: the temporary one is gone.
     importConfig(chartWith("de_DE"));
     const again = localeSelect();
     again.value = "fr-FR";
