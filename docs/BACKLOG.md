@@ -3270,6 +3270,44 @@ instrument problem the live rounds had shown:
   512, 516). It is still in the routine battery;
   `pickedOnly` on its `SCENARIOS` entry would take it out, or a ceiling in
   `FATAL_SCENARIO_RATE` would let it stay: both are the owner's call.
+  **The overnight run, 2026-10-26 18:57 to 2026-10-27 07:09 (rounds 519 to 542, all
+  on build `51eccab`, six sessions of four rounds with a 47-minute rest between
+  them, no commit or push while any of them ran):** 24 rounds, 480 scenario runs: 463
+  passed, 17 were skipped, none failed, and the host did not die once (no crash file
+  after `2026-10-26T08-19-44`). 13 rounds were 20 of 20, 7 were 19 of 20, 3 were 18
+  of 20 (520, 522, 541) and one was 16 of 20 (524). Of the 17 skips, 10 are this
+  scenario, 2 are `a selected shape survives an insert` (520 and 541, the first
+  10-shape batch stalling; 27 of 518 archived rounds with a self-test, 5%, so its
+  ordinary rate), 2 are `a chart of rotated shapes` (522 and 524, a 45s draw stall;
+  25 of the 202 archived rounds that ran it, 12%), 1 is `edit the chart the user
+  selected` in round 520 (the deck scan could not see the whole deck, 7 of 7 slides:
+  the only such skip in 518 archived rounds, so a base rate of one, and I have no
+  cause for it), and 2 are the two scenarios that came after the stall in 524 and were
+  "not reached". **The resize scenario itself: 14 passes, 10 skips, 0 deaths in 24
+  runs.** The 10 skips (522, 524, 527, 529, 530, 531, 534, 535, 536, 541) all say the
+  same thing and the trace says it the same way each time: slide 257, shape id 61,
+  `slideReadable: true, listed: 12, groupListed: true`, one id refusal, one general
+  exception, and the chart is left on the slide (no by-id delete, as designed). So
+  the host LISTS the group it refuses to READ by id, ten times of ten, and the
+  scenario reads only by id. The product's own recovery (`reReadRefusedShapes`) reads
+  from the slide's list when a by-id resolve is refused; the scenario has no such
+  fallback. On the whole no-sweep build (512 onward) that is 19 passes, 12 skips and 0
+  deaths in 31 runs. The gate now reads 2 deaths in 43 runs (46.5 per 1000; it read 2
+  in 19, 105 per 1000, yesterday evening), still exits 3, and the receipt still
+  cannot cover a second death. `rounds-gate.mjs` found nothing else: no scenario that
+  stopped passing, no new trace, no new crash. What it means: both deaths were at the
+  by-id delete straight after a failed read, and that read has now failed 12 more
+  times with no delete after it and no death. Counting the old build's failed reads
+  as 5 (2 deaths, 3 survived; my reading of the record above, not a recount of the
+  archive), twelve in a row without a death would happen about 0.2% of the time if
+  the delete were not the cause. That is evidence, not proof, and 12 of the 31
+  runs asked nothing: the scenario is blind 39% of the time on this host, so its
+  pass count is what shows the edit works after a resize, not its run count. A fix
+  that would make it ask in all of them (read the group from the slide's list when
+  the by-id read is refused, as the product does) is a change to the scenario and not
+  to the product, and I did not make it: it needs a live pair on its own sha, and the
+  run had no time left for one. The choice between a ceiling, `pickedOnly` and leaving
+  the gate red is still the owner's.
 
 **What the fixes left undone, found while reading them:**
 
