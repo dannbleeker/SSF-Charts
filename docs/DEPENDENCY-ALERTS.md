@@ -9,8 +9,11 @@ This file is the same idea as `KNOWN_ISSUES` in `scripts/office-js-watch.mjs`.
 An entry says what was checked and what was decided, **including "no exposure"**,
 which records that somebody looked. An alert not listed here has not been read.
 
-**Open as of 2026-08-23:** 3 alerts — 2 × high `image-size` (runtime, no forward
-fix) and 1 × moderate `qs` (development). Both are triaged below.
+**Open as of 2026-11-23** (read from `npm audit`; GitHub's alert API answers this
+session's token with 403): 3 moderate findings, one advisory — `minimatch`
+GHSA-g3hv-75wg-m249 under `@stryker-mutator/core` (development, no fix inside
+Stryker's own range; triaged below). The `image-size` and `qs` entries further
+down are now held by `overrides` in `package.json`, each with its `_why` key.
 
 Re-read it with:
 
@@ -26,7 +29,32 @@ gh api repos/dannbleeker/SSF-Charts/dependabot/alerts --jq '.[] | select(.state=
 development-scope transitives. `pptxgenjs` stayed at 4.0.1, which was the thing
 to check — see below.
 
+## Cleared 2026-11-23
+
+`npm audit` had grown to 14 findings (1 high, 13 moderate). Taken on one branch:
+
+- **`zod`** 4.4.3 → 4.6.7 (GHSA-mrhx-c7xc-m3w5, high), under
+  `@stryker-mutator/core → mutation-server-protocol`, inside its `^4.1.12`.
+- **`minimatch` under the linter** (GHSA-g3hv-75wg-m249): `eslint` 10.15.0,
+  `@eslint/config-array` and `@typescript-eslint/typescript-estree` now declare
+  `^11` themselves, so raising the `eslint` floor to `^10.15.0` and
+  `typescript-eslint` to `^8.73.0` cleared it with no override.
+- **`qs`** (GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g, GHSA-6pq8-jhm2-2vcw): the
+  existing override moved from `^6.15.3` to `^6.16.1`, same major.
+
 ## Open, with a reason
+
+### `minimatch` under Stryker — 3 × moderate (one advisory) — NO EXPOSURE
+
+`@stryker-mutator/core` 9.6.1 declares `minimatch ~10.2.4`, and so does the
+newest Stryker (10.1.1, checked 2026-11-23), so neither a refresh nor the
+Stryker major clears it. The advisory needs an attacker-supplied PATTERN; the
+only patterns Stryker matches are this repo's own `mutate` globs, in a weekly
+job outside the PR gate. An override across a major on a tool the PR gate never
+runs could not be verified here, so it was not taken. Revisit when Stryker
+declares `minimatch ^11`.
+
+## Held by overrides (the original triage, kept for the reasoning)
 
 ### `image-size` — 2 × high — NO EXPOSURE
 

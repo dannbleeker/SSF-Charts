@@ -44,10 +44,10 @@
     "jszip": "^3.10.1",
     "pptxgenjs": "^4.0.1"
   },
-  "_overrides_why": "qs: GHSA-q8mj-m7cp-5q26 reaches us only through @stryker-mutator/core -> typed-rest-client, which pins a vulnerable range. `npm audit fix` reported a fix available and then changed nothing, because it cannot move a pinned transitive. The advisory range is 6.11.1-6.15.1 and 6.15.3 is outside it, so this is a PATCH bump on the same minor, not a version gamble. Dev-only: qs is never shipped. Remove this once typed-rest-client ships a version that does not pin a vulnerable qs.",
+  "_overrides_why": "qs: GHSA-q8mj-m7cp-5q26, and since 2026-11-23 GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g and GHSA-6pq8-jhm2-2vcw (all moderate, all fixed by 6.16.1), reach us only through @stryker-mutator/core -> typed-rest-client, which pins a vulnerable range. `npm audit fix` cannot move a pinned transitive. The override was ^6.15.3 (a patch on the same minor) and is now ^6.16.1, a minor on the same major; qs keeps its API across 6.x. Dev-only: qs is never shipped. Remove this once typed-rest-client ships a version that does not pin a vulnerable qs.",
   "_fast_uri_why": "fast-uri: GHSA-5jgf-p345-68v8, GHSA-f65p-4m7j-42xc, GHSA-fph4-wmhf-6fwf, GHSA-jqff-g426-hqxp (four HIGH, all fixed in 3.1.6) reach us only through @stryker-mutator/core -> ajv, which resolved 3.1.5. All four are SSRF or host-confusion in URI parsing, and nothing here parses a hostile URI: Stryker is a test-time mutation runner and fast-uri is NEVER shipped — it is absent from the add-in bundle, which is what a user receives. So this is repo hygiene on a public repo, not user exposure. A patch bump on the same minor. Remove once ajv resolves >=3.1.6 on its own.",
   "overrides": {
-    "qs": "^6.15.3",
+    "qs": "^6.16.1",
     "image-size": "file:vendor/image-size-stub",
     "fast-uri": "^3.1.6"
   },
@@ -60,7 +60,7 @@
     "@types/office-js": "^1.0.377",
     "@vitest/coverage-v8": "^4.1.12",
     "@xarsh/ooxml-validator": "^0.3.0",
-    "eslint": "^10.7.0",
+    "eslint": "^10.15.0",
     "eslint-config-prettier": "^10.1.8",
     "fast-check": "^4.9.0",
     "globals": "^17.7.0",
@@ -68,7 +68,7 @@
     "playwright-core": "^1.61.1",
     "prettier": "^3.9.5",
     "typescript": "^5.5.0",
-    "typescript-eslint": "^8.64.0",
+    "typescript-eslint": "^8.73.0",
     "vite": "^8.1.6",
     "vitest": "^4.1.12"
   }
