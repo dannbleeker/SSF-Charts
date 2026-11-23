@@ -10,10 +10,9 @@ An entry says what was checked and what was decided, **including "no exposure"**
 which records that somebody looked. An alert not listed here has not been read.
 
 **Open as of 2026-11-23** (read from `npm audit`; GitHub's alert API answers this
-session's token with 403): 3 moderate findings, one advisory — `minimatch`
-GHSA-g3hv-75wg-m249 under `@stryker-mutator/core` (development, no fix inside
-Stryker's own range; triaged below). The `image-size` and `qs` entries further
-down are now held by `overrides` in `package.json`, each with its `_why` key.
+session's token with 403): **0 findings**. The `image-size`, `qs`, `fast-uri` and
+`minimatch` entries further down are held by `overrides` in `package.json`, each
+with its `_why` key.
 
 Re-read it with:
 
@@ -42,17 +41,35 @@ to check — see below.
 - **`qs`** (GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g, GHSA-6pq8-jhm2-2vcw): the
   existing override moved from `^6.15.3` to `^6.16.1`, same major.
 
-## Open, with a reason
-
-### `minimatch` under Stryker — 3 × moderate (one advisory) — NO EXPOSURE
+## Cleared 2026-11-23, second pass: `minimatch` under Stryker
 
 `@stryker-mutator/core` 9.6.1 declares `minimatch ~10.2.4`, and so does the
-newest Stryker (10.1.1, checked 2026-11-23), so neither a refresh nor the
-Stryker major clears it. The advisory needs an attacker-supplied PATTERN; the
-only patterns Stryker matches are this repo's own `mutate` globs, in a weekly
-job outside the PR gate. An override across a major on a tool the PR gate never
-runs could not be verified here, so it was not taken. Revisit when Stryker
-declares `minimatch ^11`.
+newest Stryker (10.1.1), so neither a refresh nor the Stryker major clears
+GHSA-g3hv-75wg-m249. The first pass of the day left it open because an override
+across a major on a tool the PR gate never runs "could not be verified here".
+The weekly Dependabot review ran the tool instead of reasoning about it:
+
+- Stryker uses minimatch in three files (`file-matcher.js`, `project-reader.js`,
+  `options-validator.js`), all of them matching this repo's own `mutate` and
+  ignore globs.
+- `npx stryker run --dryRunOnly` on 10.2.5 and on 11.0.9 reports the same match:
+  `Found 44 of 1150 file(s) to be mutated`, `Instrumented 44 source file(s) with
+  24325 mutant(s)`.
+- `npx stryker run --mutate src/core/format.ts --dryRunOnly`, the shape the
+  weekly sweep runs, completes on 11.0.9: `Initial test run succeeded. Ran 3529
+  tests`.
+
+So `overrides` now carries `"@stryker-mutator/core": { "minimatch": "^11.0.1" }`,
+scoped to Stryker, and `npm audit` reports 0. Development scope, never shipped.
+Remove it once Stryker declares `minimatch ^11`.
+
+**Not caused by this, and not fixed by it:** the FULL-scope dry run (no
+`--mutate`) fails its initial test run on this machine with the override and
+without it, on the same test (`test/fix-k5-pane-state-and-ui.test.ts`, "starts
+level with the sheet": `Invalid regular expression: /\r\n|[\n\r\V\f\u0085\p{Zl}\p{Zp}]/u`).
+The test passes under `vitest.mutation.config.ts` outside Stryker and the scoped
+run above passes, so it is something about instrumenting all 44 files at once.
+Measured 2026-11-23 on Node 22.23.5; not yet explained.
 
 ## Held by overrides (the original triage, kept for the reasoning)
 

@@ -46,7 +46,11 @@
   },
   "_overrides_why": "qs: GHSA-q8mj-m7cp-5q26, and since 2026-11-23 GHSA-x5fp-wj9c-mxmx, GHSA-4mjr-xmp4-gh2g and GHSA-6pq8-jhm2-2vcw (all moderate, all fixed by 6.16.1), reach us only through @stryker-mutator/core -> typed-rest-client, which pins a vulnerable range. `npm audit fix` cannot move a pinned transitive. The override was ^6.15.3 (a patch on the same minor) and is now ^6.16.1, a minor on the same major; qs keeps its API across 6.x. Dev-only: qs is never shipped. Remove this once typed-rest-client ships a version that does not pin a vulnerable qs.",
   "_fast_uri_why": "fast-uri: GHSA-5jgf-p345-68v8, GHSA-f65p-4m7j-42xc, GHSA-fph4-wmhf-6fwf, GHSA-jqff-g426-hqxp (four HIGH, all fixed in 3.1.6) reach us only through @stryker-mutator/core -> ajv, which resolved 3.1.5. All four are SSRF or host-confusion in URI parsing, and nothing here parses a hostile URI: Stryker is a test-time mutation runner and fast-uri is NEVER shipped — it is absent from the add-in bundle, which is what a user receives. So this is repo hygiene on a public repo, not user exposure. A patch bump on the same minor. Remove once ajv resolves >=3.1.6 on its own.",
+  "_minimatch_why": "minimatch: GHSA-g3hv-75wg-m249 (moderate, fixed in 11.0.1) reaches us only through @stryker-mutator/core, which pins ~10.2.4 even in its newest major (10.1.1, checked 2026-11-23). The override is scoped to Stryker and crosses a major, so it was measured rather than assumed: a dry run before and after reports the same match (Found 44 of 1150 files, 44 files instrumented with 24325 mutants), which is all Stryker uses minimatch for, and a scoped dry run as the weekly sweep runs it (--mutate src/core/format.ts) completes its initial test run on 11.0.9. Dev-only, never shipped. Remove once Stryker declares minimatch ^11.",
   "overrides": {
+    "@stryker-mutator/core": {
+      "minimatch": "^11.0.1"
+    },
     "qs": "^6.16.1",
     "image-size": "file:vendor/image-size-stub",
     "fast-uri": "^3.1.6"
